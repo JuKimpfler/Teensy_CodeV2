@@ -1,12 +1,16 @@
 #include <Arduino.h>
 
+#include <systemlib.h>
+
+systemlib sys;
+
 void setup()
 {
-  Serial.begin(9600);
+  sys.initialize();
 }
 
 void loop()
 {
-  Serial.println("alive");
+  USBC_UART.println("alive");
   delay(1000);
 }
