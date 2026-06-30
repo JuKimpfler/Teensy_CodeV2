@@ -21,8 +21,7 @@ void systemlib::initialize()
     PDS.init();
 
     pinMode(START_SWITCH,INPUT);
-
-    setDebugTimeout(0);
+    setDebugTimeout(5);
 
 }
 
