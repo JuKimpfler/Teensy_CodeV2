@@ -6,7 +6,7 @@
 
 // Initialize BNO055
 void BNO055::init() {
-  // BNO055_beaver in Konfigurationsmodus bringen
+  // BNO055 in Konfigurationsmodus bringen
   cls->beginTransmission(this->addr);
   cls->write(REG_OPR_MODE);
   cls->write(OPR_MODE_CONFIGMODE);
@@ -45,7 +45,7 @@ void BNO055::init() {
   // Unit Selection
   cls->beginTransmission(addr);
   buffer[0] = REG_UNIT_SEL;
-  // Einheiten festlegen (BNO055_beaver.pdf S.69)
+  // Einheiten festlegen (BNO055.pdf S.69)
   // Bit7: Data output format = 1 -> Android (verändert Ausgabe von Pitch-Werten)
   // Bit4: Temperature = 0 -> Celsius
   // Bit2: Euler units = 0 -> Grad (Winkeleinheit)
@@ -56,7 +56,7 @@ void BNO055::init() {
 
   // TODO: evtl neue Transmission starten
 
-  // BNO055_beaver in Standardmodus bringen
+  // BNO055 in Standardmodus bringen
   buffer[0] = REG_OPR_MODE;
   buffer[1] = DEFAULT_OPR_MODE;
   cls->write(buffer[0]);
@@ -96,7 +96,7 @@ inline int16_t BNO055::getWord(uint8_t address) {
   return (int16_t) (((int16_t) (ret[1]) << 8) | ret[0]);
 }
 
-// Reset BNO055_beaver System
+// Reset BNO055 System
 void BNO055::reset() {
 #ifdef CALIBRATION_ENABLED
   memset(this->calibDataByte, 0, 22);
@@ -133,8 +133,8 @@ uint8_t BNO055::calibStatus() {
 }
 
 #ifdef CALIBRATION_ENABLED
-void BNO055_beaver::updateCalibrationData() {
-  // BNO055_beaver in Konfigurationsmodus setzen
+void BNO055::updateCalibrationData() {
+  // BNO055 in Konfigurationsmodus setzen
   cls->beginTransmission(this->addr);
   cls->write(REG_OPR_MODE);
   cls->write(OPR_MODE_CONFIGMODE);
