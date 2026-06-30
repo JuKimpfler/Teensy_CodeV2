@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _BNO055_H_
+#define _BNO055_H_
 
 #include "../Wire/Wire.h"
 
@@ -7,7 +8,7 @@
 #define EEPROM_BNO_CALIB_SIZE 22
 
 //#define CALIBRATION_ENABLED
-#define BNO055_beaver_SENSOR_FUSION_ALGO 5
+#define BNO055_SENSOR_FUSION_ALGO 5
 
 //
 enum e_bnoSysStatus {
@@ -120,3 +121,4 @@ private:
   TwoWire* cls;
 };
 
+#endif

@@ -11,6 +11,11 @@ void setup()
 
 void loop()
 {
+
+  sys.readSensors();
   USBC_UART.println("alive");
-  delay(1000);
+
+  USBC_UART.print(sys.giveCycleTime_us());
+  USBC_UART.print(" , bno_main : ");
+  USBC_UART.println(sys.giveOrbitDir());
 }
