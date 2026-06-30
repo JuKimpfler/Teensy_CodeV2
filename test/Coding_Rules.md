@@ -16,3 +16,5 @@
 ### Abkürzungen
 - Dir -> Direction
 - Pos -> Position
+- Calib -> Calibrate
+- Var -> Variables

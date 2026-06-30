@@ -1,9 +1,12 @@
 #include <systemlib.h>
 
+/* -------------- Instanzen -------------- */
 
 BNO055 BNO( 0x28, &I2C_BNO);
-BNO055 BNO1( 0x29, &I2C_BNO);
+elapsedMillis cycleTimer;
 
+
+/* -------------- System Worker -------------- */
 
 void systemlib::initialize()
 {
@@ -12,27 +15,27 @@ void systemlib::initialize()
     USBC_UART.begin(115200);
 
     BNO.init();
-    BNO1.init();
-}
-
-void systemlib::calibrateBNO( void )
-{
-    readBNO();
-    BNO_calibration = BNO_eulerZ;
 }
 
 void systemlib::readSensors( void ){
+    // Zyklische Messung der Laufzeit in ms
+    cycleTime = cycleTimer;
+    cycleTimer = 0;
+
     readBNO();
 }
 
-float systemlib::getOrbitDir( void )
+
+/* -------------- BNO -------------- */
+
+void systemlib::calibBNO( void )
 {
-    return Util.AMap(BNO_eulerZ - BNO_calibration);
+    BNO_calibration = BNO_eulerZ;
 }
+
 
 void systemlib::readBNO( void )
 {
     BNO_eulerZ = Util.AMap(BNO.eulHeading());
-
-    BNO_eulerZ_test = Util.AMap(BNO1.eulHeading());
+    BNO_OrbitDir = Util.AMap(BNO_eulerZ - BNO_calibration);
 }

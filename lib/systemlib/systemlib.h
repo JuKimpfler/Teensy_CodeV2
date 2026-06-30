@@ -8,31 +8,36 @@
 #include <BNO055.h>
 
 extern BNO055 BNO;
-extern BNO055 BNO1;
 
 class systemlib
 {
 public:
-    void initialize();
 
+    /* -------------- Ssytem Worker -------------- */
+    void initialize();
     void readSensors( void );
 
-    void calibrateBNO( void );
-    float getOrbitDir( void );
+    /* -------------- Sensors -------------- */
+    void calibBNO( void );
 
+    /* -------------- Aktors -------------- */
 
+    /* -------------- give -------------- */
+    float giveOrbitDir( void ) const { return BNO_OrbitDir;  }; // Orbital Ausrichtung
+    u_int16_t giveCycleTime( void ) const { return cycleTime;  }; // Zyklische Messung der Laufzeit in ms
 
-    float BNO_eulerZ_test = 0.0f;
+    /* -------------- set -------------- */
 
 private:
 
-    
-    //BNO055 BNO1 = BNO055( 0x29, &I2C_BNO);
+    /* -------------- Sensor Var -------------- */
     float BNO_calibration = 0.0f;
     float BNO_eulerZ = 0.0f;
-    
+    float BNO_OrbitDir = 0.0f;
 
+    /* -------------- System -------------- */
+    u_int16_t cycleTime = 0;
+    
+    /* -------------- Sensor Funktion -------------- */
     void readBNO( void );
-
-    
 };
