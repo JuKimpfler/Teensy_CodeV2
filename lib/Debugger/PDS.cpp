@@ -3,8 +3,18 @@
 
 elapsedMillis DBGTimer;
 
-static float debugData[PowerDebugger::MAX_FLOATS];
+static constexpr uint32_t HEADER_MAGIC     = 0xDEADBEEF;
+static constexpr int      MAX_FLOATS       = 200;
+static constexpr int      PACKET_BYTES     = 8 + MAX_FLOATS * 4;  // 1608
+static constexpr uint32_t SAMPLE_PERIOD_US = 10;            // 50 Hz
+static uint8_t _serial1_tx_buf[4096];
+static uint8_t _pkt_buf[PACKET_BYTES];
+uint32_t pkt_count = 0;
+
+static float debugData[MAX_FLOATS];
 #define DBG(channel, value)  debugData[(channel)] = static_cast<float>(value);
+
+
 
 void PowerDebugger::Channel(u_int8_t chn , float val){
     DBG(chn,val);
@@ -33,15 +43,11 @@ void PowerDebugger::init(){
 }
 
 void PowerDebugger::update(){
-    static uint32_t last_sample_us = 0;
-    static uint32_t last_stat_ms   = 0;
-    static uint32_t loop_start_us  = 0;
-
-    DBGTimer = 0;
 
     // ── Alle 10 ms: Paket senden (100 Hz) ────────────────────────────────────
     if (DBGTimer >= SAMPLE_PERIOD_US) {
         buildPacket();
+        DBGTimer = 0;
 
         // Serial1.write() kopiert 1608 Bytes in den TX-Buffer und kehrt
         // sofort zurück. Der UART-DMA überträgt asynchron (~4 ms bei 4 Mbps).
@@ -49,13 +55,5 @@ void PowerDebugger::update(){
         //last_buffer = _pkt_buf;
         //last_bytes = PACKET_BYTES;
         UART_DBG.write(_pkt_buf, PACKET_BYTES);
-        pkt_count++;
-    }
-
-    // ── Statistik alle 5 Sekunden auf USB-Serial ausgeben ────────────────────
-    if (DBGTimer >= 5000UL) {
-        const float hz    = pkt_count / 5.0f;
-        const float kbps  = (float)pkt_count * PACKET_BYTES / 5.0f / 1024.0f;
-        pkt_count = 0;
     }
 }

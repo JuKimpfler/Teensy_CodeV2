@@ -18,4 +18,7 @@ void loop()
   USBC_UART.print(sys.giveCycleTime_us());
   USBC_UART.print(" , bno_main : ");
   USBC_UART.println(sys.giveOrbitDir());
+
+  sys.setDBGSys();
+  sys.setDBGChannel(0,sys.giveCycleTime_us());
 }

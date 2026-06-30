@@ -52,14 +52,6 @@ class PowerDebugger{
         void buildPacket();
 
     public:
-        static constexpr uint32_t HEADER_MAGIC     = 0xDEADBEEF;
-        static constexpr int      MAX_FLOATS       = 200;
-        static constexpr int      PACKET_BYTES     = 8 + MAX_FLOATS * 4;  // 1608
-        static constexpr uint32_t SAMPLE_PERIOD_US = 10;            // 50 Hz
-        static uint8_t _serial1_tx_buf[4096];
-        static uint8_t _pkt_buf[PACKET_BYTES];
-        uint32_t pkt_count = 0;
-
         void init();
         void update();
         void Channel(u_int8_t chn , float val);
