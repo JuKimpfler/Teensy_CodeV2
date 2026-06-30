@@ -6,8 +6,7 @@
 #include "Utils.h"
 
 #include <BNO055.h>
-
-extern BNO055 BNO;
+#include <PDS.h>
 
 class systemlib
 {
@@ -45,4 +44,6 @@ public:
 
     /* -------------- set -------------- */
     void setDebugTimeout( u_int16_t timeout_ms ) { debugTimeout = timeout_ms; }
+    void setDBGSys(); // Setzen der System Channels des DBG Systems
+    void setDBGChannel( u_int8_t Channel , float Value ); // Setzen der verfügbaren DBG Channels (0-20)
 };

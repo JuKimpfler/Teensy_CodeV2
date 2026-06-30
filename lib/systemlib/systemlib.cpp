@@ -2,7 +2,8 @@
 
 /* -------------- Instanzen -------------- */
 
-BNO055 BNO( 0x28, &I2C_BNO);
+BNO055 BNO( BNO_ADDRESS, &I2C_BNO);
+PowerDebugger PDS;
 elapsedMillis cycleTimer;
 elapsedMicros cycleTimer_us;
 
@@ -33,14 +34,23 @@ void systemlib::readSensors( void ){
     readBNO();
 }
 
+/* -------------- Debugger -------------- */
+void systemlib::setDBGSys(){
+    PDS.Channel(21,BNO_OrbitDir);
+    PDS.Channel(21,BNO_OrbitDir);
+}
+
+void systemlib::setDBGChannel( u_int8_t Channel , float Value ){
+    if(Util.Range(Channel,0,20)){
+        PDS.Channel(Channel, Value);
+    }
+}
 
 /* -------------- BNO -------------- */
-
 void systemlib::calibBNO( void )
 {
     BNO_calibration = BNO_eulerZ;
 }
-
 
 void systemlib::readBNO( void )
 {
