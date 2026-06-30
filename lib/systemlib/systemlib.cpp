@@ -4,6 +4,7 @@
 
 BNO055 BNO( 0x28, &I2C_BNO);
 elapsedMillis cycleTimer;
+elapsedMicros cycleTimer_us;
 
 
 /* -------------- System Worker -------------- */
@@ -14,13 +15,20 @@ void systemlib::initialize()
     Wire1.setClock(1000000);
     USBC_UART.begin(115200);
 
+    setDebugTimeout(10);
+
     BNO.init();
+
+
 }
 
 void systemlib::readSensors( void ){
     // Zyklische Messung der Laufzeit in ms
     cycleTime = cycleTimer;
+    cycleTime_us = cycleTimer_us;
+    delay(debugTimeout);
     cycleTimer = 0;
+    cycleTimer_us = 0;
 
     readBNO();
 }
