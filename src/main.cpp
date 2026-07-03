@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include "roboterDaten.h"
+#include "commlib.h"
 
 #include <systemlib.h>
 
@@ -11,8 +13,14 @@ void setup()
 
 void loop()
 {
-
   sys.readSensors();
+
+  //if start switch
+  if (false){
+    commlibC.setOwnFlush(0,0,0,0,0,0);
+
+    roboterDaten otherRobot = commlibC.getOtherFlush();
+  }
   USBC_UART.println("alive");
 
   USBC_UART.print(sys.giveCycleTime_us());
