@@ -6,8 +6,9 @@ BNO055 BNO( BNO_ADDRESS, &I2C_BNO);
 PowerDebugger PDS;
 elapsedMillis cycleTimer;
 elapsedMicros cycleTimer_us;
-//int cycleTimer_us =0;
-//int cycleTimer =0;
+
+commlib communication;
+
 
 /* -------------- System Worker -------------- */
 
@@ -80,4 +81,24 @@ void systemlib::readBNO( void )
 {
     BNO_eulerZ = Util.AMap(BNO.eulHeading());
     BNO_OrbitDir = Util.AMap(BNO_eulerZ - BNO_calibration);
+}
+
+/* ---------- Communication -----------*/
+
+// send
+
+void systemlib::send( void )
+{
+    communication.sendOwnFlush();
+}
+
+void systemlib::send( float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance ){
+    communication.setOwnFlush(positionX, positionY, ballAngle, ballDistance, goalAngle, goalDistance);
+    communication.sendOwnFlush();
+}
+
+// give
+
+RobotDataCom systemlib::giveOtherRobotData() const{
+    return communication.getOtherFlush();
 }
