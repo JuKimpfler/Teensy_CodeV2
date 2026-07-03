@@ -23,3 +23,4 @@
 - us -> microsekunden
 - ms -> millissekunden
 - sek -> sekunden
+- DBG -> Debugger
