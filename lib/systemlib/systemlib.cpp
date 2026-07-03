@@ -35,6 +35,8 @@ void systemlib::readSensors( void ){
 
     readBNO();
     PDS.update();
+
+    Serial.println("Fresh = "+String(PDS.fastParamsAreFresh())+" , Param1 = "+String(PDS.getFastParam(0)));
 }
 
 /* -------------- Debugger -------------- */
