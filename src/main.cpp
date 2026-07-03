@@ -1,10 +1,10 @@
 #include <Arduino.h>
-#include "roboterDaten.h"
-#include "commlib.h"
 
 #include <systemlib.h>
 
 systemlib sys;
+
+RobotDataCom IMAS2;
 
 void setup()
 {
@@ -17,9 +17,7 @@ void loop()
 
   //if start switch
   if (false){
-    commlibC.setOwnFlush(0,0,0,0,0,0);
-
-    roboterDaten otherRobot = commlibC.getOtherFlush();
+    
   }
   USBC_UART.println("alive");
 

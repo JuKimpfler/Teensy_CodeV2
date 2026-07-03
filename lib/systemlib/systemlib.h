@@ -7,11 +7,17 @@
 
 #include <BNO055.h>
 
+#include <commlib.h>
+
 extern BNO055 BNO;
+
 
 class systemlib
 {
 private:
+
+    RobotDataCom ownRobot;
+    RobotDataCom otherRobot;
 
     /* -------------- Sensor Var -------------- */
     float BNO_calibration = 0.0f;
@@ -33,6 +39,10 @@ public:
     void initialize();
     void readSensors( void );
 
+    /* -------------- Communication -------------- */
+    void send( void );
+    void send( float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance);
+
     /* -------------- Sensors -------------- */
     void calibBNO( void );
 
@@ -42,7 +52,9 @@ public:
     float giveOrbitDir( void ) const { return BNO_OrbitDir;  }; // Orbital Ausrichtung
     u_int16_t giveCycleTime( void ) const { return cycleTime;  }; // Zyklische Messung der Laufzeit in ms
     u_int16_t giveCycleTime_us( void ) const { return cycleTime_us;  }; // Zyklische Messung der Laufzeit in us
+    RobotDataCom giveOtherRobotData( void ) const { return otherRobot; }; //Daten des anderen Roboter
 
     /* -------------- set -------------- */
     void setDebugTimeout( u_int16_t timeout_ms ) { debugTimeout = timeout_ms; }
+    void setCommunication( ... );
 };

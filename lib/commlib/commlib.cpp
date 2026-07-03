@@ -1,14 +1,14 @@
 #include "commlib.h"
 
-commlib commlibC;
-
 void commlib::setOwnFlush(float x, float y, float ballAngle, float ballDistance, float goalAngle, float goalDistance){
-    ownFlush_ = roboterDaten(x, y, ballAngle, ballDistance, goalAngle, goalDistance);
-
-    //TODO: ownFlush an anderen Roboter senden
+    ownFlush_ = RobotDataCom(x, y, ballAngle, ballDistance, goalAngle, goalDistance);
 }
 
-roboterDaten commlib::getOtherFlush() const{
+void commlib::sendOwnFlush(){
+    //TODO
+}
+
+RobotDataCom commlib::getOtherFlush() const{
     //TODO: otherFlush von anderem Roboter empfangen
 
     return otherFlush_;
