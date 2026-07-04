@@ -6,9 +6,9 @@
 #include "Utils.h"
 
 #include <BNO055.h>
-
 #include <commlib.h>
 #include <PDS.h>
+#include <INA219.h>
 
 extern BNO055 BNO;
 
@@ -31,6 +31,8 @@ private:
     /* -------------- Sensor Funktion -------------- */
     void readBNO(void);
 
+    float INA_filter[6] = {0, 0, 0, 0, 0, 0};
+
 public:
     /* -------------- Ssytem Worker -------------- */
     void initialize();
@@ -50,6 +52,11 @@ public:
     u_int16_t giveCycleTime(void) const { return cycleTime; };          // Zyklische Messung der Laufzeit in ms
     u_int16_t giveCycleTime_us(void) const { return cycleTime_us; };    // Zyklische Messung der Laufzeit in us
     RobotDataCom giveOtherRobotData(void) const { return otherRobot; }; // Daten des anderen Roboter
+    float giveMainVoltage(void);
+    float giveMotorVoltage(void);
+    float giveMainCurrent(void); 
+    float giveMotorCurrent(void); 
+    
 
     /* -------------- set -------------- */
     void setDebugTimeout(u_int16_t timeout_ms) { debugTimeout = timeout_ms; }
