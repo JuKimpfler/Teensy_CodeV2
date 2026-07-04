@@ -96,9 +96,3 @@ void systemlib::send( float positionX, float positionY, float ballAngle, float b
     communication.setOwnFlush(positionX, positionY, ballAngle, ballDistance, goalAngle, goalDistance);
     communication.sendOwnFlush();
 }
-
-// give
-
-RobotDataCom systemlib::giveOtherRobotData() const{
-    return communication.getOtherFlush();
-}

@@ -13,8 +13,6 @@ struct RobotDataCom
 
     float GoalAngle;
     float GoalDistance;
-
-    RobotDataCom(float positionX_ , float positionY_ , float ballAngle_, float ballDistance_, float goalAngle_, float goalDistance_ ) : positionX(positionX_), positionY(positionY_), BallAngle(ballAngle_), BallDistance(ballDistance_), GoalAngle(goalAngle_), GoalDistance(goalDistance_) {}
 };
 
 class commlib

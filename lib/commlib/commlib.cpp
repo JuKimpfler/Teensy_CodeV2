@@ -1,7 +1,12 @@
 #include "commlib.h"
 
 void commlib::setOwnFlush(float x, float y, float ballAngle, float ballDistance, float goalAngle, float goalDistance){
-    ownFlush_ = RobotDataCom(x, y, ballAngle, ballDistance, goalAngle, goalDistance);
+    ownFlush_.positionX = x;
+    ownFlush_.positionY = y;
+    ownFlush_.BallAngle = ballAngle;
+    ownFlush_.BallDistance = ballDistance;
+    ownFlush_.GoalAngle = goalAngle;
+    ownFlush_.GoalDistance = goalDistance;
 }
 
 void commlib::sendOwnFlush(){
