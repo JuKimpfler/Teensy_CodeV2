@@ -87,12 +87,12 @@ void systemlib::readBNO( void )
 
 // send
 
-void systemlib::send( void )
+void systemlib::communicationSend( void )
 {
     communication.sendOwnFlush();
 }
 
-void systemlib::send( float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance ){
+void systemlib::communicationSend( float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance ){
     communication.setOwnFlush(positionX, positionY, ballAngle, ballDistance, goalAngle, goalDistance);
     communication.sendOwnFlush();
 }

@@ -38,8 +38,8 @@ public:
     void readSensors(void);
 
     /* -------------- Communication -------------- */
-    void send(void);
-    void send(float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance);
+    void communicationSend(void); // setzt die Daten Automatisch und sendet sie
+    void communicationSend(float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance); // sendet Benutzerdefinierte Daten
 
     /* -------------- Sensors -------------- */
     void calibBNO(void);
@@ -55,6 +55,5 @@ public:
     /* -------------- set -------------- */
     void setDebugTimeout(u_int16_t timeout_ms) { debugTimeout = timeout_ms; }
     void setDBGSys(void);
-    void setDBGChannel(u_int8_t Channel, float Value);
-    void setCommunication(void);
+    void setDBGChannel(u_int8_t Channel, float Value); // 0-20 Frei für eigenen Quatsch
 };
