@@ -24,6 +24,9 @@ void systemlib::initialize()
     BNO.init();
     PDS.init();
 
+    ir_ring.read_gains(IR_Gains);
+    ir_ring.read_offsets(IR_Offsets);
+
     pinMode(START_SWITCH, INPUT);
     setDebugTimeout(5);
 }
@@ -101,6 +104,35 @@ void systemlib::readIR(void)
 
     IR_Angle = Util.AMap(IR_rawAngle - BNO_OrbitDir);
     IR_Distance = IR_rawDistance; // Hier muss noch Mathe hin
+}
+
+void systemlib::writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain)
+{
+    ir_ring.write_offset(sensorNumber, offset);
+    ir_ring.write_gain(sensorNumber, gain);
+}
+
+void systemlib::writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16])
+{
+    ir_ring.write_offsets(offsets);
+    ir_ring.write_gains(gains);
+}
+
+void systemlib::calibIR(void)
+{
+    ir_ring.read_raw_values(IR_rawSensorData); // only needed if disabled in readIR()
+
+    for (int i = 0; i < 16; i++)
+    {
+        if (IR_rawSensorData[i] > IR_Gains[i])
+            IR_Gains[i] = IR_rawSensorData[i];
+
+        if (IR_rawSensorData[i] < IR_Offsets[i])
+            IR_Offsets[i] = IR_rawSensorData[i];
+    }
+
+    ir_ring.write_offsets(IR_Offsets);
+    ir_ring.write_gains(IR_Gains);
 }
 
 /* ---------- Communication -----------*/
