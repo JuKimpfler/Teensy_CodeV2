@@ -33,7 +33,7 @@ void systemlib::initialize()
 
 void systemlib::readSensors(void)
 {
-    // Zyklische Messung der Laufzeit in ms
+    // Zyklische Messung der Laufzeit in ms (read -> read)
     cycleTime = cycleTimer;
     cycleTime_us = cycleTimer_us;
     delay(debugTimeout);
@@ -41,6 +41,8 @@ void systemlib::readSensors(void)
     cycleTimer_us = 0;
 
     readBNO();
+    readIR();
+
     PDS.update();
 
     Serial.println("Fresh = " + String(PDS.fastParamsAreFresh()) + " , Param1 = " + String(PDS.getFastParam(0)));
