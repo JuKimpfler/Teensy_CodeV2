@@ -19,4 +19,7 @@ public:
 
     uint8_t read();
     uint8_t readPin(uint8_t pin);
+
+    bool getPinState(uint8_t pin) const { return (_state >> pin) & 0x01; }
+    
 };

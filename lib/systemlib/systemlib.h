@@ -7,6 +7,7 @@
 
 #include <BNO055.h>
 #include <SRF08.h>
+#include <TCA9534DW.h>
 
 #include <commlib.h>
 #include <PDS.h>
@@ -36,6 +37,7 @@ private:
     /* -------------- Sensor Funktion -------------- */
     void readBNO(void);
     void readUS(void);
+    void readExpanders(void);
 
 public:
     /* -------------- Ssytem Worker -------------- */

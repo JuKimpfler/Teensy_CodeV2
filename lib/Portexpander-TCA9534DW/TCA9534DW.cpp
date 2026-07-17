@@ -67,7 +67,10 @@ uint8_t TCA9534DW::read()
     _i2c->requestFrom(_address, (uint8_t)1);
 
     if (_i2c->available())
-        return _i2c->read();
+    {
+        _state = _i2c->read();
+        return _state;
+    }
 
     return -1; // Return -1 if no data is available
 }
@@ -78,9 +81,9 @@ uint8_t TCA9534DW::read()
  */
 uint8_t TCA9534DW::readPin(uint8_t pin)
 {
-    uint8_t inputState = read();
-    if (inputState != (uint8_t)-1)
-        return (inputState >> pin) & 0x01;
+    _state = read();
+    if (_state != (uint8_t)-1)
+        return (_state >> pin) & 0x01;
 
     return -1; // Return -1 if no data is available
 }
