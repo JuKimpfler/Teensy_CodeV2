@@ -43,4 +43,10 @@
 - 98 -> Line Winkel
 - 99 -> Line Depth
 
-- 100 -> IR
+- 100 -> Ball x
+- 101 -> Ball y
+- 102 -> Position x
+- 103 -> Position y
+
+- 120 -> Cycle_time_US
+- 

@@ -23,4 +23,8 @@ void loop()
     USBC_UART.println("BNO_OrbitDir = " + String(sys.giveOrbitDir()) + " °");
     USBC_UART.println("Ball_Angle= " + String(sys.giveBallAngle()) + " °");
     USBC_UART.println("Ball_Distance= " + String(sys.giveBallDistance()) + " cm (hoffentlich)");
+    USBC_UART.print("US_vo = " + String(sys.giveUS_vo()) + " cm , ");
+    USBC_UART.print("US_hi = " + String(sys.giveUS_hi()) + " cm , ");
+    USBC_UART.print("US_re = " + String(sys.giveUS_re()) + " cm , ");
+    USBC_UART.println("US_li = " + String(sys.giveUS_li()) + " cm");
 }
