@@ -52,4 +52,6 @@ enum PinOut
     LIGHT_BARRIER = 23,
 
     EMPTY_27 = 27,
+
+    ADC108S102_CS1 = 55
 };
