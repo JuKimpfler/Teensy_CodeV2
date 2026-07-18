@@ -168,6 +168,7 @@ float systemlib::giveMotorCurrent(void)
     for(int i = 0; i<6 ; i++){Summe+=INA_filter[i];}
     Summe = Summe/6;
     return Summe;
+}
 
 /* -------------- US -------------- */
 
