@@ -8,6 +8,7 @@
 #include <BNO055.h>
 #include <INA219.h>
 #include <SRF08.h>
+#include <ADC108S102.h>
 #include <TCA9534DW.h>
 
 #include <commlib.h>

@@ -20,6 +20,7 @@ SRF08Sensor SRF08_li(SRF08_ADDR(0xE8), SRF08_RANGE_2M, SRF08_GAIN_MID);
 
 TCA9534DW portExpander(&Wire1, 0x20);
 
+ADC108S102 ADC108S102_1(ADC108S102_CS1);
 /* -------------- System Worker -------------- */
 
 void systemlib::initialize()
