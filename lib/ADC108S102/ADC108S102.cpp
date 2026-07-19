@@ -2,6 +2,9 @@
 
 // vielleicht muss man die Return werte & 0x0FFF machen, da die oberen 4 bit nicht relevant sind. (12 bit ADC)????
 
+/**
+ * @brief Initializes the ADC108S102 by setting the chip select pin and starting SPI communication.
+ */
 void ADC108S102::init()
 {
     pinMode(csPin, OUTPUT);
