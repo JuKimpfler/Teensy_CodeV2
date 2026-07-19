@@ -36,7 +36,7 @@ private:
     float IR_Distance = 0.0f;
     float IR_rawAngle = 0.0f;
     float IR_rawDistance = 0.0f;
-    uint16_t IR_rawSensorData[16] = {0.0f};
+    uint16_t IR_rawSensorData[16] = {0};
     bool IR_TSSP[8] = {false};
     uint16_t IR_Gains[16] = {0};
     int16_t IR_Offsets[16] = {9999};
