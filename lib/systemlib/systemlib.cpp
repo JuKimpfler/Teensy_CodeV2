@@ -23,7 +23,7 @@ SRF08Sensor SRF08_li(SRF08_ADDR(0xE8), SRF08_RANGE_2M, SRF08_GAIN_MID);
 
 TCA9534DW portExpander(&Wire1, 0x20);
 
-ADC108S102 ADC108S102_1(ADC108S102_CS1);
+ADC108S102 ADC108S102_1(&SPI1,ADC108S102_CS1);
 /* -------------- System Worker -------------- */
 
 void systemlib::initialize()
@@ -65,7 +65,7 @@ void systemlib::initialize()
     SRF08_re.startRanging();
     SRF08_li.startRanging();
 
-    portExpander.setup();
+    portExpander.setup(true);
     ir_ring.read_gains(IR_Gains);
     ir_ring.read_offsets(IR_Offsets);
 

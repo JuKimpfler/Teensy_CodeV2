@@ -11,6 +11,7 @@
 #include <ADC108S102.h>
 #include <TCA9534DW.h>
 #include <ir_ring.h>
+#include "SPI.h"
 
 #include <commlib.h>
 #include <PDS.h>

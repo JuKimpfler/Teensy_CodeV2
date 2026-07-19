@@ -10,7 +10,7 @@ class TCA9534DW
 public:
     TCA9534DW(TwoWire *i2c, uint8_t address) : _i2c(i2c), _address(address) {};
 
-    void setup();
+    void setup(bool Input);
 
     void setup(bool pin0, bool pin1, bool pin2, bool pin3, bool pin4, bool pin5, bool pin6, bool pin7);
 

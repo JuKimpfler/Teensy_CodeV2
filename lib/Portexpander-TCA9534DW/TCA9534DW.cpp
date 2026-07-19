@@ -4,12 +4,20 @@
  * @brief Initializes the TCA9534DW port expander by setting all pins as inputs.
  * @note This function needs the Wire to be already set up and initialized.
  */
-void TCA9534DW::setup()
+void TCA9534DW::setup(bool Input)
 {
-    _i2c->beginTransmission(_address);
-    _i2c->write(0x03); // Configuration register
-    _i2c->write(0xFF); // Set all pins as inputs
-    _i2c->endTransmission();
+    if(Input){
+        _i2c->beginTransmission(_address);
+        _i2c->write(0x03); // Configuration register
+        _i2c->write(0xFF); // Set all pins as inputs
+        _i2c->endTransmission();
+    }
+    else{
+        _i2c->beginTransmission(_address);
+        _i2c->write(0x03); // Configuration register
+        _i2c->write(0x00); // Set all pins as outputs
+        _i2c->endTransmission();
+    }
 }
 
 /**
