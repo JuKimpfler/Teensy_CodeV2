@@ -86,9 +86,9 @@ inline void BNO055::getWords(uint8_t start_address, int16_t* data, uint8_t numWo
 
 // Word auslesen
 inline int16_t BNO055::getWord(uint8_t address) {
-  Wire1.beginTransmission(0x28);
-  Wire1.write(address);
-  Wire1.endTransmission();
+  cls->beginTransmission(this->addr);
+  cls->write(address);
+  cls->endTransmission();
   cls->requestFrom((int) this->addr, 2);
   uint8_t ret[2];
   cls->readBytes(ret, 2);

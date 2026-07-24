@@ -9,6 +9,9 @@ elapsedMicros cycleTimer_us;
 
 commlib communication;
 
+I2C_bus i2c1(Wire1);
+Device_handle ir_ring_handle = {i2c1, I2C_target{0x0A}};
+IR_ring ir_ring(ir_ring_handle);
 
 INA219 INA219_Main(0x40);
 INA219 INA219_Motor(0x41);
@@ -18,7 +21,9 @@ SRF08Sensor SRF08_re(SRF08_ADDR(0xE4), SRF08_RANGE_2M, SRF08_GAIN_MID);
 SRF08Sensor SRF08_hi(SRF08_ADDR(0xE6), SRF08_RANGE_2M, SRF08_GAIN_MID);
 SRF08Sensor SRF08_li(SRF08_ADDR(0xE8), SRF08_RANGE_2M, SRF08_GAIN_MID);
 
-ADC108S102 ADC108S102_1(ADC108S102_CS1);
+TCA9534DW portExpander(&Wire1, 0x20);
+
+ADC108S102 ADC108S102_1(&SPI1,ADC108S102_CS1);
 /* -------------- System Worker -------------- */
 
 void systemlib::initialize()
@@ -60,14 +65,16 @@ void systemlib::initialize()
     SRF08_re.startRanging();
     SRF08_li.startRanging();
 
-    pinMode(START_SWITCH,INPUT);
+    portExpander.setup(true);
+    ir_ring.read_gains(IR_Gains);
+    ir_ring.read_offsets(IR_Offsets);
 
     setDebugTimeout(5);
 }
 
 void systemlib::readSensors(void)
 {
-    // Zyklische Messung der Laufzeit in ms
+    // Zyklische Messung der Laufzeit in ms (read -> read)
     cycleTime = cycleTimer;
     cycleTime_us = cycleTimer_us;
     delay(debugTimeout);
@@ -75,6 +82,8 @@ void systemlib::readSensors(void)
     cycleTimer_us = 0;
 
     readBNO();
+    readIR();
+
     readUS();
     PDS.update();
 
@@ -126,16 +135,61 @@ void systemlib::readBNO(void)
     BNO_OrbitDir = Util.AMap(BNO_eulerZ - BNO_calibration);
 }
 
+/* -------------- IR -------------- */
+void systemlib::readIR(void)
+{
+    IR_rawAngle = ir_ring.read_ball_angle();
+    IR_rawDistance = ir_ring.read_ball_distance();
+
+#if false
+    ir_ring.read_raw_values(IR_rawSensorData);
+    ir_ring.read_tssp(IR_TSSP);
+#endif
+
+    IR_Angle = Util.AMap(IR_rawAngle - BNO_OrbitDir);
+    IR_Distance = IR_rawDistance; // Hier muss noch Mathe hin
+}
+
+void systemlib::writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain)
+{
+    ir_ring.write_offset(sensorNumber, offset);
+    ir_ring.write_gain(sensorNumber, gain);
+}
+
+void systemlib::writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16])
+{
+    ir_ring.write_offsets(offsets);
+    ir_ring.write_gains(gains);
+}
+
+void systemlib::calibIR(void)
+{
+    ir_ring.read_raw_values(IR_rawSensorData); // only needed if disabled in readIR()
+
+    for (int i = 0; i < 16; i++)
+    {
+        if (IR_rawSensorData[i] > IR_Gains[i])
+            IR_Gains[i] = IR_rawSensorData[i];
+
+        if (IR_rawSensorData[i] < IR_Offsets[i])
+            IR_Offsets[i] = IR_rawSensorData[i];
+    }
+
+    ir_ring.write_offsets(IR_Offsets);
+    ir_ring.write_gains(IR_Gains);
+}
+
 /* ---------- Communication -----------*/
 
 // send
 
-void systemlib::communicationSend( void )
+void systemlib::communicationSend(void)
 {
     communication.sendOwnFlush();
 }
 
-void systemlib::communicationSend( float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance ){
+void systemlib::communicationSend(float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance)
+{
     communication.setOwnFlush(positionX, positionY, ballAngle, ballDistance, goalAngle, goalDistance);
     communication.sendOwnFlush();
 }
@@ -185,5 +239,13 @@ void systemlib::readUS(void)
 
     if (SRF08_li.update())
         US_li = SRF08_li.getDistance(), SRF08_li.startRanging();
+}
 
+/* -------------- Expanders -------------- */
+void systemlib::readExpanders(void)
+{
+    portExpander.read(); // Update the internal state of the port expander
+
+    // Read the state of each pin from the port expander
+    // Example: bool pin0State = portExpander.getPinState(0);
 }

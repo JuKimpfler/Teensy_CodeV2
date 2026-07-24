@@ -53,5 +53,5 @@ enum PinOut
 
     EMPTY_27 = 27,
 
-    ADC108S102_CS1 = 55
+    ADC108S102_CS1 = 32
 };

@@ -9,7 +9,6 @@ void ADC108S102::init()
 {
     pinMode(csPin, OUTPUT);
     digitalWrite(csPin, HIGH);
-    SPI.begin();
 }
 
 /**
@@ -22,14 +21,14 @@ uint16_t ADC108S102::read(uint8_t channel)
     if (channel > 7)
         return 0; // Invalid channel
 
-    SPI.beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
+    _spi->beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
 
     uint16_t command = (channel + 1) << 11; // Command format for ADC108S102
-    digitalWriteFast(csPin, LOW);
-    uint16_t result = SPI.transfer16(command);
-    digitalWriteFast(csPin, HIGH);
+    digitalWrite(csPin, LOW);
+    uint16_t result = _spi->transfer16(comandlist[channel]);
+    digitalWrite(csPin, HIGH);
 
-    SPI.endTransaction();
+    _spi->endTransaction();
     lastValue[channel] = result;
     return result;
 }
@@ -39,16 +38,16 @@ uint16_t ADC108S102::read(uint8_t channel)
  */
 void ADC108S102::read(uint16_t (&values)[8])
 {
-    SPI.beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
+    _spi->beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
     digitalWriteFast(csPin, LOW);
     for (int i = 0; i < 8; i++)
     {
         uint16_t command = (i + 1) << 11; // Command format for ADC108S102
-        values[i] = SPI.transfer16(command);
+        values[i] = _spi->transfer16(comandlist[i]);
     }
     digitalWriteFast(csPin, HIGH);
     for (int i = 0; i < 8; i++)
         lastValue[i] = values[i];
 
-    SPI.endTransaction();
+    _spi->endTransaction();
 }
