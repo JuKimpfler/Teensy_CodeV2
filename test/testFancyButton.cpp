@@ -5,7 +5,7 @@
 
 TCA9534DW expander(&Wire1, 0x20);
 
-fancyBTN button(250, 3, true); // Sensitivity: 250 (500ms), Long press time: 3 (1.5 seconds)
+fancyBTN button(250, 3, 0, 5, true); // Sensitivity: 250 (500ms), Long press time: 3 (1.5 seconds), Status code lifetime: 100ms, Debounce time: 5ms
 
 void setup() {
   Serial.begin(115200);
@@ -35,13 +35,11 @@ void loop() {
 
   // Check the status code and print it
   uint8_t status = button.getStatusCode();
-  if (status == 1) {
-    Serial.println("Button pressed");
-  } else if (status == 3) {
-    Serial.println("Button released");
-  } else if (status == 4) {
-    Serial.println("Button double clicked");
+  if (status == 4) {
+    Serial.println("Button clicked");
   } else if (status == 5) {
+    Serial.println("Button double clicked");
+  } else if (status == 6) {
     Serial.println("Button long pressed");
   }
 

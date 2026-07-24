@@ -1,10 +1,12 @@
 #include <Arduino.h>
 #include "fancyBTN.h"
 
-fancyBTN::fancyBTN(uint8_t sensitivity, uint8_t longPressTime, bool InputWhenOnBTNdown)
+fancyBTN::fancyBTN(uint8_t sensitivity, uint8_t longPressTime, uint8_t statusCodeLifetime = 100, uint8_t debounceTime = 5, bool InputWhenOnBTNdown = true)
 {
     _sensitivity = sensitivity;
     _longPressTime = longPressTime;
+    _statusCodeExpirationTime = statusCodeLifetime;
+    _debounceTime = debounceTime;
     _InputWhenOnBTNdown = InputWhenOnBTNdown;
 }
 
@@ -12,16 +14,6 @@ void fancyBTN::update(bool buttonState)
 {
     unsigned long currentTime = millis();
     buttonState = _InputWhenOnBTNdown ? buttonState : !buttonState;
-
-    if (buttonState)
-    {
-        if(!_lastButtonState) // Button was just pressed
-            _scndlastTimePressed = _lastTimePressed; // Update second last time pressed
-        _lastTimePressed = currentTime;
-    }
-
-    else
-        _lastTimeNotPressed = currentTime;
 
     if (buttonState == _lastButtonState)
     {
@@ -36,23 +28,38 @@ void fancyBTN::update(bool buttonState)
             _buttonPressed = true;
             _buttonReleased = false;
             _statusCode = 1; // new_pressed
+            _lastTimePressed = currentTime;
+            _statusClickedSet = false;
+            _disableLongPress = false;
         }
         else
         {
             _buttonPressed = false;
             _buttonReleased = true;
             _statusCode = 3; // new_released
+            _lastTimeReleased = currentTime;
+            _disableDoubleClick = false;
         }
     }
 
-    if (_statusCode == 1 && _sensitivity > 0 && (currentTime - _scndlastTimePressed <= _sensitivity * 2) && (currentTime - _scndlastTimePressed > 4))
+    if (_statusCode == 0 && (currentTime - _lastTimeReleased > _sensitivity * 2) && !_statusClickedSet && (_lastTimeReleased - _lastTimePressed < _longPressTime * 500))
     {
-        _statusCode = 4; // double click
+        _statusCode = 4; // clicked
+        _statusClickedSet = true;
     }
 
-    if (_buttonPressed && (currentTime - _lastTimeNotPressed >= _longPressTime * 500))
+    if (_statusCode == 1 && (currentTime - _lastTimeReleased < _sensitivity * 2) && (currentTime - _lastTimeReleased > _debounceTime) && !_disableDoubleClick)
     {
-        _statusCode = 5; // long press
+        _statusCode = 5; // double click
+        _statusClickedSet = true;
+        _disableLongPress = true;
+    }
+
+    if (_statusCode == 3 && (currentTime - _lastTimePressed > _longPressTime * 500) && !_disableLongPress)
+    {
+        _statusCode = 6; // long press
+        _statusClickedSet = true;
+        _disableDoubleClick = true;
     }
 
     _lastButtonState = buttonState;
