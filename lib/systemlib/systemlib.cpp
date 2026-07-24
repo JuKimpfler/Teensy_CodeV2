@@ -255,7 +255,7 @@ void systemlib::setAllMotors(int Motor1, int Motor2, int Motor3, int Motor4){
     motor.setMotor(4, Motor4);
 }
 
-void systemlib::move(float direction, int speed){
+void systemlib::move(float direction, int speed, float turn){
     //TODO
     int Motor1 = 1;
     int Motor2 = 1;
@@ -273,8 +273,8 @@ void systemlib::move(float direction, int speed){
     setAllMotors(Motor1, Motor2, Motor3, Motor4);
 }
 
-void systemlib::move(float direction, int speed, float turn){
-    //TODO
+void systemlib::move(float direction, int speed){
+    move(direction, speed, 0);
 }
 
 /* -------------- Expanders -------------- */

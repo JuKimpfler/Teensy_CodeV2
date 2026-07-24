@@ -74,8 +74,8 @@ public:
     /* -------------- Aktors -------------- */
     void setMotor(u_int8_t MotorID, int speed);
     void setAllMotors(int Motor1, int Motor2, int Motor3, int Motor4);
-    void move(float direction, int speed);
     void move(float direction, int speed, float turn);
+    void move(float direction, int speed);
 
     /* -------------- give -------------- */
     float giveOrbitDir(void) const { return BNO_OrbitDir; };            // Orbital Ausrichtung
