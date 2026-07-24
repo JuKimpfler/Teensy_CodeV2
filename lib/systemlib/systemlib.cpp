@@ -9,6 +9,8 @@ elapsedMicros cycleTimer_us;
 
 commlib communication;
 
+Motor motor;
+
 I2C_bus i2c1(Wire1);
 Device_handle ir_ring_handle = {i2c1, I2C_target{0x0A}};
 IR_ring ir_ring(ir_ring_handle);
@@ -239,6 +241,40 @@ void systemlib::readUS(void)
 
     if (SRF08_li.update())
         US_li = SRF08_li.getDistance(), SRF08_li.startRanging();
+}
+
+/* --------------  Motors   --------------*/
+void systemlib::setMotor(u_int8_t MotorID, int speed){
+    motor.setMotor(MotorID, speed);
+}
+
+void systemlib::setAllMotors(int Motor1, int Motor2, int Motor3, int Motor4){
+    motor.setMotor(1, Motor1);
+    motor.setMotor(2, Motor2);
+    motor.setMotor(3, Motor3);
+    motor.setMotor(4, Motor4);
+}
+
+void systemlib::move(float direction, int speed){
+    //TODO
+    int Motor1 = 1;
+    int Motor2 = 1;
+    int Motor3 = 1;
+    int Motor4 = 1;
+
+    int max = fmax(fmax(fmax(Motor1, Motor2), Motor3), Motor4);
+    float mapping = speed/max;
+
+    Motor1 *= mapping;
+    Motor2 *= mapping;
+    Motor3 *= mapping;
+    Motor4 *= mapping;
+
+    setAllMotors(Motor1, Motor2, Motor3, Motor4);
+}
+
+void systemlib::move(float direction, int speed, float turn){
+    //TODO
 }
 
 /* -------------- Expanders -------------- */

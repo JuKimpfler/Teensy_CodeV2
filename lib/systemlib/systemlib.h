@@ -11,10 +11,13 @@
 #include <ADC108S102.h>
 #include <TCA9534DW.h>
 #include <ir_ring.h>
+#include <Motor.h>
 #include "SPI.h"
 
 #include <commlib.h>
 #include <PDS.h>
+
+#include <math.h>
 
 extern BNO055 BNO;
 
@@ -69,6 +72,10 @@ public:
     void calibIR(void);
 
     /* -------------- Aktors -------------- */
+    void setMotor(u_int8_t MotorID, int speed);
+    void setAllMotors(int Motor1, int Motor2, int Motor3, int Motor4);
+    void move(float direction, int speed);
+    void move(float direction, int speed, float turn);
 
     /* -------------- give -------------- */
     float giveOrbitDir(void) const { return BNO_OrbitDir; };            // Orbital Ausrichtung
