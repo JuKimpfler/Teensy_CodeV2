@@ -1,11 +1,10 @@
 #include <Arduino.h>
 #include "fancyBTN.h"
 
-fancyBTN::fancyBTN(uint8_t sensitivity, uint8_t longPressTime, uint8_t statusCodeLifetime = 100, uint8_t debounceTime = 5, bool InputWhenOnBTNdown = true)
+fancyBTN::fancyBTN(uint8_t sensitivity, uint8_t longPressTime, uint8_t debounceTime = 5, bool InputWhenOnBTNdown = true)
 {
     _sensitivity = sensitivity;
     _longPressTime = longPressTime;
-    _statusCodeExpirationTime = statusCodeLifetime;
     _debounceTime = debounceTime;
     _InputWhenOnBTNdown = InputWhenOnBTNdown;
 }
