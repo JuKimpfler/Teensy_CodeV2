@@ -10,32 +10,10 @@
 
 static constexpr uint32_t UART_DBG_BAUD        = 1'000'000UL; // 1 Mbps
 
-// ============================================================
-//  UART-Instanz für den Power-Debug-Kanal
-// ============================================================
-//  main.cpp verwendet bisher direkt Serial3 fuer TX (Telemetrie).
-//  Damit PDS.cpp dieselbe physische Schnittstelle fuer den neuen
-//  Param-Downlink (RX) mitbenutzen kann, wird hier EIN Name fuer
-//  beide Richtungen festgelegt. Falls eure Verkabelung/Pinbelegung
-//  eine andere UART-Instanz vorsieht, hier anpassen -- der Rest des
-//  Codes (PDS.cpp) verwendet ausschliesslich das Makro UART_DBG und
-//  muss dafuer nicht veraendert werden.
-// ============================================================
+
 #ifndef UART_DBG
 #define UART_DBG Serial3
 #endif
-
-// ============================================================
-//  Param-Downlink (RPi 5 -> RPi Zero -> Teensy, ueber UART_DBG RX)
-// ============================================================
-//  Zwei Pakettypen, unterschieden per Magic-Header:
-//
-//   Slow-Kanal  (0xCAFEFEED): 50 Floats + 50 Bools, 2 Hz
-//                normale Tuning-Parameter (Konfig aus GUI-Widgets)
-//
-//   Fast-Kanal  (0xFA57DA7A): 5 Floats, 100 Hz
-//                Echtzeit-Steuerung (z. B. Joystick), niedrige Latenz
-// ============================================================
 
 // ── Slow-Kanal ───────────────────────────────────────────────
 static constexpr uint32_t PARAM_SLOW_MAGIC        = 0xCAFEFEEDUL;

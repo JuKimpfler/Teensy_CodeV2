@@ -18,11 +18,32 @@
 
 extern BNO055 BNO;
 
+struct MotorData
+{
+    uint8_t ID;
+
+    // Param 
+    float Speed;
+    bool Dir;
+    bool Enable;
+    bool Break;
+
+    // Meassurements
+    uint16_t Current;
+    float Speed_real;
+    bool Dir_real;
+
+    float Speed_diff;
+    bool is_running;
+};
+
 class systemlib
 {
 private:
     RobotDataCom ownRobot;
     RobotDataCom otherRobot;
+
+    MotorData MotorData_list[5];
 
     /* -------------- Sensor Var -------------- */
     float BNO_calibration = 0.0f;
@@ -54,6 +75,13 @@ private:
     void readExpanders(void);
 
 public:
+
+    MotorData MotorVL;
+    MotorData MotorVR;
+    MotorData MotorHL;
+    MotorData MotorHR;
+    MotorData MotorDR;
+
     /* -------------- Ssytem Worker -------------- */
     void initialize();
     void readSensors(void);
@@ -62,13 +90,17 @@ public:
     void communicationSend(void);                                                                                                       // setzt die Daten Automatisch und sendet sie
     void communicationSend(float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance); // sendet Benutzerdefinierte Daten
 
-    /* -------------- Sensors -------------- */
+    /* -------------- Calibrate -------------- */
     void calibBNO(void);
     void writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain);
     void writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16]);
     void calibIR(void);
 
     /* -------------- Aktors -------------- */
+    void setMotorData(MotorData Data);
+    MotorData giveMotorData(uint8_t ID);
+
+    /* -------------- Calculate -------------- */
 
     /* -------------- give -------------- */
     float giveOrbitDir(void) const { return BNO_OrbitDir; };            // Orbital Ausrichtung
@@ -88,16 +120,8 @@ public:
     float giveRawBallAngle(void) const { return IR_rawAngle; };                                        // TODO: Implementieren
     float giveRawBallDistance(void) const { return IR_rawDistance; };                                  // TODO: Implementieren
     uint16_t giveRawSensorData(uint8_t sensorNumber) const { return IR_rawSensorData[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
-    void giveRawSensorData(uint16_t (&rawSensorData)[16]) const
-    {
-        for (uint8_t i = 0; i < 16; i++)
-            rawSensorData[i] = IR_rawSensorData[i];
-    }; // currently disabled -> change in readIR() to enable it
-    void giveTSSPData(bool (&TSSPData)[8]) const
-    {
-        for (uint8_t i = 0; i < 8; i++)
-            TSSPData[i] = IR_TSSP[i];
-    };                                                                               // currently disabled -> change in readIR() to enable it
+    void giveRawSensorData(uint16_t (&rawSensorData)[16]) const {for (uint8_t i = 0; i < 16; i++){rawSensorData[i] = IR_rawSensorData[i];}}; // currently disabled -> change in readIR() to enable it
+    void giveTSSPData(bool (&TSSPData)[8]) const {for (uint8_t i = 0; i < 8; i++){TSSPData[i] = IR_TSSP[i];}};                                                                               // currently disabled -> change in readIR() to enable it
     bool giveTSSPData(uint8_t sensorNumber) const { return IR_TSSP[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
 
     /* -------------- set -------------- */

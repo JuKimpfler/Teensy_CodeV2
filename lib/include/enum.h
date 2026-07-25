@@ -6,6 +6,12 @@
 
 #define LED_LENGTH 19
 
+#define MotorVL_ID 0
+#define MotorVR_ID 1
+#define MotorHL_ID 2
+#define MotorHR_ID 3
+#define MotorDR_ID 4
+
 enum PinOut
 {
     MOT1_IN1 = 0,

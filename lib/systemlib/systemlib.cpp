@@ -41,6 +41,11 @@ void systemlib::initialize()
     BNO.init();
     PDS.init();
 
+    MotorVL.ID = MotorVL_ID;
+    MotorVR.ID = MotorVR_ID;
+    MotorHL.ID = MotorHL_ID;
+    MotorHR.ID = MotorHR_ID;
+    MotorDR.ID = MotorDR_ID;
 
     pinMode(START_SWITCH, INPUT);
 
