@@ -1,5 +1,5 @@
-#include "Arduino.h"
-#include "Wire.h"
+#include <Arduino.h>
+#include <Wire.h>
 
 
 void scanI2C(long frequency){
