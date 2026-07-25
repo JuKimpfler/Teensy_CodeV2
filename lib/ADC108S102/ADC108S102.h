@@ -11,6 +11,6 @@ class ADC108S102 {
         ADC108S102(SPIClass *spi_port, uint8_t chipSelectPin) : _spi(spi_port), csPin(chipSelectPin) {}
         void init();
         void read(uint16_t (&values)[8]);
-        uint16_t read(uint8_t channel);
+        uint16_t read(uint8_t channel,bool MOT_ADC = false,bool ADC_Mode = false); // Mot_ADC -> Enable if Motor ADC is used / ADC_Mode -> I = false - RPM = true
         uint16_t getLastValue(uint8_t channel) const { return lastValue[channel]; }
 };
