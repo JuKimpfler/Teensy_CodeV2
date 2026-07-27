@@ -16,6 +16,8 @@ IR_ring ir_ring(ir_ring_handle);
 INA219 INA219_Main(0x40);
 INA219 INA219_Motor(0x41);
 
+PMW3389 pmw = PMW3389(&SPI, 25); // SPI CS vom Moussensor kommt auf LDR Port
+
 SRF08Sensor SRF08_vo(SRF08_ADDR(0xE2), SRF08_RANGE_2M, SRF08_GAIN_MID);
 SRF08Sensor SRF08_re(SRF08_ADDR(0xE4), SRF08_RANGE_2M, SRF08_GAIN_MID);
 SRF08Sensor SRF08_hi(SRF08_ADDR(0xE6), SRF08_RANGE_2M, SRF08_GAIN_MID);
@@ -23,13 +25,14 @@ SRF08Sensor SRF08_li(SRF08_ADDR(0xE8), SRF08_RANGE_2M, SRF08_GAIN_MID);
 
 TCA9534DW portExpander(&Wire1, 0x20);
 
-ADC108S102 ADC108S102_1(&SPI1,ADC108S102_CS1);
+//ADC108S102 ADC108S102_1(&SPI1,ADC108S102_CS1);
 /* -------------- System Worker -------------- */
 
 void systemlib::initialize()
 {
     Wire1.begin();
     Wire1.setClock(1000000);
+    //SPI.begin();
     USBC_UART.begin(115200);
 
     INA219_Main.begin();
@@ -41,6 +44,9 @@ void systemlib::initialize()
     BNO.init();
     PDS.init();
 
+    delay(1000);
+    pmw.begin();
+    delay(1000);
 
     pinMode(START_SWITCH, INPUT);
 
@@ -87,7 +93,12 @@ void systemlib::readSensors(void)
     readUS();
     PDS.update();
 
-    Serial.println("Fresh = " + String(PDS.fastParamsAreFresh()) + " , Param1 = " + String(PDS.getFastParam(0)));
+    //Serial.println("Fresh = " + String(PDS.fastParamsAreFresh()) + " , Param1 = " + String(PDS.getFastParam(0)));
+}
+
+PMW3389_DATA systemlib::giveMouseData(){
+    PMW3389_DATA mouseData = pmw.readBurst();
+    return mouseData;
 }
 
 /* -------------- Debugger -------------- */
