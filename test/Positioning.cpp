@@ -14,13 +14,13 @@ BNO055 bno = BNO055(0x28, &Wire1);
 PowerDebugger PDS;
 
 // PDS-Kanäle für die Positionsschätzung
-static constexpr uint8_t DBG_CH_POS_GRID_X   = 102;
-static constexpr uint8_t DBG_CH_POS_GRID_Y   = 103;
-static constexpr uint8_t DBG_CH_POS_CONF     = 104;
-static constexpr uint8_t DBG_CH_POS_US_VALID = 105;
-static constexpr uint8_t DBG_CH_POS_CAM_VALID = 106;
-static constexpr uint8_t DBG_CH_POS_X_CM      = 107;
-static constexpr uint8_t DBG_CH_POS_Y_CM      = 108;
+static constexpr uint8_t DBG_CH_POS_GRID_X   = 103;
+static constexpr uint8_t DBG_CH_POS_GRID_Y   = 104;
+static constexpr uint8_t DBG_CH_POS_CONF     = 106;
+static constexpr uint8_t DBG_CH_POS_US_VALID = 107;
+static constexpr uint8_t DBG_CH_POS_CAM_VALID = 108;
+static constexpr uint8_t DBG_CH_POS_X_CM      = 109;
+static constexpr uint8_t DBG_CH_POS_Y_CM      = 110;
 
 PMW3389 pmw = PMW3389(&SPI, 27); // SPI CS vom Moussensor kommt auf LDR Port
 
@@ -137,6 +137,17 @@ void loop()
   PDS.Channel(DBG_CH_POS_CAM_VALID, pose.camValid ? 1.0f : 0.0f);
   PDS.Channel(DBG_CH_POS_X_CM, pose.x_cm);
   PDS.Channel(DBG_CH_POS_Y_CM, pose.y_cm);
+  PDS.Channel(105,bno.eulHeading());
+
+  PDS.Channel(95, SRF08_vo.getDistance());
+  PDS.Channel(96, SRF08_hi.getDistance());
+  PDS.Channel(97, SRF08_li.getDistance());
+  PDS.Channel(98, SRF08_re.getDistance());
+
+  PDS.Channel(90, mouse.onSurface);
+  PDS.Channel(91, mouse.dx);
+  PDS.Channel(92, mouse.dy);
+
 
   PDS.update();
 }
