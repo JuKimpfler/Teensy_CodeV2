@@ -21,7 +21,7 @@ static constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 5;
 uint8_t consecutiveFailures = 0;
 
 bool setupSensor() {
-  if (!radar.begin(Wire1)) {
+  if (!radar.begin(Wire)) {
     Serial.println("FEHLER: Sensor nicht erreichbar!");
     return false;
   }
@@ -49,8 +49,8 @@ void setup() {
   Serial.begin(115200);
   while (!Serial && millis() < 3000) {}
 
-  Wire1.begin();
-  Wire1.setClock(400000);
+  Wire.begin();
+  Wire.setClock(100000); // niedriger Takt, mehr Toleranz fuer Clock-Stretching des XM125
 
   Serial.println("XM125 Presence Detector Test");
 

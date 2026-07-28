@@ -126,7 +126,20 @@ bool XM125Base::_readReg(uint16_t reg, uint32_t& value) {
 }
 
 bool XM125Base::_executeCommand(uint32_t cmd, uint32_t timeoutMs) {
-    if (!_writeReg(XM125_REG_COMMAND, cmd)) return false;
+    if (!_writeReg(XM125_REG_COMMAND, cmd)) {
+        // Der Schreibvorgang selbst kann als fehlgeschlagen gemeldet werden,
+        // obwohl das Kommando beim Sensor angekommen ist -- z.B. wenn die
+        // interne MCU des XM125 unmittelbar nach Erhalt des Kommandos den
+        // I²C-Takt streckt (Clock-Stretching), um mit der Verarbeitung zu
+        // beginnen, und der Host-Treiber das als Fehler/Timeout auf der
+        // aktuellen Transaktion interpretiert. Daher: sofort den Status
+        // gegenpruefen -- steht BUSY bereits, wurde das Kommando trotz des
+        // gemeldeten Schreibfehlers offensichtlich angenommen.
+        uint32_t probe = 0;
+        if (!_readReg(XM125_REG_DETECTOR_STATUS, probe) || !statusBusy(probe)) {
+            return false; // Wirklich nicht angekommen
+        }
+    }
     delay(2); // Zeit geben, bis die interne MCU BUSY setzt, bevor wir es abfragen
     uint32_t status = 0;
     if (!_waitNotBusy(timeoutMs, status)) return false;

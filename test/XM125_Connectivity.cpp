@@ -6,7 +6,7 @@
 //   pio test -e teensy40 -f XM125_Connectivity
 //
 // Verkabelung (Beispiel):
-//   XM125 SDA/SCL -> Teensy Wire1 (Pins 16/17)
+//   XM125 SDA/SCL -> Teensy Wire (Pins 18/19)
 //   XM125 WAKE_UP -> optional an einen GPIO (unten WAKE_PIN), sonst per Jumper auf 3.3V lassen
 //   XM125 MCU_INT -> optional an einen GPIO (unten INT_PIN), sonst -1 lassen
 //
@@ -33,7 +33,7 @@ bool tryConnect() {
   for (uint8_t attempt = 1; attempt <= CONNECT_ATTEMPTS; attempt++) {
     Serial.print("Verbindungsversuch "); Serial.print(attempt);
     Serial.print("/"); Serial.print(CONNECT_ATTEMPTS); Serial.print("... ");
-    if (radar.begin(Wire1)) {
+    if (radar.begin(Wire)) {
       Serial.println("OK");
       return true;
     }
@@ -47,14 +47,16 @@ void setup() {
   Serial.begin(115200);
   while (!Serial && millis() < 3000) {}
 
-  Wire1.begin();
-  Wire1.setClock(400000); // XM125 unterstützt I2C Fast Mode
+  Wire.begin();
+  Wire.setClock(100000); // niedriger Takt, mehr Toleranz fuer Clock-Stretching des XM125
 
   Serial.println("XM125 Connectivity Test");
   Serial.println("========================");
 
   if (!tryConnect()) {
-    Serial.println("FEHLER: Sensor nach mehreren Versuchen nicht erreichbar (I2C-Adresse 0x52).");
+    Serial.print("FEHLER: Sensor nach mehreren Versuchen nicht erreichbar (I2C-Adresse 0x");
+    Serial.print(radar.getAddress(), HEX);
+    Serial.println(").");
     Serial.println("Moegliche Ursachen:");
     Serial.println(" - SDA/SCL/GND/3V3 falsch verkabelt oder Pullups fehlen");
     Serial.println(" - Modul steckt in einem Sleep-Zustand (z.B. nach externem WAKE_UP=Low)");

@@ -54,7 +54,16 @@ bool XM125Distance::recalibrate(uint32_t timeoutMs) {
 }
 
 bool XM125Distance::measure(uint32_t timeoutMs) {
-    if (!_writeReg(XM125_REG_COMMAND, XM125D_CMD_MEASURE_DISTANCE)) return false;
+    if (!_writeReg(XM125_REG_COMMAND, XM125D_CMD_MEASURE_DISTANCE)) {
+        // Siehe Kommentar in XM125Base::_executeCommand: ein gemeldeter
+        // Schreibfehler kann durch Clock-Stretching der internen MCU direkt
+        // nach Kommando-Empfang entstehen, obwohl das Kommando ankam. Sofort
+        // gegenpruefen, ob der Sensor bereits BUSY ist.
+        uint32_t probe = 0;
+        if (!_readReg(XM125_REG_DETECTOR_STATUS, probe) || !statusBusy(probe)) {
+            return false;
+        }
+    }
 
     uint32_t status = 0;
     if (!_waitNotBusy(timeoutMs, status)) return false;
@@ -71,20 +80,42 @@ bool XM125Distance::measure(uint32_t timeoutMs) {
 
     if (_numDistances > XM125D_MAX_PEAKS) _numDistances = XM125D_MAX_PEAKS;
 
+    // Kurze Pause: die Firmware braucht offenbar noch etwas Zeit, um die
+    // Peak-Detailregister zu schreiben, nachdem das Result-Register (mit
+    // NUM_DISTANCES/Temperatur/Flags) bereits gueltig ist -- ohne diese
+    // Pause wurden hier zuvor unplausible Werte beobachtet.
+    delay(5);
+
     for (uint8_t i = 0; i < _numDistances; i++) {
         uint32_t dist = 0, strength = 0;
         _readReg(XM125D_REG_PEAK0_DISTANCE + i, dist);
+        delay(1);
         _readReg(XM125D_REG_PEAK0_STRENGTH + i, strength);
-        _peakDistanceMm[i] = dist;
-        _peakStrength[i]   = static_cast<int32_t>(strength);
+        delay(1);
+        // Diese (nicht-offizielle/angepasste) Firmware kodiert die Peak-Distanz
+        // abweichend vom Acconeer-Standard-Registerprotokoll: nur das oberste
+        // Byte traegt den Wert. Der genaue Skalierungsfaktor (mm pro Count,
+        // ggf. mit Offset oder relativ zu config.startMm/endMm) ist NICHT
+        // zuverlaessig bekannt -- zwei bisherige Annahmen dazu waren falsch.
+        // Bis zur Kalibrierung mit bekannten Distanzen wird hier der rohe
+        // Byte-Wert unveraendert als "Counts" gespeichert, siehe
+        // getPeakDistanceRaw() / getPeakDistanceMm() in XM125Distance.h.
+        _peakDistanceRaw[i] = static_cast<uint8_t>(dist >> 24);
+        _peakStrength[i]    = static_cast<int32_t>(strength);
     }
 
     return !_measureError;
 }
 
-uint32_t XM125Distance::getPeakDistanceMm(uint8_t idx) const {
+uint8_t XM125Distance::getPeakDistanceRaw(uint8_t idx) const {
     if (idx >= _numDistances) return 0;
-    return _peakDistanceMm[idx];
+    return _peakDistanceRaw[idx];
+}
+
+uint32_t XM125Distance::getPeakDistanceMm(uint8_t idx) const {
+    // Unkalibriert (siehe Warnung im Header): Platzhalter 1:1, bis der
+    // echte Skalierungsfaktor per Kalibriermessung bestimmt ist.
+    return getPeakDistanceRaw(idx);
 }
 
 int32_t XM125Distance::getPeakStrength(uint8_t idx) const {

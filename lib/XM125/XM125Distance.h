@@ -26,7 +26,7 @@
 
 // ── Applikationsspezifische Register ──────────────────────────────────────────
 static constexpr uint16_t XM125D_REG_DISTANCE_RESULT   = 0x0010; ///< R: Ergebnis-Flags + Peak-Anzahl
-static constexpr uint16_t XM125D_REG_PEAK0_DISTANCE     = 0x0011; ///< R: Peak0..9 Distanz [mm], je +1
+static constexpr uint16_t XM125D_REG_PEAK0_DISTANCE     = 0x0011; ///< R: Peak0..9 Distanz, je +1 (siehe Hinweis unten)
 static constexpr uint16_t XM125D_REG_PEAK0_STRENGTH     = 0x001B; ///< R: Peak0..9 Stärke,   je +1
 static constexpr uint8_t  XM125D_MAX_PEAKS              = 10;
 
@@ -154,7 +154,18 @@ public:
     bool     getMeasureError()      const { return _measureError; }
     int16_t  getTemperature()       const { return _temperature; } ///< °C, geringe Absolutgenauigkeit lt. Datenblatt
 
-    /** Distanz des Peaks idx in mm (idx < getNumDistances()). */
+    /**
+     * ACHTUNG - UNKALIBRIERT: Diese (nicht-offizielle/angepasste) Firmware
+     * kodiert die Peak-Distanz abweichend vom Acconeer-Standardprotokoll:
+     * nur 1 Byte traegt den Wert (0-255 "Counts"). Der genaue Umrechnungs-
+     * faktor in eine echte Distanz (mm pro Count, mit/ohne Offset, evtl.
+     * relativ zu config.startMm/endMm) ist NICHT zuverlaessig bekannt und
+     * muss per Kalibriermessung (Objekt auf exakt bekannter Distanz)
+     * bestimmt werden, bevor getPeakDistanceMm() sinnvolle Werte liefert.
+     * Bis dahin: nutze getPeakDistanceRaw() fuer die Kalibrierung.
+     */
+    uint8_t  getPeakDistanceRaw(uint8_t idx) const;
+    /** Siehe Warnung bei getPeakDistanceRaw() -- aktuell 1:1 unkalibrierter Rohwert, NICHT echte mm! */
     uint32_t getPeakDistanceMm(uint8_t idx) const;
     /** Rohe Signalstärke des Peaks idx (1000x-Einheit lt. Datenblatt, RSS-intern). */
     int32_t  getPeakStrength(uint8_t idx) const;
@@ -167,6 +178,6 @@ private:
     bool     _calibrationNeeded = false;
     bool     _measureError      = false;
     int16_t  _temperature       = 0;
-    uint32_t _peakDistanceMm[XM125D_MAX_PEAKS] = {};
-    int32_t  _peakStrength[XM125D_MAX_PEAKS]   = {};
+    uint8_t  _peakDistanceRaw[XM125D_MAX_PEAKS] = {};
+    int32_t  _peakStrength[XM125D_MAX_PEAKS]    = {};
 };
