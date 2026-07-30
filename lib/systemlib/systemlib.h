@@ -43,7 +43,11 @@ private:
     RobotDataCom ownRobot;
     RobotDataCom otherRobot;
 
-    MotorData MotorData_list[5];
+    MotorData MotorVL_D;
+    MotorData MotorVR_D;
+    MotorData MotorHL_D;
+    MotorData MotorHR_D;
+    MotorData MotorDR_D;
 
     /* -------------- Sensor Var -------------- */
     float BNO_calibration = 0.0f;
@@ -74,14 +78,10 @@ private:
     void readUS(void);
     void readExpanders(void);
 
+    /* -------------- Motor ----------------- */
+    void updateMotors(void);
+
 public:
-
-    MotorData MotorVL;
-    MotorData MotorVR;
-    MotorData MotorHL;
-    MotorData MotorHR;
-    MotorData MotorDR;
-
     /* -------------- Ssytem Worker -------------- */
     void initialize();
     void readSensors(void);
