@@ -46,8 +46,9 @@ INA219::INA219(const uint8_t address)
 }
 
 
-bool INA219::begin()
+bool INA219::begin(TwoWire& wire)
 {
+  _wire = &wire;
   if (! isConnected()) return false;
   return true;
 }
@@ -56,8 +57,8 @@ bool INA219::begin()
 bool INA219::isConnected()
 {
   if ((_address < 0x40) || (_address > 0x4F)) return false;
-  Wire1.beginTransmission(_address);
-  return ( Wire1.endTransmission() == 0);
+  _wire->beginTransmission(_address);
+  return ( _wire->endTransmission() == 0);
 }
 
 
@@ -363,25 +364,25 @@ bool INA219::setMaxCurrentShunt(float maxCurrent, float shunt)
 
 uint16_t INA219::_readRegister(uint8_t reg)
 {
-  Wire1.beginTransmission(_address);
-  Wire1.write(reg);
-  Wire1.endTransmission();
+  _wire->beginTransmission(_address);
+  _wire->write(reg);
+  _wire->endTransmission();
 
-  Wire1.requestFrom(_address, (uint8_t)2);
-  uint16_t value = Wire1.read();
+  _wire->requestFrom(_address, (uint8_t)2);
+  uint16_t value = _wire->read();
   value <<= 8;
-  value |= Wire1.read();
+  value |= _wire->read();
   return value;
 }
 
 
 uint16_t INA219::_writeRegister(uint8_t reg, uint16_t value)
 {
-  Wire1.beginTransmission(_address);
-  Wire1.write(reg);
-  Wire1.write(value >> 8);
-  Wire1.write(value & 0xFF);
-  return Wire1.endTransmission();
+  _wire->beginTransmission(_address);
+  _wire->write(reg);
+  _wire->write(value >> 8);
+  _wire->write(value & 0xFF);
+  return _wire->endTransmission();
 }
 
 
