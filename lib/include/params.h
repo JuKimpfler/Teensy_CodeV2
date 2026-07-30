@@ -1,10 +1,11 @@
 #pragma once
 #include <Arduino.h>
 
-#define I2C_BNO Wire1
-#define I2C_IR Wire1
-#define I2C_SW Wire1
-#define I2C_US Wire1
+#define I2C_BNO Wire
+#define I2C_IR Wire
+#define I2C_SW Wire
+#define I2C_US Wire
+#define I2C_RADAR Wire
 
 #define BNO_ADDRESS 0x28
 
