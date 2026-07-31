@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "XM125Distance.h"
+#include "systemlib.h"
 
 static constexpr uint8_t NUM_SENSORS = 4;
 static constexpr uint8_t SENSOR_ADDRS[NUM_SENSORS] = { 0x51, 0x52, 0x53, 0x54 };
@@ -31,8 +32,12 @@ bool    sensorReady[NUM_SENSORS]      = {};
 uint8_t consecutiveFailures[NUM_SENSORS] = {};
 static constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 5;
 
+systemlib sys;
+
 bool setupSensor(uint8_t idx) {
   XM125Distance& radar = sensors[idx];
+
+  sys.initialize();
 
   if (!radar.begin(Wire)) {
     Serial.print("Sensor 0x"); Serial.print(SENSOR_ADDRS[idx], HEX);
