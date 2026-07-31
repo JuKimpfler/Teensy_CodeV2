@@ -45,7 +45,8 @@ bool setupSensor(uint8_t idx) {
   radar.config.endMm   = 2500;
   radar.config.maxProfile = XM125D_PROFILE5;
   radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;
-  radar.config.peakSorting = XM125D_SORT_STRONGEST;
+  radar.config.peakSorting = XM125D_SORT_CLOSEST;
+  radar.config.reflectorShape = XM125D_REFLECTOR_PLANAR;
 
   if (!radar.applyConfigAndCalibrate()) {
     Serial.print("Sensor 0x"); Serial.print(SENSOR_ADDRS[idx], HEX);
