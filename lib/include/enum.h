@@ -14,18 +14,30 @@
 
 enum PinOut
 {
-    MOT1_IN1 = 0,
-    MOT1_IN2 = 1,
-    MOT2_IN1 = 2,
-    MOT2_IN2 = 3,
-    MOT1_PWM = 4,
-    MOT2_PWM = 5,
-    MOT3_PWM = 6,
-    MOT3_IN1 = 7,
-    MOT3_IN2 = 8,
-    MOT4_IN1 = 26,
-    MOT4_IN2 = 32,
-    MOT4_PWM = 9,
+
+        MotorVR_PWM = 5,
+    MotorVL_PWM = 4,
+    MotorHL_PWM = 6,
+    MotorHR_PWM = 9,
+    MotorDR_PWM = 33,
+
+    MotorVL_P1 = 0,
+    MotorVL_P2 = 1,
+    MotorHL_P1 = 4,
+    MotorHL_P2 = 5,
+    MotorVR_P1 = 2,
+    MotorVR_P2 = 3,
+    MotorHR_P1 = 6,
+    MotorHR_P2 = 7,
+
+    MotorVL_AP1 = 0,
+    MotorVL_AP2 = 1,
+    MotorHL_AP1 = 4,
+    MotorHL_AP2 = 5,
+    MotorVR_AP1 = 2,
+    MotorVR_AP2 = 3,
+    MotorHR_AP1 = 6,
+    MotorHR_AP2 = 7,
 
     BLDC_DRIBBLER_PWM = 33,
 
