@@ -16,6 +16,9 @@
 #include <commlib.h>
 #include <PDS.h>
 
+#include "PID/PID.h"
+#include "ADRC/ADRC.h"
+
 extern BNO055 BNO;
 
 struct MotorData
@@ -67,6 +70,11 @@ private:
     int16_t IR_Offsets[16] = {9999};
     float INA_filter[6] = {0, 0, 0, 0, 0, 0};
 
+    bool _useADRC = false;
+    float _OrbitHeading = 0;
+    float ADRC_Out = 0;
+    float PID_Out = 0;
+
     /* -------------- System -------------- */
     uint16_t cycleTime = 0;
     uint16_t cycleTime_us = 0;
@@ -100,7 +108,10 @@ public:
     void setMotorData(MotorData Data);
     MotorData giveMotorData(uint8_t ID);
 
+    void setupHeadingController(bool useADRC = false);
+
     /* -------------- Calculate -------------- */
+    void updateHeadingController(void);
 
     /* -------------- give -------------- */
     float giveOrbitDir(void) const { return BNO_OrbitDir; };            // Orbital Ausrichtung
@@ -123,9 +134,11 @@ public:
     void giveRawSensorData(uint16_t (&rawSensorData)[16]) const {for (uint8_t i = 0; i < 16; i++){rawSensorData[i] = IR_rawSensorData[i];}}; // currently disabled -> change in readIR() to enable it
     void giveTSSPData(bool (&TSSPData)[8]) const {for (uint8_t i = 0; i < 8; i++){TSSPData[i] = IR_TSSP[i];}};                                                                               // currently disabled -> change in readIR() to enable it
     bool giveTSSPData(uint8_t sensorNumber) const { return IR_TSSP[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
+    float giveHeadingController(void); // BNO has to be setup allready
 
     /* -------------- set -------------- */
     void setDebugTimeout(uint16_t timeout_ms) { debugTimeout = timeout_ms; }
     void setDBGSys(void);
     void setDBGChannel(uint8_t Channel, float Value); // 0-20 Frei für eigenen Quatsch
+    void setHeading(float Heading);
 };

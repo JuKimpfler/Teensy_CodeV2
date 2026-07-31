@@ -27,6 +27,15 @@ TCA9534DW Button_EXP(&Wire1, 0x23);
 TCA9534DW Rand_EXP(&Wire1, 0x21);
 
 ADC108S102 ADC_Motor(&SPI1,ADC108S102_Motor_CS);
+
+
+constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
+PIDConfig cfgP;
+PID* headingControllerP;
+ADRCConfig cfgA;
+ADRC* headingControllerA;
+uint32_t lastMicrosContrl = 0;
+
 /* -------------- System Worker -------------- */
 
 void systemlib::initialize()
@@ -87,6 +96,7 @@ void systemlib::initialize()
 
     ADC_Motor.init();
 
+    setupHeadingController(true);
 }
 
 void systemlib::readSensors(void)
@@ -103,6 +113,9 @@ void systemlib::readSensors(void)
     //readUS();
 
     PDS.update();
+
+    updateHeadingController();
+    updateMotors();
 }
 
 /* -------------- Debugger -------------- */
@@ -321,4 +334,74 @@ void systemlib::readExpanders(void)
 
     // Read the state of each pin from the port expander
     // Example: bool pin0State = portExpander.getPinState(0);
+}
+
+
+void systemlib::setupHeadingController(bool useADRC){
+    _useADRC = useADRC;
+    if(_useADRC){
+        cfgA.order = ADRCOrder::SECOND;   // Winkel = Strecke 2. Ordnung
+        cfgA.Ts    = TS_NOMINAL;          // nur Fallback, siehe loop()
+        cfgA.dtMin = 1e-5f;               // 10 us -- gegen dt=0
+        cfgA.dtMax = 0.03f;               // 30 ms -- deckelt Ausreisser, falls das
+                                        // Hauptprogramm mal laenger braucht
+        cfgA.wc    = 15.0f;               // Reglerbandbreite: wie schnell ausgerichtet wird
+        cfgA.wo    = 80.0f;               // Beobachterbandbreite: ca. 5x wc als Startwert
+        cfgA.b0    = 8.0f;                // grobe Schaetzung: wie stark omega_cmd auf
+                                        // die Winkelbeschleunigung wirkt -> per Test anpassen
+        cfgA.uMin  = -1.0f;
+        cfgA.uMax  =  1.0f;
+        cfgA.angleMode = true;            // WICHTIG: sorgt fuer kuerzesten Drehweg (kein +-pi Sprung)
+        cfgA.outputRateLimit = 6.0f;      // begrenzt Stellgroessen-Aenderungsrate (sanfter Anlauf)
+
+        headingControllerA = new ADRC(cfgA);
+        headingControllerA->reset(DEG_TO_RAD*BNO_OrbitDir);
+        lastMicrosContrl = micros();
+    }
+    else{
+        cfgP.Ts    = TS_NOMINAL;          // nur Fallback, siehe loop()
+        cfgP.dtMin = 1e-5f;               // 10 us -- gegen dt=0
+        cfgP.dtMax = 0.03f;               // 30 ms -- deckelt Ausreisser, falls das
+                                        // Hauptprogramm mal laenger braucht
+
+        cfgP.Kp = 2.0f;                   // Start: nur P, dann I/D schrittweise zuschalten
+        cfgP.Ki = 0.5f;
+        cfgP.Kd = 0.05f;
+
+        cfgP.uMin = -1.0f;
+        cfgP.uMax =  1.0f;
+        cfgP.angleMode = true;            // WICHTIG: kuerzester Drehweg, kein +-pi Sprung
+        cfgP.derivativeOnMeasurement = true; // kein Kick bei Sollwinkel-Spruengen
+        cfgP.Tf = 0.02f;                  // D-Anteil filtern (Winkelmessung ist meist verrauscht)
+        cfgP.outputRateLimit = 6.0f;      // sanfter Anlauf / Ruckbegrenzung
+
+        headingControllerP = new PID(cfgP);
+        headingControllerP->reset(DEG_TO_RAD*BNO_OrbitDir);
+        lastMicrosContrl = micros();
+    }
+}
+
+float systemlib::giveHeadingController(){
+    if(_useADRC){
+        return ADRC_Out;
+    }
+    else{
+        return PID_Out;
+    }
+}
+
+void systemlib::setHeading(float Heading){
+    _OrbitHeading = Heading;
+}
+
+void systemlib::updateHeadingController(){
+    float dt = (micros() - lastMicrosContrl) * 1e-6f; // us -> s
+    lastMicrosContrl = micros();
+
+    if(_useADRC){
+        ADRC_Out = headingControllerA->update(_OrbitHeading, DEG_TO_RAD*BNO_OrbitDir, dt);
+    }
+    else{
+        PID_Out = headingControllerP->update(_OrbitHeading, DEG_TO_RAD*BNO_OrbitDir, dt);
+    }
 }
