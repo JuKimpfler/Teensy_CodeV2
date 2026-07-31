@@ -2,6 +2,9 @@
 
 // vielleicht muss man die Return werte & 0x0FFF machen, da die oberen 4 bit nicht relevant sind. (12 bit ADC)????
 
+/**
+ * @brief Initializes the ADC108S102 by setting the chip select pin and starting SPI communication.
+ */
 void ADC108S102::init()
 {
     pinMode(csPin, OUTPUT);
@@ -21,7 +24,6 @@ uint16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 
     _spi->beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
 
-    uint16_t command = (channel + 1) << 11; // Command format for ADC108S102
     digitalWrite(csPin, LOW);
     uint16_t result = _spi->transfer16(comandlist[channel]);
     digitalWrite(csPin, HIGH);
@@ -31,10 +33,10 @@ uint16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
     result_raw = map(result,70,3970,0,3300);
 
     if(MOT_ADC && ADC_Mode){
-        result_raw = map(result_raw,0,3300,-7000,7000);
+        result_raw = abs(map(result_raw,0,3300,-100,100));
     }
     else if(MOT_ADC && !ADC_Mode){
-        result_raw = map(result_raw,0,3300,-6000,6000);
+        result_raw = abs(map(result_raw,0,3300,-6000,6000));
     }
     if(result_raw<0){
         result=0;
@@ -58,7 +60,6 @@ void ADC108S102::read(uint16_t (&values)[8])
     digitalWriteFast(csPin, LOW);
     for (int i = 0; i < 8; i++)
     {
-        uint16_t command = (i + 1) << 11; // Command format for ADC108S102
         values[i] = _spi->transfer16(comandlist[i]);
     }
     digitalWriteFast(csPin, HIGH);

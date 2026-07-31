@@ -9,34 +9,52 @@ elapsedMicros cycleTimer_us;
 
 commlib communication;
 
-I2C_bus i2c1(Wire1);
-Device_handle ir_ring_handle = {i2c1, I2C_target{0x0A}};
+I2C_bus i2cIR(I2C_IR);
+Device_handle ir_ring_handle = {i2cIR, I2C_target{0x0A}};
 IR_ring ir_ring(ir_ring_handle);
 
 INA219 INA219_Main(0x40);
 INA219 INA219_Motor(0x41);
-
-PMW3389 pmw = PMW3389(&SPI, 25); // SPI CS vom Moussensor kommt auf LDR Port
 
 SRF08Sensor SRF08_vo(SRF08_ADDR(0xE2), SRF08_RANGE_2M, SRF08_GAIN_MID);
 SRF08Sensor SRF08_re(SRF08_ADDR(0xE4), SRF08_RANGE_2M, SRF08_GAIN_MID);
 SRF08Sensor SRF08_hi(SRF08_ADDR(0xE6), SRF08_RANGE_2M, SRF08_GAIN_MID);
 SRF08Sensor SRF08_li(SRF08_ADDR(0xE8), SRF08_RANGE_2M, SRF08_GAIN_MID);
 
-TCA9534DW portExpander(&Wire1, 0x20);
+TCA9534DW SW_EXP(&I2C_SW, 0x22);
+TCA9534DW Motor_EXP(&Wire1, 0x20);
+TCA9534DW Button_EXP(&Wire1, 0x23);
+TCA9534DW Rand_EXP(&Wire1, 0x21);
 
-//ADC108S102 ADC108S102_1(&SPI1,ADC108S102_CS1);
+ADC108S102 ADC_Motor(&SPI1,ADC108S102_Motor_CS);
+
+
+constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
+PIDConfig cfgP;
+PID* headingControllerP;
+ADRCConfig cfgA;
+ADRC* headingControllerA;
+uint32_t lastMicrosContrl = 0;
+
+fancyBTN BTN1(50, 6, 8, true);
+fancyBTN BTN2(50, 6, 8, true);
+fancyBTN BTN3(50, 6, 8, true);
+fancyBTN BTN4(50, 6, 8, true);
+fancyBTN BTN5(50, 6, 8, true);
+
+
 /* -------------- System Worker -------------- */
 
 void systemlib::initialize()
 {
     Wire1.begin();
-    Wire1.setClock(1000000);
-    //SPI.begin();
+    Wire1.setClock(400000);
+    Wire.begin();
+    Wire.setClock(400000);
     USBC_UART.begin(115200);
 
-    INA219_Main.begin();
-    INA219_Motor.begin();
+    INA219_Main.begin(Wire1);
+    INA219_Motor.begin(Wire1);
 
     INA219_Main.setMaxCurrentShunt(15);
     INA219_Motor.setMaxCurrentShunt(15);
@@ -44,9 +62,11 @@ void systemlib::initialize()
     BNO.init();
     PDS.init();
 
-    delay(1000);
-    pmw.begin();
-    delay(1000);
+    MotorVL_D.ID = MotorVL_ID;
+    MotorVR_D.ID = MotorVR_ID;
+    MotorHL_D.ID = MotorHL_ID;
+    MotorHR_D.ID = MotorHR_ID;
+    MotorDR_D.ID = MotorDR_ID;
 
     pinMode(START_SWITCH, INPUT);
 
@@ -61,21 +81,29 @@ void systemlib::initialize()
     SRF08_re.setJumpThreshold(50);
     SRF08_li.setJumpThreshold(50);
 
-    SRF08_vo.begin(Wire1);
-    SRF08_hi.begin(Wire1);
-    SRF08_re.begin(Wire1);
-    SRF08_li.begin(Wire1);
+    SRF08_vo.begin(I2C_US);
+    SRF08_hi.begin(I2C_US);
+    SRF08_re.begin(I2C_US);
+    SRF08_li.begin(I2C_US);
 
     SRF08_vo.startRanging();
     SRF08_hi.startRanging();
     SRF08_re.startRanging();
     SRF08_li.startRanging();
 
-    portExpander.setup(true);
+    Motor_EXP.setup(false);
+    Rand_EXP.setup(false);
+    SW_EXP.setup(true);
+    Button_EXP.setup(true);
+
     ir_ring.read_gains(IR_Gains);
     ir_ring.read_offsets(IR_Offsets);
 
     setDebugTimeout(5);
+
+    ADC_Motor.init();
+
+    setupHeadingController(true);
 }
 
 void systemlib::readSensors(void)
@@ -89,16 +117,14 @@ void systemlib::readSensors(void)
 
     readBNO();
     readIR();
+    //readUS();
 
-    readUS();
+    readExpanders();
+
     PDS.update();
 
-    //Serial.println("Fresh = " + String(PDS.fastParamsAreFresh()) + " , Param1 = " + String(PDS.getFastParam(0)));
-}
-
-PMW3389_DATA systemlib::giveMouseData(){
-    PMW3389_DATA mouseData = pmw.readBurst();
-    return mouseData;
+    updateHeadingController();
+    updateMotors();
 }
 
 /* -------------- Debugger -------------- */
@@ -252,11 +278,155 @@ void systemlib::readUS(void)
         US_li = SRF08_li.getDistance(), SRF08_li.startRanging();
 }
 
+/* -------------- Aktors ------------- */
+void systemlib::setMotorData(MotorData Data){
+    if(Data.ID == MotorVR_D.ID){MotorVR_D = Data;}
+    else if(Data.ID == MotorHR_D.ID){MotorHR_D = Data;}
+    else if(Data.ID == MotorVL_D.ID){MotorVL_D = Data;}
+    else if(Data.ID == MotorHL_D.ID){MotorHL_D = Data;}
+    else if(Data.ID == MotorDR_D.ID){MotorDR_D = Data;}
+
+    updateMotors();
+}
+
+void systemlib::updateMotors(void){
+    uint8_t Port_List[8];
+    byte out = 0;
+
+    analogWrite(MotorVL_PWM,abs(MotorVL_D.Speed)*2.55);
+    analogWrite(MotorVR_PWM,abs(MotorVR_D.Speed)*2.55);
+    analogWrite(MotorHR_PWM,abs(MotorHR_D.Speed)*2.55);
+    analogWrite(MotorHL_PWM,abs(MotorHL_D.Speed)*2.55);
+
+    if(MotorVL_D.Dir){Port_List[MotorVL_P1]=0;}else{Port_List[MotorVL_P1]=1;}
+    if(MotorVR_D.Dir){Port_List[MotorVR_P1]=0;}else{Port_List[MotorVR_P1]=1;}
+    if(MotorHL_D.Dir){Port_List[MotorHL_P1]=0;}else{Port_List[MotorHL_P1]=1;}
+    if(MotorHR_D.Dir){Port_List[MotorHR_P1]=0;}else{Port_List[MotorHR_P1]=1;}
+
+    if(MotorVL_D.Enable){Port_List[MotorVL_P2]=1;}else{Port_List[MotorVL_P2]=0;}
+    if(MotorVR_D.Enable){Port_List[MotorVR_P2]=1;}else{Port_List[MotorVR_P2]=0;}
+    if(MotorHL_D.Enable){Port_List[MotorHL_P2]=1;}else{Port_List[MotorHL_P2]=0;}
+    if(MotorHR_D.Enable){Port_List[MotorHR_P2]=1;}else{Port_List[MotorHR_P2]=0;}
+
+    // Konvertieren von Liste zu byte
+    for (int i = 0; i < 8; i++) {
+        if (Port_List[i] == 1) {
+            out |= (1 << (7 - i));
+        }
+    }
+
+    Motor_EXP.write(out);
+
+    MotorVL_D.Speed_real = ADC_Motor.read(MotorVL_AP1,true,true);
+    MotorVL_D.Current = ADC_Motor.read(MotorVL_AP2,true,false);
+    MotorVR_D.Speed_real = ADC_Motor.read(MotorVR_AP1,true,true);
+    MotorVR_D.Current = ADC_Motor.read(MotorVR_AP2,true,false);
+    MotorHL_D.Speed_real = ADC_Motor.read(MotorHL_AP1,true,true);
+    MotorHL_D.Current = ADC_Motor.read(MotorHL_AP2,true,false);
+    MotorHR_D.Speed_real = ADC_Motor.read(MotorHR_AP1,true,true);
+    MotorHR_D.Current = ADC_Motor.read(MotorHR_AP2,true,false);
+}
+
+MotorData systemlib::giveMotorData(uint8_t ID){
+    MotorData Error_Data;
+    Error_Data.ID = 100;
+
+    if(ID == MotorVR_D.ID){return MotorVR_D;}
+    else if(ID == MotorHR_D.ID){return MotorHR_D;}
+    else if(ID == MotorVL_D.ID){return MotorVL_D;}
+    else if(ID == MotorHL_D.ID){return MotorHL_D;}
+    else if(ID == MotorDR_D.ID){return MotorDR_D;}
+    else {return Error_Data;}
+}
+
 /* -------------- Expanders -------------- */
 void systemlib::readExpanders(void)
 {
-    portExpander.read(); // Update the internal state of the port expander
+    SW_EXP.read(); // Update the internal state of the port expander
+    Button_EXP.read(); // Update the internal state of the port expander
+
+    BTN1.update(Button_EXP.readPin(0));
+    BTN2.update(Button_EXP.readPin(1));
+    BTN3.update(Button_EXP.readPin(2));
+    BTN4.update(Button_EXP.readPin(3));
+    BTN5.update(Button_EXP.readPin(4));
+
+    fancyBTNstates[0] = BTN1.getStatusCode();
+    fancyBTNstates[1] = BTN2.getStatusCode();
+    fancyBTNstates[2] = BTN3.getStatusCode();
+    fancyBTNstates[3] = BTN4.getStatusCode();
+    fancyBTNstates[4] = BTN5.getStatusCode();
 
     // Read the state of each pin from the port expander
     // Example: bool pin0State = portExpander.getPinState(0);
+}
+
+
+void systemlib::setupHeadingController(bool useADRC){
+    _useADRC = useADRC;
+    if(_useADRC){
+        cfgA.order = ADRCOrder::SECOND;   // Winkel = Strecke 2. Ordnung
+        cfgA.Ts    = TS_NOMINAL;          // nur Fallback, siehe loop()
+        cfgA.dtMin = 1e-5f;               // 10 us -- gegen dt=0
+        cfgA.dtMax = 0.03f;               // 30 ms -- deckelt Ausreisser, falls das
+                                        // Hauptprogramm mal laenger braucht
+        cfgA.wc    = 15.0f;               // Reglerbandbreite: wie schnell ausgerichtet wird
+        cfgA.wo    = 80.0f;               // Beobachterbandbreite: ca. 5x wc als Startwert
+        cfgA.b0    = 8.0f;                // grobe Schaetzung: wie stark omega_cmd auf
+                                        // die Winkelbeschleunigung wirkt -> per Test anpassen
+        cfgA.uMin  = -1.0f;
+        cfgA.uMax  =  1.0f;
+        cfgA.angleMode = true;            // WICHTIG: sorgt fuer kuerzesten Drehweg (kein +-pi Sprung)
+        cfgA.outputRateLimit = 6.0f;      // begrenzt Stellgroessen-Aenderungsrate (sanfter Anlauf)
+
+        headingControllerA = new ADRC(cfgA);
+        headingControllerA->reset(DEG_TO_RAD*BNO_OrbitDir);
+        lastMicrosContrl = micros();
+    }
+    else{
+        cfgP.Ts    = TS_NOMINAL;          // nur Fallback, siehe loop()
+        cfgP.dtMin = 1e-5f;               // 10 us -- gegen dt=0
+        cfgP.dtMax = 0.03f;               // 30 ms -- deckelt Ausreisser, falls das
+                                        // Hauptprogramm mal laenger braucht
+
+        cfgP.Kp = 2.0f;                   // Start: nur P, dann I/D schrittweise zuschalten
+        cfgP.Ki = 0.5f;
+        cfgP.Kd = 0.05f;
+
+        cfgP.uMin = -1.0f;
+        cfgP.uMax =  1.0f;
+        cfgP.angleMode = true;            // WICHTIG: kuerzester Drehweg, kein +-pi Sprung
+        cfgP.derivativeOnMeasurement = true; // kein Kick bei Sollwinkel-Spruengen
+        cfgP.Tf = 0.02f;                  // D-Anteil filtern (Winkelmessung ist meist verrauscht)
+        cfgP.outputRateLimit = 6.0f;      // sanfter Anlauf / Ruckbegrenzung
+
+        headingControllerP = new PID(cfgP);
+        headingControllerP->reset(DEG_TO_RAD*BNO_OrbitDir);
+        lastMicrosContrl = micros();
+    }
+}
+
+float systemlib::giveHeadingController(){
+    if(_useADRC){
+        return ADRC_Out;
+    }
+    else{
+        return PID_Out;
+    }
+}
+
+void systemlib::setHeading(float Heading){
+    _OrbitHeading = Heading;
+}
+
+void systemlib::updateHeadingController(){
+    float dt = (micros() - lastMicrosContrl) * 1e-6f; // us -> s
+    lastMicrosContrl = micros();
+
+    if(_useADRC){
+        ADRC_Out = headingControllerA->update(_OrbitHeading, DEG_TO_RAD*BNO_OrbitDir, dt);
+    }
+    else{
+        PID_Out = headingControllerP->update(_OrbitHeading, DEG_TO_RAD*BNO_OrbitDir, dt);
+    }
 }
