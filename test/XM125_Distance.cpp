@@ -13,7 +13,7 @@
 static constexpr int8_t WAKE_PIN = -1;
 static constexpr int8_t INT_PIN  = -1;
 
-XM125Distance radar(XM125_I2C_ADDR_DEFAULT, WAKE_PIN, INT_PIN);
+XM125Distance radar(0x51, WAKE_PIN, INT_PIN);
 
 // Nach so vielen aufeinanderfolgenden Fehlschlaegen wird neu verbunden und
 // konfiguriert. Sinnvoll z.B. bei floatendem WAKE_UP-Pin, wenn der Sensor
