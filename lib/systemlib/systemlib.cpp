@@ -36,6 +36,13 @@ ADRCConfig cfgA;
 ADRC* headingControllerA;
 uint32_t lastMicrosContrl = 0;
 
+fancyBTN BTN1(50, 6, 8, true);
+fancyBTN BTN2(50, 6, 8, true);
+fancyBTN BTN3(50, 6, 8, true);
+fancyBTN BTN4(50, 6, 8, true);
+fancyBTN BTN5(50, 6, 8, true);
+
+
 /* -------------- System Worker -------------- */
 
 void systemlib::initialize()
@@ -111,6 +118,8 @@ void systemlib::readSensors(void)
     readBNO();
     readIR();
     //readUS();
+
+    readExpanders();
 
     PDS.update();
 
@@ -277,8 +286,12 @@ void systemlib::setMotorData(MotorData Data){
     else if(Data.ID == MotorHL_D.ID){MotorHL_D = Data;}
     else if(Data.ID == MotorDR_D.ID){MotorDR_D = Data;}
 
+    updateMotors();
+}
+
+void systemlib::updateMotors(void){
     uint8_t Port_List[8];
-    byte out;
+    byte out = 0;
 
     analogWrite(MotorVL_PWM,abs(MotorVL_D.Speed)*2.55);
     analogWrite(MotorVR_PWM,abs(MotorVR_D.Speed)*2.55);
@@ -331,6 +344,18 @@ void systemlib::readExpanders(void)
 {
     SW_EXP.read(); // Update the internal state of the port expander
     Button_EXP.read(); // Update the internal state of the port expander
+
+    BTN1.update(Button_EXP.readPin(0));
+    BTN2.update(Button_EXP.readPin(1));
+    BTN3.update(Button_EXP.readPin(2));
+    BTN4.update(Button_EXP.readPin(3));
+    BTN5.update(Button_EXP.readPin(4));
+
+    fancyBTNstates[0] = BTN1.getStatusCode();
+    fancyBTNstates[1] = BTN2.getStatusCode();
+    fancyBTNstates[2] = BTN3.getStatusCode();
+    fancyBTNstates[3] = BTN4.getStatusCode();
+    fancyBTNstates[4] = BTN5.getStatusCode();
 
     // Read the state of each pin from the port expander
     // Example: bool pin0State = portExpander.getPinState(0);

@@ -24,7 +24,6 @@ uint16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 
     _spi->beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
 
-    uint16_t command = (channel + 1) << 11; // Command format for ADC108S102
     digitalWrite(csPin, LOW);
     uint16_t result = _spi->transfer16(comandlist[channel]);
     digitalWrite(csPin, HIGH);
@@ -61,7 +60,6 @@ void ADC108S102::read(uint16_t (&values)[8])
     digitalWriteFast(csPin, LOW);
     for (int i = 0; i < 8; i++)
     {
-        uint16_t command = (i + 1) << 11; // Command format for ADC108S102
         values[i] = _spi->transfer16(comandlist[i]);
     }
     digitalWriteFast(csPin, HIGH);

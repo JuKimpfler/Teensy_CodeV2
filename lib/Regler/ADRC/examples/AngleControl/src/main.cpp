@@ -10,7 +10,7 @@
  * (IMU/Odometrie bzw. Motortreiber) an.
  */
 #include <Arduino.h>
-#include "ADRC.h"
+#include <ADRC/ADRC.h>
 
 // ---------------------------------------------------------------------
 // Regelparameter
