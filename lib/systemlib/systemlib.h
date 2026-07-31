@@ -12,6 +12,7 @@
 #include <TCA9534DW.h>
 #include <ir_ring.h>
 #include "SPI.h"
+#include <fancyBTN.h>
 
 #include <commlib.h>
 #include <PDS.h>
@@ -75,6 +76,7 @@ private:
     float ADRC_Out = 0;
     float PID_Out = 0;
 
+    uint8_t fancyBTNstates[5] = {0};
     /* -------------- System -------------- */
     uint16_t cycleTime = 0;
     uint16_t cycleTime_us = 0;
@@ -135,6 +137,7 @@ public:
     void giveTSSPData(bool (&TSSPData)[8]) const {for (uint8_t i = 0; i < 8; i++){TSSPData[i] = IR_TSSP[i];}};                                                                               // currently disabled -> change in readIR() to enable it
     bool giveTSSPData(uint8_t sensorNumber) const { return IR_TSSP[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
     float giveHeadingController(void); // BNO has to be setup allready
+    void giveButtonStates(uint8_t (&buttonStates)[5]) const {for (uint8_t i = 0; i < 5; i++){buttonStates[i] = fancyBTNstates[i];}}; // currently disabled -> change in readExpanders() to enable it
 
     /* -------------- set -------------- */
     void setDebugTimeout(uint16_t timeout_ms) { debugTimeout = timeout_ms; }
