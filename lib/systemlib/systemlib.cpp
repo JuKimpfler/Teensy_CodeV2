@@ -286,8 +286,12 @@ void systemlib::setMotorData(MotorData Data){
     else if(Data.ID == MotorHL_D.ID){MotorHL_D = Data;}
     else if(Data.ID == MotorDR_D.ID){MotorDR_D = Data;}
 
+    updateMotors();
+}
+
+void systemlib::updateMotors(void){
     uint8_t Port_List[8];
-    byte out;
+    byte out = 0;
 
     analogWrite(MotorVL_PWM,abs(MotorVL_D.Speed)*2.55);
     analogWrite(MotorVR_PWM,abs(MotorVR_D.Speed)*2.55);

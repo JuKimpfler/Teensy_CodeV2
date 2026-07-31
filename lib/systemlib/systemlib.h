@@ -17,8 +17,8 @@
 #include <commlib.h>
 #include <PDS.h>
 
-#include "PID/PID.h"
-#include "ADRC/ADRC.h"
+#include <PID/PID.h>
+#include <ADRC/ADRC.h>
 
 extern BNO055 BNO;
 

@@ -8,7 +8,7 @@
  * (Encoder/Odometrie bzw. Motortreiber) an.
  */
 #include <Arduino.h>
-#include "PID.h"
+#include <PID/PID.h>
 
 constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
 
