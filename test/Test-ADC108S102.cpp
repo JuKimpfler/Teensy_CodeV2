@@ -4,7 +4,7 @@
 
 #define CS_PIN 1
 
-ADC108S102 adc(CS_PIN);
+ADC108S102 adc(&SPI, CS_PIN);
 
 void setup() {
     Serial.begin(115200);
