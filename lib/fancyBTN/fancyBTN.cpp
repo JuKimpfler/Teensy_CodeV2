@@ -13,6 +13,7 @@ void fancyBTN::update(bool buttonState)
 {
     unsigned long currentTime = millis();
     buttonState = _InputWhenOnBTNdown ? buttonState : !buttonState;
+    _buttonState = buttonState;
 
     if (buttonState == _lastButtonState)
     {

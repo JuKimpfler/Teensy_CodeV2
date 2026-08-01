@@ -122,8 +122,5 @@ void loop() {
   (`_lastButtonState`, `_lastTimePressed`, `_statusCode`, …) bleiben
   uninitialisiert – bei globalen Instanzen sind sie durch die statische
   Initialisierung `0`, bei lokalen Instanzen nicht.
-- `isPressed()` liefert `_buttonState`, das in `update()` nie geschrieben wird
-  – der Rückgabewert ist damit nicht aussagekräftig. `getStatusCode() >= 1 &&
-  <= 2` verwenden.
 - Die Statuscodes werden in `update()` als Zahlenliteral gesetzt, das Enum
   `fancyBTNStatusCode` wird intern nicht verwendet.
