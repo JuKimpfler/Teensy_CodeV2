@@ -11,6 +11,7 @@ float param2 = 0;
 float timer = 0;
 float Akku_V = 0;
 float Akku_I = 0;
+float Dist = 0;
 
 void setup()
 {
@@ -19,9 +20,17 @@ void setup()
 
   Serial.println("------------------------------- Hallo -------------------------------");
   sys.initialize();
+
   PDS1.init();
+
   PDS1.bind(0,&param1,"Return");
   PDS1.bind(1,&param2,"Return_t2");
+  PDS1.bind(5,&sys.RadarVo.Dist,"RadarVo9");
+  PDS1.bind(6,&sys.RadarVo.isCon,"RadarVo1");
+  PDS1.bind(7,&sys.RadarLi.isCon,"RadarVo2");
+  PDS1.bind(8,&sys.RadarHi.isCon,"RadarVo3");
+  PDS1.bind(9,&sys.RadarRe.isCon,"RadarVo4");
+  PDS1.bind(10,&sys.RadarVo.Peaks,"RadarVo5");
   PDS1.bind(2,&timer);
 
   PDS1.bind(180,&Akku_V);

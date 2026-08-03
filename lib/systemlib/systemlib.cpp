@@ -29,6 +29,12 @@ TCA9534DW Rand_EXP(&Wire1, 0x21);
 
 ADC108S102 ADC_Motor(&SPI1,ADC108S102_Motor_CS);
 
+XM125Distance RADAR_sensors[RADAR_NUM_SENSORS] = {
+  XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
+};
 
 constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
 PIDConfig cfgP;
@@ -101,6 +107,10 @@ void systemlib::initialize()
     SW_EXP.setup(true);
     Button_EXP.setup(true);
 
+    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
+        RADAR_sensorReady[i] = setupRadarSens(i);
+    }
+
     ir_ring.read_gains(IR_Gains);
     ir_ring.read_offsets(IR_Offsets);
 
@@ -121,6 +131,7 @@ void systemlib::readSensors(void)
     cycleTimer_us = 0;
 
     readBNO();
+    readRadar();
     //readIR();
     //readUS();
 
@@ -132,41 +143,106 @@ void systemlib::readSensors(void)
     updateMotors();
 }
 
-/* -------------- Debugger -------------- */
-/*
-void systemlib::setDBGSys()
-{
-    PDS.Channel(21, BNO_OrbitDir);
-    PDS.Channel(22, BNO.eulHeading());
-    PDS.Channel(23, BNO.calibStatus());
-    PDS.Channel(24, BNO.systemStatus());
-    PDS.Channel(25, 0);
-    PDS.Channel(26, 0);
-    PDS.Channel(27, 0);
-    PDS.Channel(28, 0);
-    PDS.Channel(29, 0);
-    PDS.Channel(30, 0);
-    PDS.Channel(31, 0);
-    PDS.Channel(32, 0);
-    PDS.Channel(33, 0);
-    PDS.Channel(34, 0);
-    PDS.Channel(35, digitalRead(START_SWITCH));
-    PDS.Channel(36, 0);
-    PDS.Channel(37, 0);
-    PDS.Channel(38, analogRead(LIGHT_BARRIER));
-    PDS.Channel(39, 0);
-    PDS.Channel(40, 0);
-}
+void systemlib::readRadar(void){
+    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
+        if (!RADAR_sensorReady[i]) {
+            RADAR_sensorReady[i] = setupRadarSens(i);
+            continue;
+        }
 
-void systemlib::setDBGChannel(u_int8_t Channel, float Value)
-{
-    if (Util.Range(Channel, 0, 20))
-    {
-        //PDS.Channel(Channel, Value);
+        XM125Distance& radar = RADAR_sensors[i];
+
+        if (!radar.measure(1000)) {
+            //if(i == 0){RadarVo.isCon = false;}
+            //if(i == 1){RadarLi.isCon = false;}
+            //if(i == 2){RadarHi.isCon = false;}
+            //if(i == 3){RadarRe.isCon = false;}
+            RADAR_consecFailures[i]++;
+            if (RADAR_consecFailures[i] >= RADAR_MAX_CONSEC_FAILURES) {
+                RADAR_consecFailures[i] = 0;
+                RADAR_sensorReady[i] = setupRadarSens(i);
+            }
+            continue;
+        }
+        RADAR_consecFailures[i] = 0;
+
+        uint8_t furthest = 0;//radar.getNumDistances();
+
+        //radar.getTemperature();
+        if(radar.getNumDistances()>0 || true){
+            if(i==0){
+                RadarVo.Peaks = radar.getNumDistances();
+                RadarVo.Dist=radar.getPeakDistanceRaw(furthest);
+                RadarVo.Strenght=radar.getPeakStrength(furthest);
+                RadarVo.isCon = true;
+            }
+            else if(i==1){
+                RadarLi.Dist=radar.getPeakDistanceRaw(furthest);
+                RadarLi.Strenght=radar.getPeakStrength(furthest);
+                RadarLi.Peaks = radar.getNumDistances();
+                RadarLi.isCon = true;
+            }
+            else if(i==2){
+                RadarHi.Dist=radar.getPeakDistanceRaw(furthest);
+                RadarHi.Strenght=radar.getPeakStrength(furthest);
+                RadarHi.Peaks = radar.getNumDistances();
+                RadarHi.isCon = true;
+            }
+            else if(i==3){
+                RadarRe.Dist=radar.getPeakDistanceRaw(furthest);
+                RadarRe.Strenght=radar.getPeakStrength(furthest);
+                RadarRe.Peaks = radar.getNumDistances();
+                RadarRe.isCon = true;
+            }
+        }
+        else{
+            if(i==0){RadarVo.Peaks = 0;}
+            else if(i==1){RadarLi.Peaks = 0;}
+            else if(i==2){RadarHi.Peaks = 0;}
+            else if(i==3){RadarRe.Peaks = 0;}
+        }
     }
 }
-*/
 
+bool systemlib::setupRadarSens(uint8_t idx) {
+  XM125Distance& radar = RADAR_sensors[idx];
+
+  if (!radar.begin(I2C_RADAR)) {
+    if(idx == 0){RadarVo.isCon = false;}
+    if(idx == 1){RadarLi.isCon = false;}
+    if(idx == 2){RadarHi.isCon = false;}
+    if(idx == 3){RadarRe.isCon = false;}
+    return false;
+  }
+
+  radar.config.startMm = 200;
+  radar.config.endMm   = 2500;
+  radar.config.maxProfile = XM125D_PROFILE5;
+  radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;
+  //radar.config.fixedStrengthThreshold = -10000;
+  //radar.config.thresholdSensitivity = 200;
+  //radar.config.numFramesRecordedThreshold = 100;
+  //radar.config.fixedAmplitudeThreshold = 100000; // 2000000000
+  radar.config.peakSorting = XM125D_SORT_CLOSEST;
+  radar.config.reflectorShape = XM125D_REFLECTOR_PLANAR;
+
+  if (!radar.applyConfigAndCalibrate()) {
+    uint16_t failedReg = radar.getLastFailedConfigRegister();
+    if (failedReg != 0xFFFF) { /*-> I2C-Schreibfehler bei Register 0xfailedReg*/ }
+    if(idx == 0){RadarVo.isCon = false;}
+    if(idx == 1){RadarLi.isCon = false;}
+    if(idx == 2){RadarHi.isCon = false;}
+    if(idx == 3){RadarRe.isCon = false;}
+    return false;
+  }
+
+  return true;
+}
+
+void systemlib::calibRadar(){
+    XM125Distance& radar = RADAR_sensors[0];
+    radar.calibrate();
+}
 
 /* -------------- BNO -------------- */
 void systemlib::calibBNO(void)

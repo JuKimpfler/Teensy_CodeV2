@@ -13,6 +13,7 @@
 #include <ir_ring.h>
 #include "SPI.h"
 #include <fancyBTN.h>
+#include "XM125Distance.h"
 
 #include <commlib.h>
 //#include <PDS.h>
@@ -21,6 +22,14 @@
 #include <ADRC/ADRC.h>
 
 extern BNO055 BNO;
+
+struct RadarData
+{
+    uint8_t Dist;
+    int32_t Strenght;
+    uint8_t Peaks;
+    bool isCon = true;
+};
 
 struct MotorData
 {
@@ -46,6 +55,10 @@ class systemlib
 private:
     RobotDataCom ownRobot;
     RobotDataCom otherRobot;
+
+    bool    RADAR_sensorReady[RADAR_NUM_SENSORS]      = {};
+    uint8_t RADAR_consecFailures[RADAR_NUM_SENSORS] = {};
+    static constexpr uint8_t RADAR_MAX_CONSEC_FAILURES = 5;
 
     /* -------------- Sensor Var -------------- */
     float BNO_calibration = 0.0f;
@@ -81,6 +94,9 @@ private:
     void readIR(void);
     void readUS(void);
     void readExpanders(void);
+    void readRadar(void);
+
+    bool setupRadarSens(uint8_t idx);
 
     /* -------------- Motor ----------------- */
     void updateMotors(void);
@@ -92,6 +108,11 @@ public:
     MotorData MoDataHL;
     MotorData MoDataHR;
     MotorData MoDataDR;
+
+    RadarData RadarVo;
+    RadarData RadarHi;
+    RadarData RadarRe;
+    RadarData RadarLi;
 
     /* -------------- Ssytem Worker -------------- */
     void initialize();
@@ -106,6 +127,7 @@ public:
     void writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain);
     void writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16]);
     void calibIR(void);
+    void calibRadar(void);
 
     /* -------------- Aktors -------------- */
     void setMotorData(MotorData Data);

@@ -118,6 +118,20 @@ void PowerDebugger::bind(uint8_t chn, int* ptr, const char* name){
     if (name) setName(chn, name);
 }
 
+void PowerDebugger::bind(uint8_t chn, uint8_t* ptr, const char* name){
+    if (chn >= ACTIVE_CHANNELS || !ptr) return;
+    _bound[chn].type = BoundChannelType::UINT8_PTR;
+    _bound[chn].ptr  = ptr;
+    if (name) setName(chn, name);
+}
+
+void PowerDebugger::bind(uint8_t chn, uint16_t* ptr, const char* name){
+    if (chn >= ACTIVE_CHANNELS || !ptr) return;
+    _bound[chn].type = BoundChannelType::UINT16_PTR;
+    _bound[chn].ptr  = ptr;
+    if (name) setName(chn, name);
+}
+
 // Vor buildPacket() aufgerufen: gebundene Kanaele automatisch aus ihrem
 // Pointer in debugData[] uebernehmen -- Channel()-Aufrufe fuer diese
 // Kanaele sind danach nicht mehr noetig (koennten sie aber weiterhin
@@ -133,6 +147,12 @@ void PowerDebugger::sampleBoundChannels(){
                 break;
             case BoundChannelType::INT_PTR:
                 debugData[i] = static_cast<float>(*reinterpret_cast<int*>(_bound[i].ptr));
+                break;
+            case BoundChannelType::UINT8_PTR:
+                debugData[i] = static_cast<float>(*reinterpret_cast<uint8_t*>(_bound[i].ptr));
+                break;
+            case BoundChannelType::UINT16_PTR:
+                debugData[i] = static_cast<float>(*reinterpret_cast<uint16_t*>(_bound[i].ptr));
                 break;
             default:
                 break;
