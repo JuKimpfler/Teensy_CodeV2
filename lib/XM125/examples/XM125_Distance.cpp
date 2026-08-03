@@ -3,8 +3,10 @@
 // Misst zyklisch Distanzen im Bereich 200mm-2500mm und gibt alle
 // erkannten Peaks (Distanz + Signalstärke) über die serielle Schnittstelle aus.
 //
-// Ausführen mit:
-//   pio test -e teensy40 -f XM125_Distance
+// Ausführen: Datei nach src/main.cpp des Hauptprojekts kopieren (in src/ darf
+// immer nur eine Datei mit setup()/loop() liegen) und normal bauen/hochladen:
+//   pio run -e teensy40 -t upload
+// Siehe lib/XM125/examples/README.md fuer alle Beispiele im Ueberblick.
 
 #include <Arduino.h>
 #include <Wire.h>

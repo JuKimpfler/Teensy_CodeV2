@@ -102,9 +102,9 @@ Byte des gelesenen 32-bit-Worts) mit einem Wert 0–255 ("Counts") befüllt.
   feststeht — für die Kalibrierung deshalb **`getPeakDistanceReg()`**
   protokollieren, das das vollständige Registerwort liefert.
 
-### Kalibrieren mit `test/XM125_WallCalibration.cpp`
+### Kalibrieren mit `lib/XM125/examples/XM125_WallCalibration.cpp`
 
-Der Sketch [test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
+Der Sketch [XM125_WallCalibration.cpp](../examples/XM125_WallCalibration.cpp)
 nimmt die Messreihe ab:
 
 1. Ein einzelnes, flaches Objekt (Holzwand) auf **exakt bekannter Distanz**

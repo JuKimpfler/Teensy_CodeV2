@@ -19,7 +19,7 @@ Datei: [XM125.h](../XM125.h) / [XM125.cpp](../XM125.cpp)
 Enthält alles, was Distance- und Presence-Firmware gemeinsam haben:
 I²C-Zugriff, Wake/Ready-Handling, gemeinsame Register. Kann auch **direkt**
 instanziiert werden — genau das macht
-[test/XM125_Connectivity.cpp](../../../test/XM125_Connectivity.cpp), um ein
+[XM125_Connectivity.cpp](../examples/XM125_Connectivity.cpp), um ein
 Modul zu prüfen, ohne zu wissen, welche Firmware darauf läuft.
 
 ## `XM125Base(uint8_t i2cAddr, int8_t wakePin, int8_t intPin)`

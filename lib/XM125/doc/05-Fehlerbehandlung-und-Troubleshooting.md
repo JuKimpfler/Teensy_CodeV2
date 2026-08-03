@@ -61,7 +61,7 @@ Zum Aufklären ist `getPeakDistanceReg()` da: es liefert das vollständige
 32-bit-Registerwort, während `getPeakDistanceRaw()` 24 dieser Bits verwirft.
 Ob die Distanz überhaupt im obersten Byte steckt, ist genau die offene Frage
 — deshalb bei Messreihen immer das Registerwort protokollieren. Fertiges
-Werkzeug dafür: [test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
+Werkzeug dafür: [XM125_WallCalibration.cpp](../examples/XM125_WallCalibration.cpp)
 (Modus `d <cm>` / `f`).
 
 ### 2b. Radar „reagiert nicht" auf eine Wand
@@ -89,7 +89,7 @@ kommt, in dieser Reihenfolge:
 Wenn `getCalibrationNeeded()` nach einer Messung `true` liefert, fordert
 der Sensor selbst eine Neukalibrierung an (z.B. durch Temperaturdrift).
 Empfohlene Reaktion, wie in
-[test/XM125_Distance.cpp](../../../test/XM125_Distance.cpp) umgesetzt:
+[XM125_Distance.cpp](../examples/XM125_Distance.cpp) umgesetzt:
 
 ```cpp
 if (radar.getCalibrationNeeded()) {
@@ -119,7 +119,7 @@ if (!radar.measure()) {           // oder !radar.update() bei Presence
 
 ### 5. Sensor bei Start nicht erreichbar (`begin()` liefert `false`)
 
-Mögliche Ursachen (siehe [test/XM125_Connectivity.cpp](../../../test/XM125_Connectivity.cpp)):
+Mögliche Ursachen (siehe [XM125_Connectivity.cpp](../examples/XM125_Connectivity.cpp)):
 
 - SDA/SCL/GND/3V3 falsch verkabelt oder Pull-up-Widerstände fehlen.
 - Modul befindet sich in einem Sleep-Zustand (nur relevant, falls
@@ -152,7 +152,7 @@ I²C-Scanner verifizieren.
 ### 7. Mehrere Sensoren am selben Bus
 
 Beim Betrieb mehrerer Module an einem `Wire`-Bus (siehe
-[test/XM125_Distance_Multi.cpp](../../../test/XM125_Distance_Multi.cpp))
+[XM125_Distance_Multi.cpp](../examples/XM125_Distance_Multi.cpp))
 muss jedes Modul eine eigene, hardwareseitig eingestellte I²C-Adresse
 haben. Die Software ändert die Adresse nicht — sie wird nur beim
 Konstruktor-Aufruf angegeben, um das jeweils richtige Modul anzusprechen.
@@ -193,7 +193,7 @@ niedrig eingestellter Empfindlichkeit.
    Sensoren nacheinander.
 
 **Nicht raten, messen:** Der Sketch
-[test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
+[XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp)
 hat dafür Modus `i`. Er misst denselben Sensor zweimal — einmal allein, einmal
 während alle anderen gleichzeitig senden — und vergleicht Trefferquote und
 Signalstärke:
@@ -207,9 +207,15 @@ Signalstärke:
 eine Empfehlung für `RADAR_PARALLEL_GROUP` aus. Der Test gehört an den
 *ungünstigsten* Punkt: Wand auf 2,5 m, weil dort die Reserve am kleinsten ist.
 
+Zwei weitere Modi desselben Sketches grenzen den Befund ein: `p` misst jeden
+Nachbarn **einzeln** als Störer (welches Paar verträgt sich nicht?), und `g`
+fährt komplette Messrunden mit Gruppengröße 1, 2 und 4 wie
+`systemlib::readRadar()` — dort steht die verlorene Trefferquote direkt neben
+der gewonnenen Zykluszeit, was die Entscheidung erst abwägbar macht.
+
 ## Nützliche Diagnosefunktion
 
-Aus [test/XM125_Distance.cpp](../../../test/XM125_Distance.cpp), gültig
+Aus [XM125_Distance.cpp](../examples/XM125_Distance.cpp), gültig
 sinngemäß auch für Presence:
 
 ```cpp

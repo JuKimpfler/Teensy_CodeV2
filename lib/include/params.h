@@ -19,7 +19,9 @@ static constexpr int8_t  RADAR_INT_PIN  = -1;
 // Messung als Peak auftauchen. Holz reflektiert deutlich schwaecher als Metall,
 // deshalb sind Signalqualitaet und CFAR-Empfindlichkeit gegenueber den
 // Acconeer-Defaults angehoben. Ermittelt/nachpruefbar mit dem Sketch
-// test/XM125_WallCalibration.cpp (Mode 's' = Parameter-Sweep).
+// lib/XM125/examples/XM125_Calib_Sensitivity.cpp (Mode 's' = Parameter-Sweep). Sieht der
+// Sensor die Wand ueberhaupt nicht, vorher lib/XM125/examples/XM125_Calib_Alignment.cpp
+// (Ausrichtung) und lib/XM125/examples/XM125_Calib_Module.cpp (Kalibrierung laeuft durch?).
 static constexpr uint32_t RADAR_START_MM = 200;   ///< naeher am Sensor liegt der Roboter selbst
 static constexpr uint32_t RADAR_END_MM   = 2700;  ///< 200 mm Reserve, damit 2500 mm nicht auf der Bereichskante liegt
 static constexpr uint32_t RADAR_SIGNAL_QUALITY        = 25000; ///< 25.0 statt Default 15.0 -> mehr SNR am Bereichsende
@@ -35,7 +37,8 @@ static constexpr uint32_t RADAR_MEASURE_TIMEOUT_MS    = 3000;  ///< PROFILE5 + h
 //   1 = nacheinander           (kein Uebersprechen moeglich, langsamste Variante)
 //   2 = Vo+Hi, danach Li+Re    (Paare blicken entgegengesetzt -- Standard)
 //   4 = alle gleichzeitig      (schnellste Variante, hoechstes Uebersprech-Risiko)
-// Nachmessen ob 4 noch sauber laeuft: test/XM125_WallCalibration.cpp, Mode 'i'.
+// Nachmessen ob 4 noch sauber laeuft: lib/XM125/examples/XM125_Calib_Crosstalk.cpp, Mode 'g'
+// (misst Trefferquote UND Zykluszeit fuer Gruppe 1/2/4) bzw. Mode 'i'/'p'.
 static constexpr uint8_t RADAR_PARALLEL_GROUP = 2;
 static_assert(RADAR_NUM_SENSORS % RADAR_PARALLEL_GROUP == 0,
               "RADAR_PARALLEL_GROUP muss RADAR_NUM_SENSORS teilen");

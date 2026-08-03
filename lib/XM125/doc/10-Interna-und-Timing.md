@@ -220,7 +220,7 @@ Die Messdauer besteht fast vollständig aus Warten — deshalb überlappt
 Die Gruppen entstehen über die Schrittweite `numGroups`: Bei 2er-Gruppen
 messen jeweils die **entgegengesetzt** blickenden Sensoren zusammen, nicht die
 benachbarten. Welcher Wert tragbar ist, misst
-[test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
+[XM125_WallCalibration.cpp](../examples/XM125_WallCalibration.cpp)
 im Modus `i`.
 
 Weitere Stellschrauben, wenn es noch schneller sein muss:

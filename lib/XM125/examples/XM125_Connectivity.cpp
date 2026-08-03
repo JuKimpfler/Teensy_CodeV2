@@ -2,8 +2,10 @@
 // Grundlegender Verkabelungs-/Inbetriebnahmetest für den Acconeer XM125 Radarsensor.
 // Prüft: I2C-Erreichbarkeit, Wake/Ready-Sequenz, Version- und Status-Register.
 //
-// Ausführen mit:
-//   pio test -e teensy40 -f XM125_Connectivity
+// Ausführen: Datei nach src/main.cpp des Hauptprojekts kopieren (in src/ darf
+// immer nur eine Datei mit setup()/loop() liegen) und normal bauen/hochladen:
+//   pio run -e teensy40 -t upload
+// Siehe lib/XM125/examples/README.md fuer alle Beispiele im Ueberblick.
 //
 // Verkabelung (Beispiel):
 //   XM125 SDA/SCL -> Teensy Wire (Pins 18/19)

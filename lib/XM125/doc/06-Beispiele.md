@@ -1,13 +1,15 @@
 # Beispiele
 
 Diese Beispiele sind gekürzte/kommentierte Auszüge aus den tatsächlichen
-Testskripten im Projekt. Vollständiger, lauffähiger Code steht in den
-verlinkten Originaldateien.
+Skripten im Projekt. Vollständiger, lauffähiger Code steht in den verlinkten
+Originaldateien unter [lib/XM125/examples/](../examples/README.md) — dort
+auch eine ausführliche Erklärung, was jedes Skript genau tut und wie es zu
+bedienen ist.
 
 ## 1. Connectivity-Test (Basis-Klasse, firmware-unabhängig)
 
-Quelle: [test/XM125_Connectivity.cpp](../../../test/XM125_Connectivity.cpp)
-· Ausführen mit `pio test -e teensy40 -f XM125_Connectivity`
+Quelle: [XM125_Connectivity.cpp](../examples/XM125_Connectivity.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
 
 Prüft I²C-Erreichbarkeit, Wake/Ready-Sequenz sowie Version- und
 Status-Register — unabhängig davon, ob Distance- oder Presence-Firmware
@@ -41,8 +43,8 @@ void loop() {
 
 ## 2. Einzelsensor-Distanzmessung
 
-Quelle: [test/XM125_Distance.cpp](../../../test/XM125_Distance.cpp)
-· Ausführen mit `pio test -e teensy40 -f XM125_Distance`
+Quelle: [XM125_Distance.cpp](../examples/XM125_Distance.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
 
 ```cpp
 #include <Wire.h>
@@ -89,8 +91,8 @@ void loop() {
 
 ## 3. Vier Distanzsensoren an einem I²C-Bus
 
-Quelle: [test/XM125_Distance_Multi.cpp](../../../test/XM125_Distance_Multi.cpp)
-· Ausführen mit `pio test -e teensy40 -f XM125_Distance_Multi`
+Quelle: [XM125_Distance_Multi.cpp](../examples/XM125_Distance_Multi.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
 
 Verkabelung: alle 4 Sensoren an `Wire` (SDA/SCL), unterschiedliche
 Hardware-Adressen `0x51`/`0x52`/`0x53`/`0x54`.
@@ -140,8 +142,8 @@ void loop() {
 
 ## 4. Anwesenheitserkennung (Presence)
 
-Quelle: [test/XM125_Presence.cpp](../../../test/XM125_Presence.cpp)
-· Ausführen mit `pio test -e teensy40 -f XM125_Presence`
+Quelle: [XM125_Presence.cpp](../examples/XM125_Presence.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
 
 ```cpp
 #include <Wire.h>
@@ -188,8 +190,8 @@ void loop() {
 
 ## 5. Kalibrierung auf eine gerade Holzwand (bis 2,5 m)
 
-Quelle: [test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
-· Ausführen mit `pio test -e teensy40 -f XM125_WallCalibration`
+Quelle: [XM125_WallCalibration.cpp](../examples/XM125_WallCalibration.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
 
 Interaktives Werkzeug über die serielle Konsole. Es beantwortet die beiden
 Fragen getrennt, die bei "das Radar erkennt die Wand nicht" gern

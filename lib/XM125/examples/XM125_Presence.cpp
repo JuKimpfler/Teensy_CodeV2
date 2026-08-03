@@ -2,8 +2,10 @@
 // Beispiel-/Testskript für den Presence-Detector des Acconeer XM125.
 // Erkennt Anwesenheit (schnelle & langsame Bewegung) im Bereich 300mm-2000mm.
 //
-// Ausführen mit:
-//   pio test -e teensy40 -f XM125_Presence
+// Ausführen: Datei nach src/main.cpp des Hauptprojekts kopieren (in src/ darf
+// immer nur eine Datei mit setup()/loop() liegen) und normal bauen/hochladen:
+//   pio run -e teensy40 -t upload
+// Siehe lib/XM125/examples/README.md fuer alle Beispiele im Ueberblick.
 
 #include <Arduino.h>
 #include <Wire.h>

@@ -6,10 +6,16 @@
 //   1) REAGIERT der Sensor ueberhaupt auf die Wand?   -> Mode 'm' und 's'
 //   2) Welche echte Distanz gehoert zu welchem Rohwert? -> Mode 'd' und 'f'
 //
-// Ausfuehren mit:
-//   pio test -e teensy40 -f XM125_WallCalibration
-// (oder Datei nach src/ verschieben und normal bauen -- in src/ darf immer nur
-//  eine Datei mit setup()/loop() liegen.)
+// Ausführen: Datei nach src/main.cpp des Hauptprojekts kopieren (in src/ darf
+// immer nur eine Datei mit setup()/loop() liegen) und normal bauen/hochladen:
+//   pio run -e teensy40 -t upload
+// Siehe lib/XM125/examples/README.md fuer alle Beispiele im Ueberblick.
+//
+// Hinweis: die Modi 's' (Empfindlichkeits-Sweep) und 'i' (Uebersprech-Test)
+// sind hier nur noch aus historischen Gruenden enthalten -- als eigenstaendige,
+// weiter ausgebaute Beispiele siehe XM125_Calib_Sensitivity.cpp bzw.
+// XM125_Calib_Crosstalk.cpp. Fuer dieses Skript zaehlen 'd', 'f', 'c' (Teil B:
+// Rohwert -> mm, siehe lib/XM125/doc/07-Kalibrierung.md).
 //
 // Messaufbau:
 //   - Sensor senkrecht auf eine glatte, ebene Holzflaeche (Sperrholz/OSB/Tuer,

@@ -164,26 +164,18 @@ gefunden (Library Dependency Finder). Es genügt daher:
 #include "XM125Distance.h"   // bzw. XM125Presence.h / XM125.h
 ```
 
-### Testskripte ausführen
+### Beispiele ausführen
+
+Die Beispiele liegen unter [lib/XM125/examples/](../examples/) (nicht in
+`test/` — siehe [examples/README.md](../examples/README.md) für die
+Übersicht). Jedes Beispiel ist eine einzelne `.cpp`-Datei mit eigenem
+`setup()`/`loop()`; zum Bauen die gewünschte Datei als `src/main.cpp` des
+Hauptprojekts verwenden (in `src/` darf immer nur eine Datei mit
+`setup()`/`loop()` liegen):
 
 ```bash
-pio test -e teensy40 -f XM125_Connectivity
-```
-
-```bash
-pio test -e teensy40 -f XM125_Distance
-```
-
-```bash
-pio test -e teensy40 -f XM125_Distance_Multi
-```
-
-```bash
-pio test -e teensy40 -f XM125_Presence
-```
-
-```bash
-pio test -e teensy40 -f XM125_WallCalibration
+cp lib/XM125/examples/XM125_Connectivity.cpp src/main.cpp
+pio run -e teensy40 -t upload
 ```
 
 Danach den seriellen Monitor öffnen:
@@ -198,16 +190,25 @@ pio device monitor -b 115200
    Protokoll- und Detektorstatus. Läuft das nicht, ist alles Weitere sinnlos.
 2. I²C-Scan (Abschnitt 3), falls die Adresse unklar ist.
 3. **`XM125_Distance`** — ein Sensor, Konfiguration + Kalibrierung + Messung.
-4. **`XM125_WallCalibration`** — Empfindlichkeit auf die Wand abstimmen
-   (Modus `s`), Übersprechen prüfen (`i`), Rohwert↔Distanz aufnehmen
-   (`d`/`f`). Ergebnisse nach [params.h](../../include/params.h) übertragen.
-   Siehe [07-Kalibrierung.md](07-Kalibrierung.md).
+4. **Kalibrierskripte in dieser Reihenfolge** — je Methode ein eigener Sketch,
+   Übersicht in
+   [07-Kalibrierung.md](07-Kalibrierung.md#ein-skript-je-kalibriermethode):
+   `XM125_Calib_Module` (kalibriert das Modul sauber durch?) →
+   `XM125_Calib_Alignment` (Sensor auf maximale Echostärke ausrichten) →
+   `XM125_Calib_Sensitivity` (`RADAR_SIGNAL_QUALITY`,
+   `RADAR_THRESHOLD_SENSITIVITY`) → `XM125_Calib_Crosstalk`
+   (`RADAR_PARALLEL_GROUP`). Ergebnisse nach
+   [params.h](../../include/params.h) übertragen.
 5. **`XM125_Distance_Multi`** — alle vier Sensoren, inklusive PDS-Ausgabe.
 6. Erst danach die Positionsbibliothek dazunehmen.
 
+Der Rohwert↔Distanz-Teil (Counts → mm) hat kein eigenes Skript, weil der
+Umrechnungsfaktor offen ist — dafür weiterhin `XM125_WallCalibration`
+(Modi `d`/`f`), siehe [07-Kalibrierung.md Teil B](07-Kalibrierung.md#teil-b--kalibrierung-der-peak-rohwerte-counts--mm).
+
 ## 8. Integration: Power Debug System (PDS)
 
-[test/XM125_Distance_Multi.cpp](../../../test/XM125_Distance_Multi.cpp)
+[XM125_Distance_Multi.cpp](../examples/XM125_Distance_Multi.cpp)
 schreibt den Rohwert jedes Sensors in einen PDS-Kanal, um ihn live zu
 plotten:
 
@@ -259,9 +260,10 @@ Ablauf in der `systemlib`:
 - `radarMeasureFailed(idx)` — zählt Fehlschläge und initialisiert den Sensor
   nach `RADAR_MAX_CONSEC_FAILURES` komplett neu.
 
-Die Werte für `RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY` und
-`RADAR_PARALLEL_GROUP` stammen aus Messungen mit
-[test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp) —
+Die Werte für `RADAR_SIGNAL_QUALITY` und `RADAR_THRESHOLD_SENSITIVITY` stammen
+aus [XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp),
+`RADAR_PARALLEL_GROUP` aus
+[XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp) —
 wird die Hardware oder die Zielumgebung geändert (andere Wand, anderes
 Gehäuse), gehören sie neu gemessen.
 

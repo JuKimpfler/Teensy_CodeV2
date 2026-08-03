@@ -4,12 +4,14 @@
 //
 // Verkabelung: alle 4 Sensoren an Wire (SDA/SCL), Adressen 0x51/0x52/0x53/0x54.
 //
-// Ausfuehren mit:
-//   pio test -e teensy40 -f XM125_Distance_Multi
+// Ausführen: Datei nach src/main.cpp des Hauptprojekts kopieren (in src/ darf
+// immer nur eine Datei mit setup()/loop() liegen) und normal bauen/hochladen:
+//   pio run -e teensy40 -t upload
+// Siehe lib/XM125/examples/README.md fuer alle Beispiele im Ueberblick.
 //
 // Hinweis: Peak-Distanz ist aktuell nur ein unkalibrierter Rohwert (0-255
 // "Counts"), siehe getPeakDistanceRaw()-Warnung in XM125Distance.h -- die
-// Umrechnung in echte mm ist noch offen (siehe XM125_Distance.cpp Test).
+// Umrechnung in echte mm ist noch offen (siehe XM125_Distance.cpp Beispiel).
 
 #include <Arduino.h>
 #include <Wire.h>

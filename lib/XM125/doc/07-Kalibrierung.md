@@ -12,15 +12,48 @@ Ein dritter Vorgang heißt zwar nicht "Kalibrierung", gehört aber in dieselbe
 Inbetriebnahme: die **Abstimmung der Empfindlichkeit** (`signalQuality`,
 `thresholdSensitivity`, `reflectorShape`) darauf, dass die Holzwand bei 2,5 m
 zuverlässig als Peak erkannt wird, plus die Frage, wie viele Sensoren
-gleichzeitig messen dürfen (`RADAR_PARALLEL_GROUP`). Beides misst derselbe
-Sketch [test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
-(Modi `s` und `i`); die Ergebnisse und Begründungen stehen in
+gleichzeitig messen dürfen (`RADAR_PARALLEL_GROUP`). Die Ergebnisse und
+Begründungen stehen in
 [04-Konfiguration.md](04-Konfiguration.md#in-diesem-projekt-verwendete-werte)
 und [05, Abschnitt 8](05-Fehlerbehandlung-und-Troubleshooting.md#8-übersprechen-zwischen-mehreren-sensoren).
 
 **Reihenfolge bei der Inbetriebnahme:** erst Teil A (sonst misst das Modul
 gar nicht), dann die Empfindlichkeitsabstimmung (sonst kommt bei 2,5 m kein
 Peak, den man kalibrieren könnte), erst danach Teil B.
+
+## Ein Skript je Kalibriermethode
+
+Jede Methode hat einen eigenen Sketch in [test/](../../../test/). Sie bauen
+aufeinander auf — in dieser Reihenfolge durchlaufen, denn jeder Schritt setzt
+voraus, dass der vorherige stimmt:
+
+| # | Skript | Methode | Ergebnis geht nach |
+|---|---|---|---|
+| 1 | [XM125_Calib_Module.cpp](../examples/XM125_Calib_Module.cpp) | Modul-interne Kalibrierung: läuft sie durch, wie lange dauert sie, hält sie im Warmbetrieb? (Teil A) | — (Diagnose) |
+| 2 | [XM125_Calib_Alignment.cpp](../examples/XM125_Calib_Alignment.cpp) | Mechanische Ausrichtung: Sensor auf maximale Echostärke drehen | Montage |
+| 3 | [XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp) | Empfindlichkeit: `signalQuality` × `thresholdSensitivity`, dazu `maxProfile` und `reflectorShape` | `RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY` in [params.h](../../include/params.h) |
+| 4 | [XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp) | Übersprechen: wie viele Sensoren dürfen gleichzeitig messen? | `RADAR_PARALLEL_GROUP` in [params.h](../../include/params.h) |
+
+Alle vier konfigurieren mit den Werten aus `params.h` und kalibrieren wie
+`systemlib::setupRadarSens()` — was hier gemessen wird, gilt damit auch für
+den Roboter. Bedienung jeweils über den seriellen Monitor, `?` zeigt die Hilfe.
+
+Ausführen: gewünschte Datei nach `src/main.cpp` des Hauptprojekts kopieren
+(in `src/` darf immer nur eine Datei mit `setup()`/`loop()` liegen) und normal
+bauen/hochladen:
+
+```bash
+cp lib/XM125/examples/XM125_Calib_Sensitivity.cpp src/main.cpp
+pio run -e teensy40 -t upload
+```
+
+Ausführliche Beschreibung jedes Skripts, aller Modi und der Bedienung:
+[examples/README.md](../examples/README.md).
+
+Teil B (Rohwert → mm) hat bewusst **kein** eigenes Skript: dafür ist der
+Umrechnungsfaktor noch offen. Wer die Messreihe fahren will, nutzt weiterhin
+[XM125_WallCalibration.cpp](../examples/XM125_WallCalibration.cpp) (Modi
+`d`/`f`/`c`, siehe [B.10](#b10-werkzeug-libxm125examplesxm125_wallcalibrationcpp)).
 
 Teil A ist beim Distance-Detektor der Grund, warum `applyConfigAndCalibrate()`
 mehrere Sekunden blockieren darf. Teil B ist der Grund, warum
@@ -123,7 +156,7 @@ Daraus folgen zwei Dinge, die für die Fehlersuche wichtig sind:
    liefert die Adresse, (b) Timeout (`BUSY` ging nicht rechtzeitig zurück),
    (c) `DETECTOR_ERROR` (Bit 28) nach Abschluss. Fall (a) unterscheidet sich
    von (b)/(c) genau daran, ob `getLastFailedConfigRegister() != 0xFFFF` ist —
-   so ist es in [test/XM125_Distance.cpp](../../../test/XM125_Distance.cpp)
+   so ist es in [XM125_Distance.cpp](../examples/XM125_Distance.cpp)
    umgesetzt.
 2. **Der Rückgabewert prüft nur Bit 28**, nicht die spezifischen
    Kalibrier-Fehlerbits 23/24/25. Wer genau wissen will, *welcher* Teilschritt
@@ -153,7 +186,7 @@ Moment, in dem `applyConfigAndCalibrate()` / `calibrate()` läuft:
 - ⚠ **Mehrere XM125 gleichzeitig:** Vier Module am selben Ring senden im
   gleichen Frequenzband. Für die Rauschpegel-Schätzung (Schritt 2) ist
   Fremdsignal störend. In
-  [test/XM125_Distance_Multi.cpp](../../../test/XM125_Distance_Multi.cpp)
+  [XM125_Distance_Multi.cpp](../examples/XM125_Distance_Multi.cpp)
   werden die Sensoren **nacheinander** initialisiert — das ist gut so, weil
   dann immer nur einer kalibriert, während die anderen noch nicht messen.
   Nachträgliches `recalibrate()` einzelner Sensoren im laufenden Betrieb
@@ -184,7 +217,7 @@ zum Kalibrierzeitpunkt, meldet der Detektor Nachkalibrierbedarf
 (**📘 Acconeer**).
 
 Empfohlenes Muster (so in
-[test/XM125_Distance.cpp](../../../test/XM125_Distance.cpp)):
+[XM125_Distance.cpp](../examples/XM125_Distance.cpp)):
 
 ```cpp
 if (!radar.measure(3000)) {
@@ -316,7 +349,7 @@ also wieder mit voller Einschwingzeit. Auf `false` gesetzt, werden alte
 Zustände weiterverwendet (schnellerer Wiederanlauf, dafür ggf. Altlasten).
 
 Nach einem `hasDetectorError()` genügt laut
-[test/XM125_Presence.cpp](../../../test/XM125_Presence.cpp) meist
+[XM125_Presence.cpp](../examples/XM125_Presence.cpp) meist
 `stop()` + `start()`; ein erneutes `applyConfiguration()` (und damit eine neue
 Sensor-Kalibrierung) ist nur nötig, wenn sich die Konfiguration geändert hat.
 
@@ -437,7 +470,7 @@ if (radar.measure(3000) && radar.getNumDistances() > 0) {
 }
 ```
 
-[test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp) macht
+[XM125_WallCalibration.cpp](../examples/XM125_WallCalibration.cpp) macht
 genau das automatisch: Zu jedem Kalibrierpunkt gibt es das Registerwort in vier
 Deutungen aus — als `uint32`, byte-getauscht als `uint32`, als `float` und
 byte-getauscht als `float`.
@@ -490,7 +523,7 @@ weder H1 noch H2 linear passen.
 Für jede Messung: 20 Einzelmessungen, davon den **Median** notieren, und
 Messungen mit `getNumDistances() != 1` verwerfen (dann ist etwas anderes im
 Bild). Genau das erledigt `d <cm>` in
-[test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp) —
+[XM125_WallCalibration.cpp](../examples/XM125_WallCalibration.cpp) —
 die Tabellen unten sind zum Mitschreiben gedacht, falls von Hand gemessen wird
 oder das Ergebnis dokumentiert werden soll.
 
@@ -638,13 +671,14 @@ Objekt entsprechen.
   eventuell erst gar nicht erkannt — die Strength-Spalte in der Tabelle hilft,
   das zu erkennen (sehr kleine Werte = grenzwertige Detektion).
 
-## B.10 Werkzeug: `test/XM125_WallCalibration.cpp`
+## B.10 Werkzeug: `lib/XM125/examples/XM125_WallCalibration.cpp`
 
 Die Messreihe muss nicht von Hand programmiert werden — dafür gibt es bereits
 einen interaktiven Sketch:
 
 ```bash
-pio test -e teensy40 -f XM125_WallCalibration
+cp lib/XM125/examples/XM125_WallCalibration.cpp src/main.cpp
+pio run -e teensy40 -t upload
 ```
 
 Bedienung über den seriellen Monitor:
@@ -659,6 +693,12 @@ Bedienung über den seriellen Monitor:
 | `f` | Punkte auswerten: Ausgleichsgerade `mm = a · Rohwert + b` samt Restfehler |
 | `c` | Punkte löschen |
 | `?` | Hilfe |
+
+Die Modi `s` und `i` sind hier nur noch aus historischen Gründen enthalten —
+sie sind inzwischen als eigenständige Skripte gebaut
+([XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp) bzw.
+[XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp)) und dort
+weiter ausgebaut. Für Teil B relevant sind `d`, `f` und `c`.
 
 Der Sketch nimmt einem damit die Schritte B.5 (Reihe A) und B.6 (Regression)
 komplett ab — inklusive Median-Bildung, Verwerfen von Messungen ohne Peak und
@@ -675,20 +715,31 @@ läuft monoton mit der Distanz mit?
 
 ## Checkliste
 
-**Modul-Kalibrierung (Teil A)**
+**1. Modul-Kalibrierung (Teil A)** — `XM125_Calib_Module`
 
 - [ ] Sensor final montiert, Umfeld frei, nichts bewegt sich
 - [ ] `config` vollständig gesetzt **vor** `applyConfigAndCalibrate()`
 - [ ] Rückgabewert geprüft, bei `false`: `getLastFailedConfigRegister()` und `getDetectorStatus()` auswerten
-- [ ] Bei mehreren Sensoren: nacheinander kalibrieren
-- [ ] `getCalibrationNeeded()` im Betrieb auswerten → `recalibrate()` mit Zeitsperre
+- [ ] Bei mehreren Sensoren: nacheinander kalibrieren (Modus `b`)
+- [ ] Dauer gegen das Timeout geprüft (Modus `n`)
+- [ ] `getCalibrationNeeded()` im Betrieb auswerten → `recalibrate()` mit Zeitsperre (Modus `w`)
 - [ ] Nach Power-Cycle immer neu kalibrieren (Kalibrierung ist flüchtig)
 
-**Empfindlichkeit & Übersprechen (Inbetriebnahme)**
+**2. Ausrichtung** — `XM125_Calib_Alignment`
 
-- [ ] `XM125_WallCalibration`, Modus `s` bei 2,5 m gefahren
+- [ ] Jeder Sensor auf maximale Echostärke ausgerichtet (Modus `m`)
+- [ ] Bewertung bei 2,5 m bestanden: volle Trefferquote, nur ein Peak (Modus `q`)
+
+**3. Empfindlichkeit** — `XM125_Calib_Sensitivity`
+
+- [ ] Modus `s` bei 2,5 m gefahren
 - [ ] `RADAR_SIGNAL_QUALITY` / `RADAR_THRESHOLD_SENSITIVITY` in [params.h](../../include/params.h) eingetragen
-- [ ] Modus `i` gefahren, `RADAR_PARALLEL_GROUP` entsprechend gesetzt
+- [ ] An einem zweiten Sensor gegengeprüft (Exemplarstreuung)
+
+**4. Übersprechen** — `XM125_Calib_Crosstalk`
+
+- [ ] Modus `g` gefahren, `RADAR_PARALLEL_GROUP` entsprechend gesetzt
+- [ ] Bei Auffälligkeiten Modus `p`: welches Sensorpaar stört sich?
 
 **Rohwert-Kalibrierung (Teil B)**
 

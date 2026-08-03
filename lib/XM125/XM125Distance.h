@@ -196,7 +196,7 @@ public:
      * zurueck -- welche der 32 Bit die Distanz wirklich tragen, ist bisher nicht
      * geklaert (siehe Warnung oben). Fuer die Kalibrierung deshalb dieses Wort
      * bei bekannten Distanzen protokollieren, nicht den 8-bit-Wert.
-     * Genutzt von test/XM125_WallCalibration.cpp.
+     * Genutzt von lib/XM125/examples/XM125_WallCalibration.cpp.
      */
     uint32_t getPeakDistanceReg(uint8_t idx) const;
     /** Rohe Signalstärke des Peaks idx (1000x-Einheit lt. Datenblatt, RSS-intern). */

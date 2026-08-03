@@ -94,9 +94,10 @@ Begründung der Abweichungen vom Default:
 Default und bleibt so. Alle übrigen Felder bleiben unverändert.
 
 Nachgemessen/überprüft wird die Abstimmung mit
-[test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
+[XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp)
 (Mode `s` = Parameter-Sweep bei 2,5 m). Der Sketch gibt am Ende direkt die
-Zahlen aus, die nach `params.h` gehören.
+Zahlen aus, die nach `params.h` gehören; `maxProfile` (Mode `p`) und
+`reflectorShape` (Mode `r`) lassen sich dort ebenfalls gegenprüfen.
 
 > **Messzeit beachten:** `signalQuality` und `endMm` gehen beide direkt in die
 > Dauer einer Messung ein. `systemlib::readRadar()` misst deshalb gruppenweise
@@ -140,7 +141,7 @@ Struct-Definition: [XM125Presence.h](../XM125Presence.h) (`XM125PresenceConfig`,
 
 ### In diesem Projekt verwendete Werte
 
-Aus [test/XM125_Presence.cpp](../../../test/XM125_Presence.cpp):
+Aus [XM125_Presence.cpp](../examples/XM125_Presence.cpp):
 
 ```cpp
 radar.config.startMm = 300;

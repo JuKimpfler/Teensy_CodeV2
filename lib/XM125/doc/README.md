@@ -31,7 +31,8 @@ gemeinsames Basis-Protokoll (16-bit Registeradresse + 32-bit Wert, Big-Endian).
 | "Was macht diese Funktion genau?" | [08](08-API-Referenz.md) |
 | "Wie funktioniert die Kalibrierung?" | [07](07-Kalibrierung.md) |
 | "Warum sind die Distanzen keine Millimeter?" | [07 Teil B](07-Kalibrierung.md#teil-b--kalibrierung-der-peak-rohwerte-counts--mm) |
-| "Das Radar sieht die Wand nicht" | [05, Abschnitt 2b](05-Fehlerbehandlung-und-Troubleshooting.md), dann `XM125_WallCalibration` Modus `s` |
+| "Das Radar sieht die Wand nicht" | [05, Abschnitt 2b](05-Fehlerbehandlung-und-Troubleshooting.md), dann `XM125_Calib_Alignment` (Ausrichtung) und `XM125_Calib_Sensitivity` Modus `s` |
+| "Welches Kalibrierskript wofür?" | [07, Skriptübersicht](07-Kalibrierung.md#ein-skript-je-kalibriermethode) |
 | "Was bedeutet Status `0x1100000F`?" | [09](09-Register-und-Konstanten.md) |
 | "Warum ist meine Loop so langsam?" | [10](10-Interna-und-Timing.md) |
 | "Wie messen mehrere Sensoren gleichzeitig?" | [02](02-Distance-Detector.md#mehrere-sensoren-parallel-messen-lassen), [08](08-API-Referenz.md), [10](10-Interna-und-Timing.md) |
@@ -69,7 +70,7 @@ void loop() {
 > unkalibrierten 1-Byte-Rohwert (0–255 "Counts"), **nicht** in echten
 > Millimetern. Vollständiges Messprotokoll dazu:
 > [07-Kalibrierung.md, Teil B](07-Kalibrierung.md#teil-b--kalibrierung-der-peak-rohwerte-counts--mm),
-> fertiges Werkzeug: `test/XM125_WallCalibration.cpp`.
+> fertiges Werkzeug: `lib/XM125/examples/XM125_WallCalibration.cpp`.
 
 ## Quelle & Kennzeichnung
 

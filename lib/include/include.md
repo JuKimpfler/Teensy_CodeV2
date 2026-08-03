@@ -141,7 +141,11 @@ Ergebnis der Kalibrierung und die einzige Stelle, an der nachjustiert wird:
 
 Verwendet in `systemlib::setupRadarSens()`. Hintergrund und Messverfahren:
 [04-Konfiguration.md](../XM125/doc/04-Konfiguration.md#in-diesem-projekt-verwendete-werte),
-Nachmessen mit [test/XM125_WallCalibration.cpp](../../test/XM125_WallCalibration.cpp).
+Nachmessen mit [XM125_Calib_Sensitivity.cpp](../XM125/examples/XM125_Calib_Sensitivity.cpp)
+(`RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY`) und
+[XM125_Calib_Crosstalk.cpp](../XM125/examples/XM125_Calib_Crosstalk.cpp)
+(`RADAR_PARALLEL_GROUP`); Übersicht aller Kalibrierskripte in
+[07-Kalibrierung.md](../XM125/doc/07-Kalibrierung.md#ein-skript-je-kalibriermethode).
 
 ### Debug-UART
 
