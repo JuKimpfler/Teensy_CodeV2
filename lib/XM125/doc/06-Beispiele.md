@@ -89,7 +89,7 @@ void loop() {
 
 ## 3. Vier Distanzsensoren an einem I²C-Bus
 
-Quelle: [src/XM125_Distance_Multi.cpp](../../../src/XM125_Distance_Multi.cpp)
+Quelle: [test/XM125_Distance_Multi.cpp](../../../test/XM125_Distance_Multi.cpp)
 · Ausführen mit `pio test -e teensy40 -f XM125_Distance_Multi`
 
 Verkabelung: alle 4 Sensoren an `Wire` (SDA/SCL), unterschiedliche
@@ -185,3 +185,54 @@ void loop() {
   delay(100);
 }
 ```
+
+## 5. Kalibrierung auf eine gerade Holzwand (bis 2,5 m)
+
+Quelle: [test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
+· Ausführen mit `pio test -e teensy40 -f XM125_WallCalibration`
+
+Interaktives Werkzeug über die serielle Konsole. Es beantwortet die beiden
+Fragen getrennt, die bei "das Radar erkennt die Wand nicht" gern
+durcheinandergehen:
+
+| Frage | Modus |
+|---|---|
+| Wird die Wand überhaupt als Peak erkannt? | `m` (Dauermessung), `s` (Parameter-Sweep) |
+| Welche echte Distanz gehört zu welchem Rohwert? | `d <cm>` (Punkt aufnehmen), `f` (auswerten) |
+| Stören sich die Sensoren, wenn sie gleichzeitig messen? | `i` (Übersprech-Test) |
+
+**Ablauf für die Empfindlichkeit** (das, was "reagiert auf die Wand" bestimmt):
+
+1. Wand auf den *größten* gewünschten Abstand stellen — 2,5 m. Dort ist die
+   Erkennung am schwierigsten, näher wird sie nur besser.
+2. `s` eingeben. Der Sketch fährt 16 Kombinationen aus `signalQuality` ×
+   `thresholdSensitivity` ab, misst jede 20-mal und meldet Trefferquote,
+   Signalstärke und Messzeit.
+3. Der Sketch empfiehlt am Ende die *günstigste* Kombination mit 20/20
+   Treffern (möglichst wenig Signalqualität = kurze Messzeit, möglichst wenig
+   Empfindlichkeit = wenig Fehlalarme). Diese Zahlen nach
+   [params.h](../../include/params.h) übertragen.
+
+Ausgabeformat (Zahlen hier nur als Beispiel, nicht gemessen):
+
+```
+ SigQual  Sens  Erkannt  Rohwert  Staerke   Zeit
+ -------  ----  -------  -------  -------   ----
+  15000   500     3/20      41      1120    28 ms
+  15000   750    14/20      42      1180    28 ms
+  25000   750    20/20      42      1240    46 ms
+```
+
+**Ablauf für die Distanz-Zuordnung:** siehe
+[02-Distance-Detector.md](02-Distance-Detector.md#kalibrieren-mit-testxm125_wallcalibrationcpp).
+
+**Ablauf für das Übersprechen:** Wand ebenfalls auf 2,5 m, dann `i`. Der Sketch
+misst denselben Sensor einmal allein und einmal, während alle anderen
+gleichzeitig senden, und empfiehlt daraus einen Wert für
+`RADAR_PARALLEL_GROUP`. Hintergrund:
+[05-Fehlerbehandlung-und-Troubleshooting.md](05-Fehlerbehandlung-und-Troubleshooting.md#8-übersprechen-zwischen-mehreren-sensoren).
+
+> Der Messaufbau entscheidet über das Ergebnis: senkrecht auf die Fläche
+> ausrichten (schon 10–15° Schräglage lenken die Reflexion an glattem Holz
+> weg vom Sensor), Abstand ab Sensor-Vorderkante messen, und im Messkegel
+> (ca. ±25°) sonst nichts stehen lassen.

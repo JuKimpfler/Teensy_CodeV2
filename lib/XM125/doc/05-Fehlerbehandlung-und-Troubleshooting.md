@@ -57,6 +57,33 @@ Millimeter**, sondern denselben unkalibrierten 0–255-Rohwert wie
 `getPeakDistanceRaw()`. Nicht als Bug in der Anwendung fehlinterpretieren
 — die Kalibrierung des Umrechnungsfaktors ist ein offener Punkt.
 
+Zum Aufklären ist `getPeakDistanceReg()` da: es liefert das vollständige
+32-bit-Registerwort, während `getPeakDistanceRaw()` 24 dieser Bits verwirft.
+Ob die Distanz überhaupt im obersten Byte steckt, ist genau die offene Frage
+— deshalb bei Messreihen immer das Registerwort protokollieren. Fertiges
+Werkzeug dafür: [test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
+(Modus `d <cm>` / `f`).
+
+### 2b. Radar „reagiert nicht" auf eine Wand
+
+Erkennung (Peak vorhanden) und Distanzwert sind zwei getrennte Probleme —
+zuerst prüfen, ob überhaupt ein Peak kommt (`getNumDistances() > 0`), und erst
+danach über den Zahlenwert reden. Häufigste Ursachen, wenn gar kein Peak
+kommt, in dieser Reihenfolge:
+
+1. **Schräg getroffen.** Schon 10–15° Schräglage lenken die Reflexion an einer
+   glatten Fläche vom Sensor weg. Senkrecht ausrichten.
+2. **Ziel auf der Bereichskante.** Ein Objekt bei exakt `endMm` wird
+   unzuverlässig erkannt — `endMm` mit Reserve über dem Zielabstand wählen
+   (im Projekt: 2700 mm für 2500 mm Ziel).
+3. **Schwelle zu hoch für einen schwachen Reflektor.** Holz reflektiert
+   deutlich schwächer als Metall: `signalQuality` und `thresholdSensitivity`
+   anheben, `reflectorShape = PLANAR` setzen. Siehe
+   [04-Konfiguration.md](04-Konfiguration.md#in-diesem-projekt-verwendete-werte).
+4. **Etwas anderes steht näher.** Bei `peakSorting = CLOSEST` ist Peak 0 das
+   nächstgelegene Objekt, nicht die Wand — den Bereich vor dem Sensor
+   freiräumen (Öffnungswinkel der integrierten Antenne lt. XM125-Datenblatt).
+
 ### 3. `CALIBRATION_NEEDED` beim Distance-Detector
 
 Wenn `getCalibrationNeeded()` nach einer Messung `true` liefert, fordert
@@ -125,13 +152,60 @@ I²C-Scanner verifizieren.
 ### 7. Mehrere Sensoren am selben Bus
 
 Beim Betrieb mehrerer Module an einem `Wire`-Bus (siehe
-[src/XM125_Distance_Multi.cpp](../../../src/XM125_Distance_Multi.cpp))
+[test/XM125_Distance_Multi.cpp](../../../test/XM125_Distance_Multi.cpp))
 muss jedes Modul eine eigene, hardwareseitig eingestellte I²C-Adresse
 haben. Die Software ändert die Adresse nicht — sie wird nur beim
 Konstruktor-Aufruf angegeben, um das jeweils richtige Modul anzusprechen.
 Fällt einzelner Sensor beim Start aus, wird er in der Hauptschleife
 periodisch erneut über `setupSensor(idx)` initialisiert, ohne die
 anderen Sensoren zu blockieren.
+
+### 8. Übersprechen zwischen mehreren Sensoren
+
+Sobald mehrere Module **gleichzeitig** messen (`RADAR_PARALLEL_GROUP > 1`,
+siehe [params.h](../../include/params.h)), senden sie unkoordiniert im selben
+60-GHz-Band. Es gibt keine Synchronisation zwischen den Modulen — die
+I²C-Firmware kennt kein Sync-Signal.
+
+**Wie sich Übersprechen äußert:** Ein fremder Sender ist nicht phasenstarr zum
+eigenen Empfänger. Er wird deshalb typischerweise *nicht* als sauberer Peak
+integriert, sondern hebt das Rauschniveau an. Genau das ist die unangenehme
+Wirkung: die CFAR-Schwelle passt sich dem Rauschen an, steigt mit und frisst
+die Empfindlichkeitsreserve, die für den schwachen Wand-Reflex bei 2,5 m
+gebraucht wird. Das Symptom ist also selten ein Geisterobjekt, sondern
+**sporadisch fehlende Peaks am Bereichsende** — dasselbe Bild wie bei zu
+niedrig eingestellter Empfindlichkeit.
+
+**Was dagegen hilft — in dieser Reihenfolge:**
+
+1. **Geometrie.** Die vier Sensoren des Roboters blicken um je 90° versetzt.
+   Direktes Einkoppeln von einem in den anderen liegt damit weitgehend
+   außerhalb der Antennenkeulen. `readRadar()` nutzt das aus und misst
+   standardmäßig die *entgegengesetzt* blickenden Paare zusammen (Vo+Hi, dann
+   Li+Re) statt benachbarter.
+2. **Reflexionen bedenken.** Eine glatte Wand wirkt für 60 GHz wie ein
+   Spiegel — genau deshalb steht `reflectorShape` auf `PLANAR`. In einer Ecke
+   kann sie Energie vom Front- auf den Seitensensor umlenken, auch wenn die
+   beiden sich nicht direkt „sehen". Das ist der Fall, der in der Praxis am
+   ehesten stört.
+3. **Gruppengröße reduzieren.** `RADAR_PARALLEL_GROUP = 1` schließt
+   Übersprechen vollständig aus, kostet aber die volle Messzeit aller vier
+   Sensoren nacheinander.
+
+**Nicht raten, messen:** Der Sketch
+[test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
+hat dafür Modus `i`. Er misst denselben Sensor zweimal — einmal allein, einmal
+während alle anderen gleichzeitig senden — und vergleicht Trefferquote und
+Signalstärke:
+
+```
+  allein:          20/20 erkannt, Staerke 1240, 46 ms
+  mit Nachbarn:    18/20 erkannt, Staerke 1180, 46 ms
+```
+
+(Beispielausgabe, nicht gemessen.) Aus der Differenz gibt der Sketch direkt
+eine Empfehlung für `RADAR_PARALLEL_GROUP` aus. Der Test gehört an den
+*ungünstigsten* Punkt: Wand auf 2,5 m, weil dort die Reserve am kleinsten ist.
 
 ## Nützliche Diagnosefunktion
 

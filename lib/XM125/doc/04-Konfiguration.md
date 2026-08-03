@@ -64,18 +64,47 @@ Struct-Definition: [XM125Distance.h](../XM125Distance.h) (`XM125DistanceConfig`,
 
 ### In diesem Projekt verwendete Werte
 
-Aus den Testskripten ([test/XM125_Distance.cpp](../../../test/XM125_Distance.cpp),
-[test/XM125_Distance_Multi.cpp](../../../test/XM125_Distance_Multi.cpp)):
+Der Roboter ist auf **eine gerade Holzwand in bis zu 2,5 m Abstand**
+abgestimmt. Gesetzt wird das in `systemlib::setupRadarSens()`, die Zahlen
+selbst stehen in [params.h](../../include/params.h):
 
 ```cpp
-radar.config.startMm         = 200;
-radar.config.endMm           = 2500;   // teils auch 4000
-radar.config.maxProfile      = XM125D_PROFILE5;
-radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;
-radar.config.peakSorting     = XM125D_SORT_STRONGEST;
+radar.config.startMm                       = RADAR_START_MM;              // 200
+radar.config.endMm                         = RADAR_END_MM;                // 2700
+radar.config.maxProfile                    = XM125D_PROFILE5;
+radar.config.thresholdMethod               = XM125D_THRESHOLD_CFAR;
+radar.config.thresholdSensitivity          = RADAR_THRESHOLD_SENSITIVITY; // 750
+radar.config.signalQuality                 = RADAR_SIGNAL_QUALITY;        // 25000
+radar.config.peakSorting                   = XM125D_SORT_CLOSEST;
+radar.config.reflectorShape                = XM125D_REFLECTOR_PLANAR;
+radar.config.closeRangeLeakageCancellation = true;
 ```
 
-Alle übrigen Felder bleiben auf ihren Defaults.
+Begründung der Abweichungen vom Default:
+
+| Feld | Default | hier | Warum |
+|---|---|---|---|
+| `endMm` | 3000 | **2700** | Ein Ziel *auf* der Bereichskante wird unzuverlässig erkannt. 2500 mm muss innerhalb liegen, deshalb 200 mm Reserve statt der früheren 2500 |
+| `signalQuality` | 15000 | **25000** | Holz reflektiert deutlich schwächer als Metall. Mehr Signalqualität = mehr gemittelte Samples = besseres SNR am Bereichsende, kostet Messzeit |
+| `thresholdSensitivity` | 500 | **750** | Senkt die CFAR-Schwelle, damit der schwache Wand-Peak bei 2,5 m nicht wegfällt. Nicht auf 1000, sonst häufen sich Fehlalarme |
+| `reflectorShape` | GENERIC | **PLANAR** | Bei einer Fläche fällt die Echo-Amplitude langsamer mit der Distanz als bei einem punktförmigen Reflektor. Mit GENERIC setzt der Detektor die Schwelle am Bereichsende zu hoch an |
+| `peakSorting` | STRONGEST | **CLOSEST** | Peak 0 soll das nächstgelegene Hindernis sein — die Anwendung liest nur Index 0 |
+
+`maxProfile = PROFILE5` (längste Pulse, größte Reichweite) ist ohnehin der
+Default und bleibt so. Alle übrigen Felder bleiben unverändert.
+
+Nachgemessen/überprüft wird die Abstimmung mit
+[test/XM125_WallCalibration.cpp](../../../test/XM125_WallCalibration.cpp)
+(Mode `s` = Parameter-Sweep bei 2,5 m). Der Sketch gibt am Ende direkt die
+Zahlen aus, die nach `params.h` gehören.
+
+> **Messzeit beachten:** `signalQuality` und `endMm` gehen beide direkt in die
+> Dauer einer Messung ein. `systemlib::readRadar()` misst deshalb gruppenweise
+> parallel (`RADAR_PARALLEL_GROUP`, Standard 2 → Vo+Hi, dann Li+Re), sodass die
+> Wartezeit einmal pro Gruppe statt einmal pro Sensor anfällt. Wer die Werte
+> weiter hochdreht, sollte die Zykluszeit (`giveCycleTime()`) im Auge behalten.
+> Zum Übersprechen bei paralleler Messung siehe
+> [05-Fehlerbehandlung-und-Troubleshooting.md](05-Fehlerbehandlung-und-Troubleshooting.md#8-übersprechen-zwischen-mehreren-sensoren).
 
 ---
 
