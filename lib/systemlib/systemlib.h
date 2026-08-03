@@ -95,6 +95,9 @@ private:
     void readUS(void);
     void readExpanders(void);
     void readRadar(void);
+    void readRadarGroup(uint8_t first, uint8_t stride); ///< misst eine Sensorgruppe parallel
+    void radarMeasureFailed(uint8_t idx);               ///< Fehlerzaehler + ggf. Neuinitialisierung
+    RadarData* radarSlot(uint8_t idx);                  ///< Index -> RadarVo/Li/Hi/Re
 
     bool setupRadarSens(uint8_t idx);
 

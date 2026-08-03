@@ -54,6 +54,16 @@ bool XM125Distance::recalibrate(uint32_t timeoutMs) {
 }
 
 bool XM125Distance::measure(uint32_t timeoutMs) {
+    if (!startMeasurement()) return false;
+
+    uint32_t status = 0;
+    if (!_waitNotBusy(timeoutMs, status)) return false;
+    if (statusError(status)) return false;
+
+    return fetchResult();
+}
+
+bool XM125Distance::startMeasurement() {
     if (!_writeReg(XM125_REG_COMMAND, XM125D_CMD_MEASURE_DISTANCE)) {
         // Siehe Kommentar in XM125Base::_executeCommand: ein gemeldeter
         // Schreibfehler kann durch Clock-Stretching der internen MCU direkt
@@ -64,11 +74,21 @@ bool XM125Distance::measure(uint32_t timeoutMs) {
             return false;
         }
     }
+    return true;
+}
+
+bool XM125Distance::pollMeasurement(bool& done) {
+    done = false;
 
     uint32_t status = 0;
-    if (!_waitNotBusy(timeoutMs, status)) return false;
-    if (statusError(status)) return false;
+    if (!_readReg(XM125_REG_DETECTOR_STATUS, status)) return false;
+    if (statusBusy(status)) return true; // laeuft noch -- kein Fehler
 
+    done = true;
+    return !statusError(status);
+}
+
+bool XM125Distance::fetchResult() {
     uint32_t result = 0;
     if (!_readReg(XM125D_REG_DISTANCE_RESULT, result)) return false;
 
@@ -100,6 +120,7 @@ bool XM125Distance::measure(uint32_t timeoutMs) {
         // Bis zur Kalibrierung mit bekannten Distanzen wird hier der rohe
         // Byte-Wert unveraendert als "Counts" gespeichert, siehe
         // getPeakDistanceRaw() / getPeakDistanceMm() in XM125Distance.h.
+        _peakDistanceReg[i] = dist; // ungekuerzt, fuer die Kalibriermessung
         _peakDistanceRaw[i] = static_cast<uint8_t>(dist >> 24);
         _peakStrength[i]    = static_cast<int32_t>(strength);
     }
@@ -110,6 +131,11 @@ bool XM125Distance::measure(uint32_t timeoutMs) {
 uint8_t XM125Distance::getPeakDistanceRaw(uint8_t idx) const {
     if (idx >= _numDistances) return 0;
     return _peakDistanceRaw[idx];
+}
+
+uint32_t XM125Distance::getPeakDistanceReg(uint8_t idx) const {
+    if (idx >= _numDistances) return 0;
+    return _peakDistanceReg[idx];
 }
 
 uint32_t XM125Distance::getPeakDistanceMm(uint8_t idx) const {

@@ -143,96 +143,138 @@ void systemlib::readSensors(void)
     updateMotors();
 }
 
+RadarData* systemlib::radarSlot(uint8_t idx)
+{
+    switch (idx) {
+        case 0:  return &RadarVo;
+        case 1:  return &RadarLi;
+        case 2:  return &RadarHi;
+        case 3:  return &RadarRe;
+        default: return nullptr;
+    }
+}
+
+void systemlib::radarMeasureFailed(uint8_t idx)
+{
+    RADAR_consecFailures[idx]++;
+    if (RADAR_consecFailures[idx] >= RADAR_MAX_CONSEC_FAILURES) {
+        RADAR_consecFailures[idx] = 0;
+        RADAR_sensorReady[idx] = setupRadarSens(idx);
+    }
+}
+
 void systemlib::readRadar(void){
-    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
+    // Die Sensoren messen gruppenweise parallel: erst bei allen Sensoren einer
+    // Gruppe die Messung anstossen, dann gemeinsam warten, dann die Ergebnisse
+    // abholen. Die Messdauer faellt dadurch einmal pro Gruppe an statt einmal
+    // pro Sensor. Gruppengroesse: RADAR_PARALLEL_GROUP in params.h.
+    //
+    // numGroups als Schrittweite bildet automatisch die Gruppen mit der
+    // groessten Blickrichtungs-Trennung: bei 2er-Gruppen sind das {Vo, Hi} und
+    // {Li, Re}, also jeweils entgegengesetzt blickende Sensoren.
+    constexpr uint8_t numGroups = RADAR_NUM_SENSORS / RADAR_PARALLEL_GROUP;
+    for (uint8_t g = 0; g < numGroups; g++) {
+        readRadarGroup(g, numGroups);
+    }
+}
+
+void systemlib::readRadarGroup(uint8_t first, uint8_t stride)
+{
+    bool pending[RADAR_NUM_SENSORS] = {};
+    bool done[RADAR_NUM_SENSORS]    = {};
+
+    // 1. Messung bei allen Sensoren der Gruppe anstossen (blockiert nicht)
+    for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
         if (!RADAR_sensorReady[i]) {
             RADAR_sensorReady[i] = setupRadarSens(i);
             continue;
         }
+        if (RADAR_sensors[i].startMeasurement()) {
+            pending[i] = true;
+        } else {
+            radarMeasureFailed(i);
+        }
+    }
+
+    // 2. Gemeinsam warten, bis alle Sensoren der Gruppe fertig sind
+    uint32_t waitStart = millis();
+    bool anyPending = true;
+    while (anyPending) {
+        anyPending = false;
+        for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
+            if (!pending[i]) continue;
+
+            bool finished = false;
+            if (!RADAR_sensors[i].pollMeasurement(finished)) {
+                pending[i] = false;
+                radarMeasureFailed(i);
+            } else if (finished) {
+                pending[i] = false;
+                done[i]    = true;
+            } else {
+                anyPending = true;
+            }
+        }
+
+        if (anyPending && (millis() - waitStart) >= RADAR_MEASURE_TIMEOUT_MS) {
+            for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
+                if (pending[i]) { pending[i] = false; radarMeasureFailed(i); }
+            }
+            break;
+        }
+    }
+
+    // 3. Ergebnisse abholen
+    for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
+        if (!done[i]) continue;
 
         XM125Distance& radar = RADAR_sensors[i];
-
-        if (!radar.measure(1000)) {
-            //if(i == 0){RadarVo.isCon = false;}
-            //if(i == 1){RadarLi.isCon = false;}
-            //if(i == 2){RadarHi.isCon = false;}
-            //if(i == 3){RadarRe.isCon = false;}
-            RADAR_consecFailures[i]++;
-            if (RADAR_consecFailures[i] >= RADAR_MAX_CONSEC_FAILURES) {
-                RADAR_consecFailures[i] = 0;
-                RADAR_sensorReady[i] = setupRadarSens(i);
-            }
+        if (!radar.fetchResult()) {
+            radarMeasureFailed(i);
             continue;
         }
         RADAR_consecFailures[i] = 0;
 
-        uint8_t furthest = 0;//radar.getNumDistances();
+        RadarData* slot = radarSlot(i);
+        if (slot == nullptr) continue;
 
-        //radar.getTemperature();
-        if(radar.getNumDistances()>0 || true){
-            if(i==0){
-                RadarVo.Peaks = radar.getNumDistances();
-                RadarVo.Dist=radar.getPeakDistanceRaw(furthest);
-                RadarVo.Strenght=radar.getPeakStrength(furthest);
-                RadarVo.isCon = true;
-            }
-            else if(i==1){
-                RadarLi.Dist=radar.getPeakDistanceRaw(furthest);
-                RadarLi.Strenght=radar.getPeakStrength(furthest);
-                RadarLi.Peaks = radar.getNumDistances();
-                RadarLi.isCon = true;
-            }
-            else if(i==2){
-                RadarHi.Dist=radar.getPeakDistanceRaw(furthest);
-                RadarHi.Strenght=radar.getPeakStrength(furthest);
-                RadarHi.Peaks = radar.getNumDistances();
-                RadarHi.isCon = true;
-            }
-            else if(i==3){
-                RadarRe.Dist=radar.getPeakDistanceRaw(furthest);
-                RadarRe.Strenght=radar.getPeakStrength(furthest);
-                RadarRe.Peaks = radar.getNumDistances();
-                RadarRe.isCon = true;
-            }
-        }
-        else{
-            if(i==0){RadarVo.Peaks = 0;}
-            else if(i==1){RadarLi.Peaks = 0;}
-            else if(i==2){RadarHi.Peaks = 0;}
-            else if(i==3){RadarRe.Peaks = 0;}
-        }
+        // Peak 0: bei peakSorting = CLOSEST das naechstgelegene Objekt.
+        // Peaks == 0 (keine Wand erkannt) liefert Dist/Strenght = 0, damit kein
+        // alter Wert stehen bleibt und "reagiert nicht" sichtbar wird.
+        slot->Peaks    = radar.getNumDistances();
+        slot->Dist     = radar.getPeakDistanceRaw(0);
+        slot->Strenght = radar.getPeakStrength(0);
+        slot->isCon    = true;
     }
 }
 
 bool systemlib::setupRadarSens(uint8_t idx) {
   XM125Distance& radar = RADAR_sensors[idx];
+  RadarData* slot = radarSlot(idx);
 
   if (!radar.begin(I2C_RADAR)) {
-    if(idx == 0){RadarVo.isCon = false;}
-    if(idx == 1){RadarLi.isCon = false;}
-    if(idx == 2){RadarHi.isCon = false;}
-    if(idx == 3){RadarRe.isCon = false;}
+    if (slot != nullptr) slot->isCon = false;
     return false;
   }
 
-  radar.config.startMm = 200;
-  radar.config.endMm   = 2500;
-  radar.config.maxProfile = XM125D_PROFILE5;
-  radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;
-  //radar.config.fixedStrengthThreshold = -10000;
-  //radar.config.thresholdSensitivity = 200;
-  //radar.config.numFramesRecordedThreshold = 100;
-  //radar.config.fixedAmplitudeThreshold = 100000; // 2000000000
+  // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h
+  radar.config.startMm = RADAR_START_MM;
+  radar.config.endMm   = RADAR_END_MM;   // > 2500, damit die Wand nicht auf der Bereichskante liegt
+  radar.config.maxProfile = XM125D_PROFILE5;              // laengste Pulse = groesste Reichweite
+  radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;   // adaptiv, unabhaengig von der Umgebung
+  radar.config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
+  radar.config.signalQuality        = RADAR_SIGNAL_QUALITY;
   radar.config.peakSorting = XM125D_SORT_CLOSEST;
+  // PLANAR: bei einer flaechigen Wand faellt die Echo-Amplitude langsamer mit der
+  // Distanz als bei einem punktfoermigen Reflektor. Ohne diese Angabe setzt der
+  // Detektor die Schwelle am Bereichsende zu hoch an und die Wand faellt raus.
   radar.config.reflectorShape = XM125D_REFLECTOR_PLANAR;
+  radar.config.closeRangeLeakageCancellation = true;      // sauberer Nahbereich ab startMm
 
   if (!radar.applyConfigAndCalibrate()) {
     uint16_t failedReg = radar.getLastFailedConfigRegister();
     if (failedReg != 0xFFFF) { /*-> I2C-Schreibfehler bei Register 0xfailedReg*/ }
-    if(idx == 0){RadarVo.isCon = false;}
-    if(idx == 1){RadarLi.isCon = false;}
-    if(idx == 2){RadarHi.isCon = false;}
-    if(idx == 3){RadarRe.isCon = false;}
+    if (slot != nullptr) slot->isCon = false;
     return false;
   }
 

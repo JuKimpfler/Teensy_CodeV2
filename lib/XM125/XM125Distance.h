@@ -147,6 +147,29 @@ public:
      */
     bool measure(uint32_t timeoutMs = XM125_DEFAULT_MEASURE_TIMEOUT_MS);
 
+    // ── Zerlegte Messung fuer mehrere Sensoren parallel ───────────────────
+    // measure() blockiert waehrend der gesamten Messung. Sollen mehrere
+    // Sensoren gleichzeitig messen, stattdessen: bei allen startMeasurement(),
+    // dann alle pollMeasurement() bis fertig, dann alle fetchResult(). Die
+    // Wartezeit faellt so nur einmal an statt einmal pro Sensor.
+    // Siehe systemlib::readRadarGroup().
+
+    /** Sendet das Messkommando und kehrt sofort zurueck (wartet NICHT). */
+    bool startMeasurement();
+
+    /**
+     * Fragt einmal ab, ob die laufende Messung fertig ist -- blockiert nicht.
+     * @param done  wird true, sobald BUSY zurueckgegangen ist
+     * @return false bei I2C-Fehler oder gesetztem DETECTOR_ERROR
+     */
+    bool pollMeasurement(bool& done);
+
+    /**
+     * Liest Ergebnisregister und Peaks der abgeschlossenen Messung ein.
+     * Erst aufrufen, wenn pollMeasurement() `done` gemeldet hat.
+     */
+    bool fetchResult();
+
     // ── Zugriff auf zuletzt eingelesenes Ergebnis (nach measure()) ────────
     uint8_t  getNumDistances()      const { return _numDistances; }
     bool     getNearStartEdge()     const { return _nearStartEdge; }
@@ -167,6 +190,15 @@ public:
     uint8_t  getPeakDistanceRaw(uint8_t idx) const;
     /** Siehe Warnung bei getPeakDistanceRaw() -- aktuell 1:1 unkalibrierter Rohwert, NICHT echte mm! */
     uint32_t getPeakDistanceMm(uint8_t idx) const;
+    /**
+     * Ungefiltertes 32-bit-Wort des Peak-Distanz-Registers, genau so wie es vom
+     * Sensor gelesen wurde. getPeakDistanceRaw() gibt davon nur das oberste Byte
+     * zurueck -- welche der 32 Bit die Distanz wirklich tragen, ist bisher nicht
+     * geklaert (siehe Warnung oben). Fuer die Kalibrierung deshalb dieses Wort
+     * bei bekannten Distanzen protokollieren, nicht den 8-bit-Wert.
+     * Genutzt von test/XM125_WallCalibration.cpp.
+     */
+    uint32_t getPeakDistanceReg(uint8_t idx) const;
     /** Rohe Signalstärke des Peaks idx (1000x-Einheit lt. Datenblatt, RSS-intern). */
     int32_t  getPeakStrength(uint8_t idx) const;
 
@@ -179,5 +211,6 @@ private:
     bool     _measureError      = false;
     int16_t  _temperature       = 0;
     uint8_t  _peakDistanceRaw[XM125D_MAX_PEAKS] = {};
+    uint32_t _peakDistanceReg[XM125D_MAX_PEAKS] = {}; ///< ungekuerztes Registerwort, siehe getPeakDistanceReg()
     int32_t  _peakStrength[XM125D_MAX_PEAKS]    = {};
 };

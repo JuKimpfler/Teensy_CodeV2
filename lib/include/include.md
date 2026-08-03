@@ -119,6 +119,30 @@ geändert wird (z.B. `#define I2C_US Wire1`).
 |---|---|---|
 | `BNO_ADDRESS` | `0x28` | I²C-Adresse des [BNO055](../BNO055/BNO055.md) |
 
+### Radar (XM125)
+
+| Konstante | Wert | Bedeutung |
+|---|---|---|
+| `RADAR_NUM_SENSORS` | `4` | Anzahl [XM125](../XM125/doc/README.md)-Module |
+| `RADAR_SENSOR_ADDRS` | `0x51`…`0x54` | I²C-Adressen, hardwareseitig eingestellt |
+| `RADAR_WAKE_PIN` / `RADAR_INT_PIN` | `-1` | `WAKE_UP`/`MCU_INT` bewusst unverkabelt |
+
+**Abstimmung auf eine gerade Holzwand bis 2,5 m** – diese vier Werte sind das
+Ergebnis der Kalibrierung und die einzige Stelle, an der nachjustiert wird:
+
+| Konstante | Wert | Bedeutung |
+|---|---|---|
+| `RADAR_START_MM` | `200` | untere Bereichsgrenze; näher liegt der Roboter selbst |
+| `RADAR_END_MM` | `2700` | obere Bereichsgrenze, 200 mm Reserve über dem Ziel von 2500 mm |
+| `RADAR_SIGNAL_QUALITY` | `25000` | 25.0 statt Default 15.0 – mehr SNR für den schwachen Holz-Reflex |
+| `RADAR_THRESHOLD_SENSITIVITY` | `750` | 0.75 statt Default 0.50 – CFAR lässt schwache Wand-Peaks durch |
+| `RADAR_MEASURE_TIMEOUT_MS` | `3000` | PROFILE5 + hohe Signalqualität braucht länger als der 1000-ms-Default |
+| `RADAR_PARALLEL_GROUP` | `2` | Wie viele Sensoren gleichzeitig messen: `1` nacheinander, `2` = Vo+Hi dann Li+Re, `4` = alle. Muss `RADAR_NUM_SENSORS` teilen (`static_assert`) |
+
+Verwendet in `systemlib::setupRadarSens()`. Hintergrund und Messverfahren:
+[04-Konfiguration.md](../XM125/doc/04-Konfiguration.md#in-diesem-projekt-verwendete-werte),
+Nachmessen mit [test/XM125_WallCalibration.cpp](../../test/XM125_WallCalibration.cpp).
+
 ### Debug-UART
 
 | Konstante | Wert | Bedeutung |
