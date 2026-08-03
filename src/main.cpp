@@ -9,6 +9,8 @@ PowerDebugger PDS1;
 float param1 = 0;
 float param2 = 0;
 float timer = 0;
+float Akku_V = 0;
+float Akku_I = 0;
 
 void setup()
 {
@@ -18,9 +20,12 @@ void setup()
   Serial.println("------------------------------- Hallo -------------------------------");
   sys.initialize();
   PDS1.init();
-  //PDS1.bind(0,&param1,"Return");
-  //PDS1.bind(1,&param2,"Return_t2");
-  //PDS1.bind(2,&timer,"Timer");
+  PDS1.bind(0,&param1,"Return");
+  PDS1.bind(1,&param2,"Return_t2");
+  PDS1.bind(2,&timer);
+
+  PDS1.bind(180,&Akku_V);
+  PDS1.bind(181,&Akku_I);
 }
 
 void loop()
@@ -44,15 +49,10 @@ void loop()
   sys.MoDataHR.Dir = false;
   sys.MoDataHR.Enable = sys.giveExpander(0,3);
 
+  Akku_I = sys.giveMainCurrent();
+  Akku_V = sys.giveMainVoltage();
 
   timer = millis()/1000;
   PDS1.update();
   param1 = PDS1.getFastParam(0);
-  if(PDS1.fastParamsAreFresh()){
-    Serial.println(param1);
-  }
-  else{
-    Serial.println("no data");
-    //param1 = 0;
-  }
 }

@@ -104,7 +104,7 @@ void systemlib::initialize()
     ir_ring.read_gains(IR_Gains);
     ir_ring.read_offsets(IR_Offsets);
 
-    setDebugTimeout(4);
+    setDebugTimeout(0);
 
     ADC_Motor.init();
 
@@ -133,9 +133,10 @@ void systemlib::readSensors(void)
 }
 
 /* -------------- Debugger -------------- */
+/*
 void systemlib::setDBGSys()
 {
-    /*PDS.Channel(21, BNO_OrbitDir);
+    PDS.Channel(21, BNO_OrbitDir);
     PDS.Channel(22, BNO.eulHeading());
     PDS.Channel(23, BNO.calibStatus());
     PDS.Channel(24, BNO.systemStatus());
@@ -154,7 +155,7 @@ void systemlib::setDBGSys()
     PDS.Channel(37, 0);
     PDS.Channel(38, analogRead(LIGHT_BARRIER));
     PDS.Channel(39, 0);
-    PDS.Channel(40, 0);*/
+    PDS.Channel(40, 0);
 }
 
 void systemlib::setDBGChannel(u_int8_t Channel, float Value)
@@ -164,6 +165,8 @@ void systemlib::setDBGChannel(u_int8_t Channel, float Value)
         //PDS.Channel(Channel, Value);
     }
 }
+*/
+
 
 /* -------------- BNO -------------- */
 void systemlib::calibBNO(void)
@@ -295,6 +298,11 @@ void systemlib::setMotorData(MotorData Data){
 void systemlib::updateMotors(void){
     uint8_t Port_List[8];
     byte out;
+    if(MoDataVL.Speed<2){MoDataVL.Speed=0;MoDataVL.Enable=false;}
+    if(MoDataVR.Speed<2){MoDataVR.Speed=0;MoDataVR.Enable=false;}
+    if(MoDataHL.Speed<2){MoDataHL.Speed=0;MoDataHL.Enable=false;}
+    if(MoDataHR.Speed<2){MoDataHR.Speed=0;MoDataHR.Enable=false;}
+    if(MoDataDR.Speed<2){MoDataDR.Speed=0;MoDataDR.Enable=false;}
 
     analogWrite(MotorVL_PWM,abs(MoDataVL.Speed)*2.55);
     analogWrite(MotorVR_PWM,abs(MoDataVR.Speed)*2.55);
@@ -371,6 +379,9 @@ bool systemlib::giveExpander(uint8_t expnum, uint8_t portnum){
     }
     else if(expnum == 1){
         return Button_EXP.readPin(portnum);
+    }
+    else{
+        return false;
     }
 }
 

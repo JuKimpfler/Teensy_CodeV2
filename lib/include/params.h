@@ -9,9 +9,6 @@
 
 #define BNO_ADDRESS 0x28
 
-#pragma once
-#include <Arduino.h>
-
 static constexpr uint32_t UART_DBG_BAUD        = 1'000'000UL; // 1 Mbps
 
 // ============================================================
