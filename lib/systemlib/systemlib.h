@@ -15,7 +15,7 @@
 #include <fancyBTN.h>
 
 #include <commlib.h>
-#include <PDS.h>
+//#include <PDS.h>
 
 #include <PID/PID.h>
 #include <ADRC/ADRC.h>
@@ -46,12 +46,6 @@ class systemlib
 private:
     RobotDataCom ownRobot;
     RobotDataCom otherRobot;
-
-    MotorData MotorVL_D;
-    MotorData MotorVR_D;
-    MotorData MotorHL_D;
-    MotorData MotorHR_D;
-    MotorData MotorDR_D;
 
     /* -------------- Sensor Var -------------- */
     float BNO_calibration = 0.0f;
@@ -92,6 +86,13 @@ private:
     void updateMotors(void);
 
 public:
+
+    MotorData MoDataVL;
+    MotorData MoDataVR;
+    MotorData MoDataHL;
+    MotorData MoDataHR;
+    MotorData MoDataDR;
+
     /* -------------- Ssytem Worker -------------- */
     void initialize();
     void readSensors(void);
@@ -111,6 +112,7 @@ public:
     MotorData giveMotorData(uint8_t ID);
 
     void setupHeadingController(bool useADRC = false);
+    void resetHeadingController(void);
 
     /* -------------- Calculate -------------- */
     void updateHeadingController(void);
@@ -138,6 +140,7 @@ public:
     bool giveTSSPData(uint8_t sensorNumber) const { return IR_TSSP[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
     float giveHeadingController(void); // BNO has to be setup allready
     void giveButtonStates(uint8_t (&buttonStates)[5]) const {for (uint8_t i = 0; i < 5; i++){buttonStates[i] = fancyBTNstates[i];}}; // currently disabled -> change in readExpanders() to enable it
+    bool giveExpander(uint8_t expnum, uint8_t portnum);
 
     /* -------------- set -------------- */
     void setDebugTimeout(uint16_t timeout_ms) { debugTimeout = timeout_ms; }

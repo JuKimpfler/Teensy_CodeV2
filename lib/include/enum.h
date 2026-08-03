@@ -15,8 +15,8 @@
 enum PinOut
 {
 
-    MotorVR_PWM = 5,
-    MotorVL_PWM = 4,
+    MotorVR_PWM = 4,
+    MotorVL_PWM = 5,
     MotorHL_PWM = 6,
     MotorHR_PWM = 9,
     MotorDR_PWM = 33,

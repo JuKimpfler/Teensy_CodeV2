@@ -34,6 +34,8 @@ void loop()
   USBC_UART.print(" , motor_current : ");
   USBC_UART.println(sys.giveMotorCurrent());
 
+  sys.d
+
   sys.setDBGSys();
   sys.setDBGChannel(0,sys.giveCycleTime_us());
 }
