@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "params.h"
+#include "params_PDS.h"
 
 // enum.h stammt aus dem Roboter-Projekt, in das diese Bibliothek eingebunden
 // wird, und liegt bewusst nicht in diesem Repository. PDS.h/PDS.cpp selbst
@@ -72,7 +73,7 @@
 #endif
 
 // Bindungs-Typ eines per bind() registrierten Kanals (Auto-Sampling, siehe update()).
-enum class BoundChannelType : uint8_t { NONE = 0, FLOAT_PTR, BOOL_PTR, INT_PTR };
+enum class BoundChannelType : uint8_t { NONE = 0, FLOAT_PTR, BOOL_PTR, INT_PTR , UINT8_PTR , UINT16_PTR};
 
 struct BoundChannel {
     BoundChannelType type = BoundChannelType::NONE;
@@ -133,6 +134,8 @@ class PowerDebugger{
         void bind(uint8_t chn, float* ptr, const char* name = nullptr);
         void bind(uint8_t chn, bool*  ptr, const char* name = nullptr);
         void bind(uint8_t chn, int*   ptr, const char* name = nullptr);
+        void bind(uint8_t chn, uint8_t*   ptr, const char* name = nullptr);
+        void bind(uint8_t chn, uint16_t*   ptr, const char* name = nullptr);
 
         // ── Param-Downlink: öffentliche Zugriffs-API ────────────────────
         float getParam(uint8_t index) const;        // Slow-Float,  Index 0..49
