@@ -3,7 +3,8 @@
 /* -------------- Instanzen -------------- */
 
 BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
-PowerDebugger PDS;
+//PowerDebugger PDS;
+
 elapsedMillis cycleTimer;
 elapsedMicros cycleTimer_us;
 
@@ -48,9 +49,13 @@ fancyBTN BTN5(50, 6, 8, true);
 void systemlib::initialize()
 {
     Wire1.begin();
-    Wire1.setClock(400000);
+    Wire1.setClock(100000);
     Wire.begin();
-    Wire.setClock(400000);
+    Wire.setClock(100000);
+
+    SPI.begin();
+    SPI1.begin();
+
     USBC_UART.begin(115200);
 
     INA219_Main.begin(Wire1);
@@ -59,14 +64,14 @@ void systemlib::initialize()
     INA219_Main.setMaxCurrentShunt(15);
     INA219_Motor.setMaxCurrentShunt(15);
 
-    BNO.init();
-    PDS.init();
+    //BNO.init();
+    //PDS.init();
 
-    MotorVL_D.ID = MotorVL_ID;
-    MotorVR_D.ID = MotorVR_ID;
-    MotorHL_D.ID = MotorHL_ID;
-    MotorHR_D.ID = MotorHR_ID;
-    MotorDR_D.ID = MotorDR_ID;
+    MoDataVL.ID = MotorVL_ID;
+    MoDataVR.ID = MotorVR_ID;
+    MoDataHL.ID = MotorHL_ID;
+    MoDataHR.ID = MotorHR_ID;
+    MoDataDR.ID = MotorDR_ID;
 
     pinMode(START_SWITCH, INPUT);
 
@@ -99,7 +104,7 @@ void systemlib::initialize()
     ir_ring.read_gains(IR_Gains);
     ir_ring.read_offsets(IR_Offsets);
 
-    setDebugTimeout(5);
+    setDebugTimeout(4);
 
     ADC_Motor.init();
 
@@ -116,12 +121,12 @@ void systemlib::readSensors(void)
     cycleTimer_us = 0;
 
     readBNO();
-    readIR();
+    //readIR();
     //readUS();
 
     readExpanders();
 
-    PDS.update();
+    //PDS.update();
 
     updateHeadingController();
     updateMotors();
@@ -130,7 +135,7 @@ void systemlib::readSensors(void)
 /* -------------- Debugger -------------- */
 void systemlib::setDBGSys()
 {
-    PDS.Channel(21, BNO_OrbitDir);
+    /*PDS.Channel(21, BNO_OrbitDir);
     PDS.Channel(22, BNO.eulHeading());
     PDS.Channel(23, BNO.calibStatus());
     PDS.Channel(24, BNO.systemStatus());
@@ -149,14 +154,14 @@ void systemlib::setDBGSys()
     PDS.Channel(37, 0);
     PDS.Channel(38, analogRead(LIGHT_BARRIER));
     PDS.Channel(39, 0);
-    PDS.Channel(40, 0);
+    PDS.Channel(40, 0);*/
 }
 
 void systemlib::setDBGChannel(u_int8_t Channel, float Value)
 {
     if (Util.Range(Channel, 0, 20))
     {
-        PDS.Channel(Channel, Value);
+        //PDS.Channel(Channel, Value);
     }
 }
 
@@ -280,33 +285,31 @@ void systemlib::readUS(void)
 
 /* -------------- Aktors ------------- */
 void systemlib::setMotorData(MotorData Data){
-    if(Data.ID == MotorVR_D.ID){MotorVR_D = Data;}
-    else if(Data.ID == MotorHR_D.ID){MotorHR_D = Data;}
-    else if(Data.ID == MotorVL_D.ID){MotorVL_D = Data;}
-    else if(Data.ID == MotorHL_D.ID){MotorHL_D = Data;}
-    else if(Data.ID == MotorDR_D.ID){MotorDR_D = Data;}
-
-    updateMotors();
+    if(Data.ID == MoDataVR.ID){MoDataVR = Data;}
+    else if(Data.ID == MoDataHR.ID){MoDataHR = Data;}
+    else if(Data.ID == MoDataVL.ID){MoDataVL = Data;}
+    else if(Data.ID == MoDataHL.ID){MoDataHL = Data;}
+    else if(Data.ID == MoDataDR.ID){MoDataDR = Data;}
 }
 
 void systemlib::updateMotors(void){
     uint8_t Port_List[8];
-    byte out = 0;
+    byte out;
 
-    analogWrite(MotorVL_PWM,abs(MotorVL_D.Speed)*2.55);
-    analogWrite(MotorVR_PWM,abs(MotorVR_D.Speed)*2.55);
-    analogWrite(MotorHR_PWM,abs(MotorHR_D.Speed)*2.55);
-    analogWrite(MotorHL_PWM,abs(MotorHL_D.Speed)*2.55);
+    analogWrite(MotorVL_PWM,abs(MoDataVL.Speed)*2.55);
+    analogWrite(MotorVR_PWM,abs(MoDataVR.Speed)*2.55);
+    analogWrite(MotorHR_PWM,abs(MoDataHR.Speed)*2.55);
+    analogWrite(MotorHL_PWM,abs(MoDataHL.Speed)*2.55);
 
-    if(MotorVL_D.Dir){Port_List[MotorVL_P1]=0;}else{Port_List[MotorVL_P1]=1;}
-    if(MotorVR_D.Dir){Port_List[MotorVR_P1]=0;}else{Port_List[MotorVR_P1]=1;}
-    if(MotorHL_D.Dir){Port_List[MotorHL_P1]=0;}else{Port_List[MotorHL_P1]=1;}
-    if(MotorHR_D.Dir){Port_List[MotorHR_P1]=0;}else{Port_List[MotorHR_P1]=1;}
+    if(MoDataVL.Dir){Port_List[MotorVL_P1]=0;}else{Port_List[MotorVL_P1]=1;}
+    if(MoDataVR.Dir){Port_List[MotorVR_P1]=0;}else{Port_List[MotorVR_P1]=1;}
+    if(MoDataHL.Dir){Port_List[MotorHL_P1]=0;}else{Port_List[MotorHL_P1]=1;}
+    if(MoDataHR.Dir){Port_List[MotorHR_P1]=0;}else{Port_List[MotorHR_P1]=1;}
 
-    if(MotorVL_D.Enable){Port_List[MotorVL_P2]=1;}else{Port_List[MotorVL_P2]=0;}
-    if(MotorVR_D.Enable){Port_List[MotorVR_P2]=1;}else{Port_List[MotorVR_P2]=0;}
-    if(MotorHL_D.Enable){Port_List[MotorHL_P2]=1;}else{Port_List[MotorHL_P2]=0;}
-    if(MotorHR_D.Enable){Port_List[MotorHR_P2]=1;}else{Port_List[MotorHR_P2]=0;}
+    if(MoDataVL.Enable){Port_List[MotorVL_P2]=1;}else{Port_List[MotorVL_P2]=0;}
+    if(MoDataVR.Enable){Port_List[MotorVR_P2]=1;}else{Port_List[MotorVR_P2]=0;}
+    if(MoDataHL.Enable){Port_List[MotorHL_P2]=1;}else{Port_List[MotorHL_P2]=0;}
+    if(MoDataHR.Enable){Port_List[MotorHR_P2]=1;}else{Port_List[MotorHR_P2]=0;}
 
     // Konvertieren von Liste zu byte
     for (int i = 0; i < 8; i++) {
@@ -317,25 +320,25 @@ void systemlib::updateMotors(void){
 
     Motor_EXP.write(out);
 
-    MotorVL_D.Speed_real = ADC_Motor.read(MotorVL_AP1,true,true);
-    MotorVL_D.Current = ADC_Motor.read(MotorVL_AP2,true,false);
-    MotorVR_D.Speed_real = ADC_Motor.read(MotorVR_AP1,true,true);
-    MotorVR_D.Current = ADC_Motor.read(MotorVR_AP2,true,false);
-    MotorHL_D.Speed_real = ADC_Motor.read(MotorHL_AP1,true,true);
-    MotorHL_D.Current = ADC_Motor.read(MotorHL_AP2,true,false);
-    MotorHR_D.Speed_real = ADC_Motor.read(MotorHR_AP1,true,true);
-    MotorHR_D.Current = ADC_Motor.read(MotorHR_AP2,true,false);
+    MoDataVL.Speed_real = ADC_Motor.read(MotorVL_AP1,true,true);
+    MoDataVL.Current = ADC_Motor.read(MotorVL_AP2,true,false);
+    MoDataVR.Speed_real = ADC_Motor.read(MotorVR_AP1,true,true);
+    MoDataVR.Current = ADC_Motor.read(MotorVR_AP2,true,false);
+    MoDataHL.Speed_real = ADC_Motor.read(MotorHL_AP1,true,true);
+    MoDataHL.Current = ADC_Motor.read(MotorHL_AP2,true,false);
+    MoDataHR.Speed_real = ADC_Motor.read(MotorHR_AP1,true,true);
+    MoDataHR.Current = ADC_Motor.read(MotorHR_AP2,true,false);
 }
 
 MotorData systemlib::giveMotorData(uint8_t ID){
     MotorData Error_Data;
     Error_Data.ID = 100;
 
-    if(ID == MotorVR_D.ID){return MotorVR_D;}
-    else if(ID == MotorHR_D.ID){return MotorHR_D;}
-    else if(ID == MotorVL_D.ID){return MotorVL_D;}
-    else if(ID == MotorHL_D.ID){return MotorHL_D;}
-    else if(ID == MotorDR_D.ID){return MotorDR_D;}
+    if(ID == MoDataVR.ID){return MoDataVR;}
+    else if(ID == MoDataHR.ID){return MoDataHR;}
+    else if(ID == MoDataVL.ID){return MoDataVL;}
+    else if(ID == MoDataHL.ID){return MoDataHL;}
+    else if(ID == MoDataDR.ID){return MoDataDR;}
     else {return Error_Data;}
 }
 
@@ -344,6 +347,7 @@ void systemlib::readExpanders(void)
 {
     SW_EXP.read(); // Update the internal state of the port expander
     Button_EXP.read(); // Update the internal state of the port expander
+
 
     BTN1.update(Button_EXP.readPin(0));
     BTN2.update(Button_EXP.readPin(1));
@@ -359,6 +363,15 @@ void systemlib::readExpanders(void)
 
     // Read the state of each pin from the port expander
     // Example: bool pin0State = portExpander.getPinState(0);
+}
+
+bool systemlib::giveExpander(uint8_t expnum, uint8_t portnum){
+    if(expnum == 0){
+        return SW_EXP.readPin(portnum);
+    }
+    else if(expnum == 1){
+        return Button_EXP.readPin(portnum);
+    }
 }
 
 
@@ -417,6 +430,10 @@ float systemlib::giveHeadingController(){
 
 void systemlib::setHeading(float Heading){
     _OrbitHeading = Heading;
+}
+
+void systemlib::resetHeadingController(){
+    headingControllerA->reset(DEG_TO_RAD*BNO_OrbitDir);
 }
 
 void systemlib::updateHeadingController(){

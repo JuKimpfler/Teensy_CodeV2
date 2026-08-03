@@ -86,19 +86,17 @@ void CamC::handleLine(const char* line) {
   }
 }
 
-void CamC::Update() {
+void CamC::Update(float headingDeg) {
   // UART pollen
   readOpenMV();
 
   if (!isValid(250)) return;
 
-  // IMU yaw (Grad -180..180), Feldbezug wie du es nutzt
-  int imu_deg = 0;
   // Kombination:
   // Standard: angle_field = imu + angle_cam
   // Falls bei dir das Vorzeichen vertauscht ist -> setSign(false)
-  if (usePlusSign) angle_field_deg = wrap180f(imu_deg + angle_cam_deg);
-  else             angle_field_deg = wrap180f(imu_deg - angle_cam_deg);
+  if (usePlusSign) angle_field_deg = wrap180f(headingDeg + angle_cam_deg);
+  else             angle_field_deg = wrap180f(headingDeg - angle_cam_deg);
 
   // Ziel: Wenn Roboter auf der Stelle dreht, bleibt angle_field_deg möglichst konstant.
   // Das stimmt dann, wenn imu_deg und angle_cam_deg konsistente Vorzeichen haben.

@@ -45,8 +45,17 @@
 
 - 100 -> Ball x
 - 101 -> Ball y
-- 102 -> Position x
-- 103 -> Position y
+- 102 -> Ball Turn
+- 103 -> Position x (Grid)
+- 104 -> Position y (Grid)
+- 105 -> Robo Turn
+- 112 -> Pose_Confidance
+- 106 -> Anzahl valider US
+- 107 -> Kamera valide
+- 108 -> Position x in cm
+- 109 -> Position y in cm
+- 110 -> Position x anderer Robo (Grid)
+- 111 -> Position y anderer Robo (Grid)
 
 - 120 -> Cycle_time_US
 - 

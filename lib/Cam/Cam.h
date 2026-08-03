@@ -4,7 +4,9 @@
 class CamC {
 public:
   void init(HardwareSerial& ser = Serial1, uint32_t baud = 115200);
-  void Update();
+  // headingDeg: aktuelles BNO-Heading (Feld-KS), noetig um die kamerarelative
+  // Peilung in eine absolute Feld-Peilung umzurechnen.
+  void Update(float headingDeg);
 
   // Ergebnis: Tor-Bearing im Feld-KS (Grad, -180..180)
   float give_Angle() const { return angle_field_deg; }
