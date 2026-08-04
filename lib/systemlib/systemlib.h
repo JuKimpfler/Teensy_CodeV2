@@ -78,6 +78,11 @@ private:
     int16_t IR_Offsets[16] = {9999};
     float INA_filter[6] = {0, 0, 0, 0, 0, 0};
 
+    bool SWI[5] = {false};
+    bool RCJ = false;
+    bool RCJ_present = false;
+    bool startSwitch = false;
+
     bool _useADRC = false;
     float _OrbitHeading = 0;
     float ADRC_Out = 0;
@@ -163,6 +168,11 @@ public:
     float giveHeadingController(void); // BNO has to be setup allready
     void giveButtonStates(uint8_t (&buttonStates)[5]) const {for (uint8_t i = 0; i < 5; i++){buttonStates[i] = fancyBTNstates[i];}}; // currently disabled -> change in readExpanders() to enable it
     bool giveExpander(uint8_t expnum, uint8_t portnum);
+    bool giveExpSwitch(uint8_t switchNumber) const { return SWI[switchNumber]; };
+    bool giveExpStartSwitch(void) const { return startSwitch; };
+    bool giveRCJ(void) const { return RCJ; };
+    bool giveRCJpresent(void) const { return RCJ_present; };
+    bool giveStart(void);
 
     /* -------------- set -------------- */
     void setDebugTimeout(uint16_t timeout_ms) { debugTimeout = timeout_ms; }

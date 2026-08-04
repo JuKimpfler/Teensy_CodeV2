@@ -432,6 +432,16 @@ void systemlib::readExpanders(void)
     SW_EXP.read(); // Update the internal state of the port expander
     Button_EXP.read(); // Update the internal state of the port expander
 
+    SWI[0] = SW_EXP.readPin(4);
+    SWI[1] = SW_EXP.readPin(3);
+    SWI[2] = SW_EXP.readPin(2);
+    SWI[3] = SW_EXP.readPin(1);
+    SWI[4] = SW_EXP.readPin(0);
+
+    startSwitch = SW_EXP.readPin(5);
+    RCJ = SW_EXP.readPin(6);
+    RCJ_present = SW_EXP.readPin(7);
+    
 
     BTN1.update(Button_EXP.readPin(0));
     BTN2.update(Button_EXP.readPin(1));
@@ -532,5 +542,14 @@ void systemlib::updateHeadingController(){
     }
     else{
         PID_Out = headingControllerP->update(_OrbitHeading, DEG_TO_RAD*BNO_OrbitDir, dt);
+    }
+}
+
+
+bool systemlib::giveStart(void){
+    if (RCJ_present) {
+        return RCJ;
+    } else {
+        return startSwitch;
     }
 }
