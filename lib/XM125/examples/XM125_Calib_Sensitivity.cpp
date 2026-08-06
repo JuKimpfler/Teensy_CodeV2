@@ -459,7 +459,8 @@ static void handleCommand(char* line) {
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial && millis() < 3000) {}
+  ///while (!Serial && millis() < 3000) {}
+  delay(5000);
 
   I2C_RADAR.begin();
   I2C_RADAR.setClock(100000); // niedriger Takt, mehr Toleranz fuer Clock-Stretching des XM125
@@ -490,5 +491,22 @@ void loop() {
     } else if (len < sizeof(line) - 1) {
       line[len++] = c;
     }
+  }
+
+  if(digitalRead(10)){
+    XM125Distance& radar1 = sensors[0];
+    XM125Distance& radar2 = sensors[1];
+    XM125Distance& radar3 = sensors[2];
+    XM125Distance& radar4 = sensors[3];
+
+    Serial.println("Radar 0-3 Start Calibration");
+
+    radar1.calibrate();
+    radar2.calibrate();
+    radar3.calibrate();
+    radar4.calibrate();
+
+    Serial.println("Radar 0-3 Calibrated");
+    delay(1000);
   }
 }

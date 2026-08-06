@@ -9,8 +9,8 @@
 
 #define BNO_ADDRESS 0x28
 
-static constexpr uint8_t RADAR_NUM_SENSORS = 4;
-static constexpr uint8_t RADAR_SENSOR_ADDRS[RADAR_NUM_SENSORS] = { 0x51, 0x52, 0x53, 0x54 };
+static constexpr uint8_t RADAR_NUM_SENSORS = 3;
+static constexpr uint8_t RADAR_SENSOR_ADDRS[RADAR_NUM_SENSORS] = { 0x51, 0x52, 0x53};
 static constexpr int8_t  RADAR_WAKE_PIN = -1;
 static constexpr int8_t  RADAR_INT_PIN  = -1;
 
@@ -22,12 +22,12 @@ static constexpr int8_t  RADAR_INT_PIN  = -1;
 // lib/XM125/examples/XM125_Calib_Sensitivity.cpp (Mode 's' = Parameter-Sweep). Sieht der
 // Sensor die Wand ueberhaupt nicht, vorher lib/XM125/examples/XM125_Calib_Alignment.cpp
 // (Ausrichtung) und lib/XM125/examples/XM125_Calib_Module.cpp (Kalibrierung laeuft durch?).
-static constexpr uint32_t RADAR_START_MM = 200;   ///< naeher am Sensor liegt der Roboter selbst
-static constexpr uint32_t RADAR_END_MM   = 2700;  ///< 200 mm Reserve, damit 2500 mm nicht auf der Bereichskante liegt
-static constexpr uint32_t RADAR_SIGNAL_QUALITY        = 25000; ///< 25.0 statt Default 15.0 -> mehr SNR am Bereichsende
-static constexpr uint32_t RADAR_THRESHOLD_SENSITIVITY = 750;   ///< 0.75 statt Default 0.50 -> CFAR laesst schwache Wand-Peaks durch
+static constexpr uint32_t RADAR_START_MM = 150;   ///< naeher am Sensor liegt der Roboter selbst
+static constexpr uint32_t RADAR_END_MM   = 2500;  ///< 200 mm Reserve, damit 2500 mm nicht auf der Bereichskante liegt
+static constexpr uint32_t RADAR_SIGNAL_QUALITY        = 35000; ///< 25.0 statt Default 15.0 -> mehr SNR am Bereichsende
+static constexpr uint32_t RADAR_THRESHOLD_SENSITIVITY = 400;   ///< 0.75 statt Default 0.50 -> CFAR laesst schwache Wand-Peaks durch
 static constexpr uint32_t RADAR_MEASURE_TIMEOUT_MS    = 3000;  ///< PROFILE5 + hohe Signalqualitaet braucht laenger als der 1000ms-Default
-
+static constexpr uint32_t RADAR_THRESHOLD_STRENGHT = -25;
 // Wie viele Sensoren gleichzeitig messen duerfen (systemlib::readRadar).
 // Die Wartezeit auf das Messergebnis faellt einmal pro Gruppe an statt einmal
 // pro Sensor -- Gruppengroesse 2 halbiert also grob die Radar-Zeit im Zyklus.
@@ -39,7 +39,7 @@ static constexpr uint32_t RADAR_MEASURE_TIMEOUT_MS    = 3000;  ///< PROFILE5 + h
 //   4 = alle gleichzeitig      (schnellste Variante, hoechstes Uebersprech-Risiko)
 // Nachmessen ob 4 noch sauber laeuft: lib/XM125/examples/XM125_Calib_Crosstalk.cpp, Mode 'g'
 // (misst Trefferquote UND Zykluszeit fuer Gruppe 1/2/4) bzw. Mode 'i'/'p'.
-static constexpr uint8_t RADAR_PARALLEL_GROUP = 2;
+static constexpr uint8_t RADAR_PARALLEL_GROUP = 3;
 static_assert(RADAR_NUM_SENSORS % RADAR_PARALLEL_GROUP == 0,
               "RADAR_PARALLEL_GROUP muss RADAR_NUM_SENSORS teilen");
 

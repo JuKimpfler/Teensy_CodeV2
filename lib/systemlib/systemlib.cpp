@@ -7,6 +7,7 @@ BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
 
 elapsedMillis cycleTimer;
 elapsedMicros cycleTimer_us;
+elapsedMillis measuretimer;
 
 commlib communication;
 
@@ -33,7 +34,7 @@ XM125Distance RADAR_sensors[RADAR_NUM_SENSORS] = {
   XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
   XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
   XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  //XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
 };
 
 constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
@@ -131,7 +132,9 @@ void systemlib::readSensors(void)
     cycleTimer_us = 0;
 
     readBNO();
+    measuretimer=0;
     readRadar();
+    Serial.println(measuretimer);
     //readIR();
     //readUS();
 
@@ -260,16 +263,17 @@ bool systemlib::setupRadarSens(uint8_t idx) {
   // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h
   radar.config.startMm = RADAR_START_MM;
   radar.config.endMm   = RADAR_END_MM;   // > 2500, damit die Wand nicht auf der Bereichskante liegt
-  radar.config.maxProfile = XM125D_PROFILE5;              // laengste Pulse = groesste Reichweite
-  radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;   // adaptiv, unabhaengig von der Umgebung
-  radar.config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
+  radar.config.maxProfile = XM125D_PROFILE3;              // laengste Pulse = groesste Reichweite
+  radar.config.thresholdMethod = XM125D_THRESHOLD_FIXED_STRENGTH;   // adaptiv, unabhaengig von der Umgebung
+  //radar.config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
+  radar.config.fixedStrengthThreshold = RADAR_THRESHOLD_STRENGHT;
   radar.config.signalQuality        = RADAR_SIGNAL_QUALITY;
-  radar.config.peakSorting = XM125D_SORT_CLOSEST;
+  radar.config.peakSorting = XM125D_SORT_STRONGEST;
   // PLANAR: bei einer flaechigen Wand faellt die Echo-Amplitude langsamer mit der
   // Distanz als bei einem punktfoermigen Reflektor. Ohne diese Angabe setzt der
   // Detektor die Schwelle am Bereichsende zu hoch an und die Wand faellt raus.
   radar.config.reflectorShape = XM125D_REFLECTOR_PLANAR;
-  radar.config.closeRangeLeakageCancellation = true;      // sauberer Nahbereich ab startMm
+  radar.config.closeRangeLeakageCancellation = false;      // sauberer Nahbereich ab startMm
 
   if (!radar.applyConfigAndCalibrate()) {
     uint16_t failedReg = radar.getLastFailedConfigRegister();
