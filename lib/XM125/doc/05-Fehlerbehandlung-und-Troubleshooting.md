@@ -34,7 +34,7 @@ mit der Verarbeitung beginnt. Manche Host-I²C-Treiber interpretieren das
 als Schreibfehler/Timeout auf der aktuellen Transaktion, **obwohl das
 Kommando beim Sensor angekommen ist**.
 
-`_executeCommand()` und `measure()` fangen das ab: Meldet der
+`_executeCommand()` und `startMeasurement()` fangen das ab: Meldet der
 Schreibvorgang einen Fehler, wird sofort der `DETECTOR_STATUS` gegengeprüft
 — steht `BUSY` bereits, wurde das Kommando trotz gemeldetem Schreibfehler
 offensichtlich angenommen, und die Funktion fährt normal fort statt einen
@@ -106,16 +106,22 @@ Alle Testskripte zählen aufeinanderfolgende Fehlschläge und stoßen nach
 ```cpp
 uint8_t consecutiveFailures = 0;
 
-if (!radar.measure()) {           // oder !radar.update() bei Presence
-  consecutiveFailures++;
-  if (consecutiveFailures >= 5) {
+if (!radar.isMeasuring()) {        // Runde fertig oder abgebrochen
+  if (radar.hasResult()) {         // (bei Presence: !radar.update())
     consecutiveFailures = 0;
-    setupSensor();               // begin() + config + apply erneut
+    auswerten(radar.getLastResult());
+  } else if (++consecutiveFailures >= 5) {
+    consecutiveFailures = 0;
+    setupSensor();                 // begin() + config + apply erneut
   }
-} else {
-  consecutiveFailures = 0;
+  radar.startMeasurement();        // nächste Runde
 }
 ```
+
+> `setupSensor()` blockiert (Kalibrierung bis ~2 s). Im Roboter wird der
+> Wiederanlauf deshalb gedrosselt: `systemlib::retryRadarSetup()` versucht es
+> höchstens alle `RADAR_REINIT_INTERVAL_MS`, sonst würde ein abgezogener
+> Sensor jeden Zyklus ausbremsen.
 
 ### 5. Sensor bei Start nicht erreichbar (`begin()` liefert `false`)
 
@@ -162,10 +168,10 @@ anderen Sensoren zu blockieren.
 
 ### 8. Übersprechen zwischen mehreren Sensoren
 
-Sobald mehrere Module **gleichzeitig** messen (`RADAR_PARALLEL_GROUP > 1`,
-siehe [params.h](../../include/params.h)), senden sie unkoordiniert im selben
-60-GHz-Band. Es gibt keine Synchronisation zwischen den Modulen — die
-I²C-Firmware kennt kein Sync-Signal.
+Im Roboter messen **alle** Module gleichzeitig (`systemlib::readRadar()` stößt
+eine Runde bei allen Sensoren zusammen an). Sie senden dabei unkoordiniert im
+selben 60-GHz-Band; eine Synchronisation zwischen den Modulen gibt es nicht —
+die I²C-Firmware kennt kein Sync-Signal.
 
 **Wie sich Übersprechen äußert:** Ein fremder Sender ist nicht phasenstarr zum
 eigenen Empfänger. Er wird deshalb typischerweise *nicht* als sauberer Peak
@@ -178,19 +184,21 @@ niedrig eingestellter Empfindlichkeit.
 
 **Was dagegen hilft — in dieser Reihenfolge:**
 
-1. **Geometrie.** Die vier Sensoren des Roboters blicken um je 90° versetzt.
+1. **Geometrie.** Die Sensoren des Roboters blicken um je 90° versetzt.
    Direktes Einkoppeln von einem in den anderen liegt damit weitgehend
-   außerhalb der Antennenkeulen. `readRadar()` nutzt das aus und misst
-   standardmäßig die *entgegengesetzt* blickenden Paare zusammen (Vo+Hi, dann
-   Li+Re) statt benachbarter.
+   außerhalb der Antennenkeulen — der Grund, warum der Gleichzeitigbetrieb
+   überhaupt tragbar ist.
 2. **Reflexionen bedenken.** Eine glatte Wand wirkt für 60 GHz wie ein
    Spiegel — genau deshalb steht `reflectorShape` auf `PLANAR`. In einer Ecke
    kann sie Energie vom Front- auf den Seitensensor umlenken, auch wenn die
    beiden sich nicht direkt „sehen". Das ist der Fall, der in der Praxis am
    ehesten stört.
-3. **Gruppengröße reduzieren.** `RADAR_PARALLEL_GROUP = 1` schließt
-   Übersprechen vollständig aus, kostet aber die volle Messzeit aller vier
-   Sensoren nacheinander.
+3. **Empfindlichkeit nachziehen.** Kostet das Übersprechen messbar
+   Trefferquote, ist der nächste Hebel `signalQuality` /
+   `thresholdSensitivity`
+   ([XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp)) —
+   nicht das Auseinanderziehen der Messungen: Sensoren nacheinander messen zu
+   lassen würde die Rundendauer vervielfachen.
 
 **Nicht raten, messen:** Der Sketch
 [XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp)
@@ -203,15 +211,15 @@ Signalstärke:
   mit Nachbarn:    18/20 erkannt, Staerke 1180, 46 ms
 ```
 
-(Beispielausgabe, nicht gemessen.) Aus der Differenz gibt der Sketch direkt
-eine Empfehlung für `RADAR_PARALLEL_GROUP` aus. Der Test gehört an den
-*ungünstigsten* Punkt: Wand auf 2,5 m, weil dort die Reserve am kleinsten ist.
+(Beispielausgabe, nicht gemessen.) Aus der Differenz sagt der Sketch, ob das
+Übersprechen ins Gewicht fällt. Der Test gehört an den *ungünstigsten* Punkt:
+Wand auf 2,5 m, weil dort die Reserve am kleinsten ist.
 
 Zwei weitere Modi desselben Sketches grenzen den Befund ein: `p` misst jeden
 Nachbarn **einzeln** als Störer (welches Paar verträgt sich nicht?), und `g`
-fährt komplette Messrunden mit Gruppengröße 1, 2 und 4 wie
+fährt komplette Messrunden einmal nacheinander und einmal gleichzeitig wie
 `systemlib::readRadar()` — dort steht die verlorene Trefferquote direkt neben
-der gewonnenen Zykluszeit, was die Entscheidung erst abwägbar macht.
+der gewonnenen Rundendauer, was die Entscheidung erst abwägbar macht.
 
 ## Nützliche Diagnosefunktion
 

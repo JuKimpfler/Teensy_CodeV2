@@ -136,15 +136,20 @@ Ergebnis der Kalibrierung und die einzige Stelle, an der nachjustiert wird:
 | `RADAR_END_MM` | `2700` | obere Bereichsgrenze, 200 mm Reserve über dem Ziel von 2500 mm |
 | `RADAR_SIGNAL_QUALITY` | `25000` | 25.0 statt Default 15.0 – mehr SNR für den schwachen Holz-Reflex |
 | `RADAR_THRESHOLD_SENSITIVITY` | `750` | 0.75 statt Default 0.50 – CFAR lässt schwache Wand-Peaks durch |
-| `RADAR_MEASURE_TIMEOUT_MS` | `3000` | PROFILE5 + hohe Signalqualität braucht länger als der 1000-ms-Default |
-| `RADAR_PARALLEL_GROUP` | `2` | Wie viele Sensoren gleichzeitig messen: `1` nacheinander, `2` = Vo+Hi dann Li+Re, `4` = alle. Muss `RADAR_NUM_SENSORS` teilen (`static_assert`) |
+| `RADAR_MEASURE_TIMEOUT_MS` | `3000` | PROFILE5 + hohe Signalqualität braucht länger als der 1000-ms-Default; geht per `setMeasureTimeout()` in die Library |
+| `RADAR_PEAKS_TO_FETCH` | `1` | Wie viele Peaks je Messung wirklich aus dem Sensor geholt werden. Jeder Peak kostet zwei Registerlesezugriffe, ausgewertet wird nur Peak 0 |
+| `RADAR_REINIT_INTERVAL_MS` | `2000` | Mindestabstand zwischen zwei Wiederanlaufversuchen für einen toten Sensor — die Neuinitialisierung blockiert bis ~2 s |
+
+Alle Sensoren messen **gleichzeitig**; eine Gruppengröße gibt es nicht mehr.
+`systemlib::readRadar()` stößt eine Runde bei allen Sensoren an und wartet nie
+auf ein Ergebnis, siehe [02-Distance-Detector.md](../XM125/doc/02-Distance-Detector.md).
 
 Verwendet in `systemlib::setupRadarSens()`. Hintergrund und Messverfahren:
 [04-Konfiguration.md](../XM125/doc/04-Konfiguration.md#in-diesem-projekt-verwendete-werte),
 Nachmessen mit [XM125_Calib_Sensitivity.cpp](../XM125/examples/XM125_Calib_Sensitivity.cpp)
 (`RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY`) und
 [XM125_Calib_Crosstalk.cpp](../XM125/examples/XM125_Calib_Crosstalk.cpp)
-(`RADAR_PARALLEL_GROUP`); Übersicht aller Kalibrierskripte in
+(stören sich die gleichzeitig messenden Sensoren?); Übersicht aller Kalibrierskripte in
 [07-Kalibrierung.md](../XM125/doc/07-Kalibrierung.md#ein-skript-je-kalibriermethode).
 
 ### Debug-UART

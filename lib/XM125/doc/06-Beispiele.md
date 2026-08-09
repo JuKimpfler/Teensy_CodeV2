@@ -72,20 +72,23 @@ void setup() {
 }
 
 void loop() {
-  if (!radar.measure(3000)) {
-    if (radar.getCalibrationNeeded()) radar.recalibrate();
-    return;
+  if (radar.isMeasuring()) return;        // laeuft noch -- nicht warten
+
+  const XM125DistanceResult& res = radar.getLastResult();
+  if (!res.valid) {
+    if (res.calibrationNeeded) radar.recalibrate();
+  } else {
+    Serial.print("Peaks: "); Serial.print(res.numDistances);
+    Serial.print("  Temp: "); Serial.println(res.temperature);
+
+    for (uint8_t i = 0; i < res.numDistances; i++) {
+      Serial.print("  Peak "); Serial.print(i);
+      Serial.print(": raw="); Serial.print(res.peakDistanceRaw[i]);   // 0-255 Counts, unkalibriert
+      Serial.print(" Staerke="); Serial.println(res.peakStrength[i]);
+    }
   }
 
-  uint8_t n = radar.getNumDistances();
-  Serial.print("Peaks: "); Serial.print(n);
-  Serial.print("  Temp: "); Serial.println(radar.getTemperature());
-
-  for (uint8_t i = 0; i < n; i++) {
-    Serial.print("  Peak "); Serial.print(i);
-    Serial.print(": raw="); Serial.print(radar.getPeakDistanceRaw(i));   // 0-255 Counts, unkalibriert
-    Serial.print(" Staerke="); Serial.println(radar.getPeakStrength(i));
-  }
+  radar.startMeasurement();               // naechste Runde
 }
 ```
 
@@ -128,14 +131,21 @@ void setup() {
 }
 
 void loop() {
+  // Alle Sensoren messen gleichzeitig: nur nachsehen, nie warten.
+  bool laeuft = false;
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
-    if (!sensorReady[i]) { sensorReady[i] = setupSensor(i); continue; }
+    if (!measurePending[i]) continue;
+    if (sensors[i].isMeasuring()) { laeuft = true; continue; }
 
-    XM125Distance& radar = sensors[i];
-    if (radar.measure(3000)) {
-      Serial.print("[0x"); Serial.print(SENSOR_ADDRS[i], HEX); Serial.print("] ");
-      Serial.print("Peaks="); Serial.println(radar.getNumDistances());
-    }
+    measurePending[i] = false;
+    Serial.print("[0x"); Serial.print(SENSOR_ADDRS[i], HEX); Serial.print("] ");
+    Serial.print("Peaks="); Serial.println(sensors[i].getLastResult().numDistances);
+  }
+  if (laeuft) return;
+
+  for (uint8_t i = 0; i < NUM_SENSORS; i++) {          // naechste Runde
+    if (!sensorReady[i]) { sensorReady[i] = setupSensor(i); continue; }
+    measurePending[i] = sensors[i].startMeasurement();
   }
 }
 ```
@@ -230,8 +240,8 @@ Ausgabeformat (Zahlen hier nur als Beispiel, nicht gemessen):
 
 **Ablauf für das Übersprechen:** Wand ebenfalls auf 2,5 m, dann `i`. Der Sketch
 misst denselben Sensor einmal allein und einmal, während alle anderen
-gleichzeitig senden, und empfiehlt daraus einen Wert für
-`RADAR_PARALLEL_GROUP`. Hintergrund:
+gleichzeitig senden, und sagt daraus, ob der Gleichzeitigbetrieb Trefferquote
+kostet. Hintergrund:
 [05-Fehlerbehandlung-und-Troubleshooting.md](05-Fehlerbehandlung-und-Troubleshooting.md#8-übersprechen-zwischen-mehreren-sensoren).
 
 > Der Messaufbau entscheidet über das Ergebnis: senkrecht auf die Fläche

@@ -4,6 +4,12 @@
 //
 // Verkabelung: alle 4 Sensoren an Wire (SDA/SCL), Adressen 0x51/0x52/0x53/0x54.
 //
+// Alle Sensoren messen GLEICHZEITIG: erst wird bei jedem startMeasurement()
+// abgesetzt (je ein Registerschreibzugriff), danach reihum mit isMeasuring()
+// nachgesehen. Die Messdauer faellt so einmal fuer alle vier Sensoren an statt
+// viermal hintereinander, und gewartet wird an keiner Stelle. Genau dieses
+// Schema fahrt systemlib::readRadar() im Roboter.
+//
 // Ausführen: Datei nach src/main.cpp des Hauptprojekts kopieren (in src/ darf
 // immer nur eine Datei mit setup()/loop() liegen) und normal bauen/hochladen:
 //   pio run -e teensy40 -t upload
@@ -30,7 +36,8 @@ XM125Distance sensors[NUM_SENSORS] = {
   XM125Distance(SENSOR_ADDRS[3], WAKE_PIN, INT_PIN),
 };
 
-bool    sensorReady[NUM_SENSORS]      = {};
+bool    sensorReady[NUM_SENSORS]         = {};
+bool    measurePending[NUM_SENSORS]      = {}; ///< Sensor nimmt an der laufenden Runde teil
 uint8_t consecutiveFailures[NUM_SENSORS] = {};
 static constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 5;
 
@@ -44,6 +51,8 @@ bool setupSensor(uint8_t idx) {
     Serial.println(": FEHLER, nicht erreichbar!");
     return false;
   }
+
+  radar.setMeasureTimeout(3000); // Profile5/CFAR braucht laenger als der Default
 
   // Gleiche Konfiguration wie im Einzelsensor-Test (XM125_Distance.cpp)
   radar.config.startMm = 200;
@@ -86,44 +95,60 @@ void setup() {
   }
 }
 
+/** Ergebnis eines fertig gemessenen Sensors ausgeben. */
+void reportSensor(uint8_t i) {
+  Serial.print("[0x"); Serial.print(SENSOR_ADDRS[i], HEX); Serial.print("] ");
+
+  const XM125DistanceResult& res = sensors[i].getLastResult();
+  if (!res.valid) {
+    Serial.println("Messfehler oder Timeout.");
+    consecutiveFailures[i]++;
+    if (consecutiveFailures[i] >= MAX_CONSECUTIVE_FAILURES) {
+      Serial.print("[0x"); Serial.print(SENSOR_ADDRS[i], HEX);
+      Serial.println("] Zu viele Fehlschlaege, versuche neu zu verbinden...");
+      consecutiveFailures[i] = 0;
+      sensorReady[i] = setupSensor(i);
+    }
+    return;
+  }
+  consecutiveFailures[i] = 0;
+
+  Serial.print("Peaks="); Serial.print(res.numDistances);
+  Serial.print(" Temp="); Serial.print(res.temperature);
+  Serial.print(" ("); Serial.print(res.durationMs); Serial.print(" ms)");
+  for (uint8_t p = 0; p < res.numDistances; p++) {
+    Serial.print("  Peak"); Serial.print(p);
+    Serial.print(": raw="); Serial.print(res.peakDistanceRaw[p]);
+    Serial.print(" Staerke="); Serial.print(res.peakStrength[p]);
+  }
+  Serial.println();
+
+  PDS.Channel(150 + i, res.numDistances > 0 ? res.peakDistanceRaw[0] : 0);
+}
+
 void loop() {
+  // 1. Nachsehen, welche Sensoren der laufenden Runde fertig sind. isMeasuring()
+  //    kostet hoechstens einen Registerlesezugriff und wartet nie.
+  bool roundRunning = false;
+  for (uint8_t i = 0; i < NUM_SENSORS; i++) {
+    if (!measurePending[i]) continue;
+
+    if (sensors[i].isMeasuring()) { roundRunning = true; continue; }
+
+    measurePending[i] = false;
+    reportSensor(i);
+  }
+
+  PDS.update();
+  if (roundRunning) return; // noch nicht alle durch -- Zeit gehoert dem Rest
+
+  // 2. Runde komplett: die naechste bei allen Sensoren gleichzeitig anstossen.
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
     if (!sensorReady[i]) {
       // Regelmaessig erneut versuchen, falls ein Sensor beim Start fehlte
       sensorReady[i] = setupSensor(i);
       continue;
     }
-
-    XM125Distance& radar = sensors[i];
-    bool ok = radar.measure(3000);
-
-    Serial.print("[0x"); Serial.print(SENSOR_ADDRS[i], HEX); Serial.print("] ");
-
-    if (!ok) {
-      Serial.println("Messfehler oder Timeout.");
-      consecutiveFailures[i]++;
-      if (consecutiveFailures[i] >= MAX_CONSECUTIVE_FAILURES) {
-        Serial.print("[0x"); Serial.print(SENSOR_ADDRS[i], HEX);
-        Serial.println("] Zu viele Fehlschlaege, versuche neu zu verbinden...");
-        consecutiveFailures[i] = 0;
-        sensorReady[i] = setupSensor(i);
-      }
-      continue;
-    }
-    consecutiveFailures[i] = 0;
-
-    uint8_t n = radar.getNumDistances();
-    Serial.print("Peaks="); Serial.print(n);
-    Serial.print(" Temp="); Serial.print(radar.getTemperature());
-    for (uint8_t p = 0; p < n; p++) {
-      Serial.print("  Peak"); Serial.print(p);
-      Serial.print(": raw="); Serial.print(radar.getPeakDistanceRaw(p));
-      Serial.print(" Staerke="); Serial.print(radar.getPeakStrength(p));
-    }
-
-    PDS.Channel(150+i,radar.getPeakDistanceRaw(0));
-    PDS.update();
-
-    Serial.println();
+    measurePending[i] = sensors[i].startMeasurement();
   }
 }

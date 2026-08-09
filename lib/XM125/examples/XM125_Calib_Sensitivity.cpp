@@ -14,7 +14,7 @@
 //   1. XM125_Calib_Module.cpp       Modul kalibriert ueberhaupt?
 //   2. XM125_Calib_Alignment.cpp    Sensor mechanisch auf die Wand ausrichten
 //   3. XM125_Calib_Sensitivity.cpp  <- dieses hier
-//   4. XM125_Calib_Crosstalk.cpp    RADAR_PARALLEL_GROUP festlegen
+//   4. XM125_Calib_Crosstalk.cpp    Uebersprechen beim gleichzeitigen Messen
 //
 // Ausführen: Datei nach src/main.cpp des Hauptprojekts kopieren (in src/ darf
 // immer nur eine Datei mit setup()/loop() liegen) und normal bauen/hochladen:
@@ -52,7 +52,8 @@ XM125Distance sensors[RADAR_NUM_SENSORS] = {
   XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
   XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
   XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  // 4. Sensor: Zeile einkommentieren, sobald RADAR_NUM_SENSORS in params.h auf 4 steht
+  //XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
 };
 
 uint8_t activeSensor = 0;
@@ -66,7 +67,7 @@ uint32_t activeReflectorShape       = XM125D_REFLECTOR_PLANAR;
 
 struct BurstResult {
   uint8_t  detections;     ///< Messungen mit mindestens einem Peak
-  uint8_t  errors;         ///< measure() fehlgeschlagen / Timeout
+  uint8_t  errors;         ///< Messung fehlgeschlagen / Timeout
   uint8_t  multiPeak;      ///< Messungen mit mehr als einem Peak (Fehlalarm-Indiz)
   int32_t  strengthMedian;
   uint16_t avgMeasureMs;
@@ -154,7 +155,7 @@ static BurstResult runBurst(uint8_t idx, uint8_t n) {
 
   for (uint8_t i = 0; i < n; i++) {
     uint32_t t0 = millis();
-    bool ok = radar.measure(MEASURE_TIMEOUT_MS);
+    bool ok = radar.measureBlocking(MEASURE_TIMEOUT_MS);
     totalMs += (millis() - t0);
 
     if (!ok) {

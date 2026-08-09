@@ -140,11 +140,45 @@ void loop() {
 
 1. Zykluszeit erfassen (`cycleTime`, `cycleTime_us`)
 2. `delay(debugTimeout)` – **blockierende Pause**, Default 5 ms
-3. `readBNO()`, `readIR()` (`readUS()` ist auskommentiert)
+3. `readBNO()`, `readRadar()` (`readIR()`/`readUS()` sind auskommentiert)
 4. `readExpanders()` (Schalter + Taster)
 5. `PDS.update()` (Telemetrie senden/empfangen)
 6. `updateHeadingController()`
 7. `updateMotors()`
+
+---
+
+## Radar (XM125)
+
+Die [XM125](../XM125/XM125.md)-Sensoren (`RADAR_NUM_SENSORS`, Adressen aus
+[params.h](../include/include.md)) messen **alle gleichzeitig**, und
+`readRadar()` **wartet nie auf ein Messergebnis**:
+
+| Funktion | Aufgabe | Zeit im Zyklus |
+|---|---|---|
+| `startRadarRound()` | `startMeasurement()` bei allen Sensoren — sie messen dadurch zeitgleich | 1 Registerschreibzugriff je Sensor |
+| `readRadar()` | je Zyklus einmal `isMeasuring()` je laufendem Sensor; fertige Ergebnisse übernehmen; ist die Runde komplett, sofort die nächste starten | höchstens 1 Registerlesezugriff je Sensor |
+| `takeRadarResult(idx)` | `getLastResult()` → `RadarVo` / `RadarLi` / `RadarHi` / `RadarRe` | 0 |
+| `radarMeasureFailed(idx)` | Fehlschläge zählen, nach `RADAR_MAX_CONSEC_FAILURES` (5) den Sensor als nicht bereit markieren | 0 |
+| `retryRadarSetup(idx)` | Wiederanlauf eines toten Sensors — **blockiert** bis ~2 s, deshalb höchstens alle `RADAR_REINIT_INTERVAL_MS` | selten |
+
+Damit kostet das Radar rund 1 ms pro Zyklus statt der vollen Messdauer
+(20–200 ms). Die Messrate ändert sich dadurch nicht — nur wartet die
+Hauptschleife nicht mehr darauf.
+
+```cpp
+struct RadarData
+{
+    uint8_t Dist;      // Rohwert von Peak 0 ("Counts", NICHT mm — siehe XM125-Doku)
+    int32_t Strenght;  // Signalstärke von Peak 0
+    uint8_t Peaks;     // Anzahl erkannter Peaks (0 = nichts gesehen)
+    bool    isCon;     // false, wenn der Sensor als tot gilt
+};
+```
+
+`Peaks == 0` liefert `Dist`/`Strenght` als `0`, damit kein alter Wert stehen
+bleibt. Ausgewertet wird nur Peak 0, deshalb holt die Library auch nur diesen
+einen aus dem Sensor (`RADAR_PEAKS_TO_FETCH`).
 
 ---
 

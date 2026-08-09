@@ -54,14 +54,18 @@ void setup() {
   radar.config.startMm = 200;
   radar.config.endMm   = 2500;
   radar.applyConfigAndCalibrate();
+  radar.startMeasurement();          // erste Messung anstoßen
 }
 
 void loop() {
-  if (radar.measure()) {
-    for (uint8_t i = 0; i < radar.getNumDistances(); i++) {
-      Serial.println(radar.getPeakDistanceRaw(i)); // s. Hinweis zur Kalibrierung!
-    }
+  if (radar.isMeasuring()) return;   // laeuft noch -- die Library wartet nie
+
+  const XM125DistanceResult& res = radar.getLastResult();
+  for (uint8_t i = 0; i < res.numDistances; i++) {
+    Serial.println(res.peakDistanceRaw[i]); // s. Hinweis zur Kalibrierung!
   }
+
+  radar.startMeasurement();          // naechste Runde
 }
 ```
 

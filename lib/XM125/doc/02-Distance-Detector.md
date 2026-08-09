@@ -6,6 +6,22 @@ Der Distance-Detector misst Entfernungen zu bis zu 10 Reflektoren
 ("Peaks") innerhalb eines konfigurierbaren Messfensters (`startMm` …
 `endMm`) und liefert je Peak eine Distanz und eine Signalstärke.
 
+## Die drei Kommandos des Messbetriebs
+
+Die Library **wartet nie auf ein Messergebnis**. Eine Messung dauert je nach
+Konfiguration 20–200 ms; diese Zeit gehört dem Rest des Programms. Der gesamte
+Messbetrieb besteht deshalb aus drei Aufrufen:
+
+| Kommando | Was es tut | Kosten |
+|---|---|---|
+| `startMeasurement()` | **Messung starten** — schreibt `MEASURE_DISTANCE`, kehrt sofort zurück | 1 Registerschreibzugriff, < 1 ms |
+| `isMeasuring()` | **Läuft eine Messung?** — treibt dabei die Zustandsmaschine weiter (BUSY prüfen, Ergebnis abholen) | höchstens 1 Registerlesezugriff, oft gar keiner |
+| `getLastResult()` | **Letztes Messergebnis abfragen** — liefert `XM125DistanceResult` aus dem Cache | 0 (reiner Speicherzugriff) |
+
+Sobald `isMeasuring()` `false` liefert, hat die Library das Ergebnis bereits
+eingelesen. Zwischen zwei Runden bleibt es abrufbar — auch während schon die
+nächste Messung läuft.
+
 ## Typischer Ablauf
 
 ```cpp
@@ -15,49 +31,68 @@ radar.begin(Wire);
 radar.config.startMm = 200;
 radar.config.endMm   = 4000;
 radar.applyConfigAndCalibrate();   // schreibt config + kalibriert (kann Sekunden dauern)
+radar.startMeasurement();          // erste Runde anstoßen
 
-while (true) {
-  if (radar.measure()) {
-    for (uint8_t i = 0; i < radar.getNumDistances(); i++) {
-      Serial.println(radar.getPeakDistanceRaw(i));
-      Serial.println(radar.getPeakStrength(i));
+void loop() {
+  if (radar.isMeasuring()) return;               // läuft noch → nichts zu tun
+
+  const XM125DistanceResult& res = radar.getLastResult();
+  if (res.valid) {
+    for (uint8_t i = 0; i < res.numDistances; i++) {
+      Serial.println(res.peakDistanceRaw[i]);
+      Serial.println(res.peakStrength[i]);
     }
   }
+
+  radar.startMeasurement();                      // nächste Runde
 }
 ```
 
 Alle Konfigurationsfelder (`radar.config.*`) sind in
 [04-Konfiguration.md](04-Konfiguration.md) im Detail beschrieben.
 
-## Mehrere Sensoren parallel messen lassen
+## Mehrere Sensoren messen gleichzeitig
 
-`measure()` blockiert über die **gesamte** Messdauer. Bei vier Sensoren
-nacheinander summiert sich das entsprechend. Da die Wartezeit fast vollständig
-aus Warten besteht, lässt sie sich überlappen — `measure()` ist dafür in drei
-Teile zerlegt:
+Weil `startMeasurement()` nicht wartet, starten alle Sensoren innerhalb
+weniger Millisekunden — die Messdauer fällt damit **einmal für alle** an statt
+einmal pro Sensor:
 
 ```cpp
-for (auto& r : sensoren) r.startMeasurement();   // alle anstoßen
+for (auto& r : sensoren) r.startMeasurement();   // alle zusammen los
 
-bool anyPending = true;                          // gemeinsam warten
-while (anyPending) {
-  anyPending = false;
-  for (auto& r : sensoren) {
-    bool done = false;
-    if (r.pollMeasurement(done) && !done) anyPending = true;
-  }
+// in jedem Zyklus: einmal nachsehen, nie warten
+bool laeuft = false;
+for (auto& r : sensoren) if (r.isMeasuring()) laeuft = true;
+
+if (!laeuft) {                                   // Runde komplett
+  for (auto& r : sensoren) verarbeite(r.getLastResult());
+  for (auto& r : sensoren) r.startMeasurement(); // nächste Runde
 }
-
-for (auto& r : sensoren) r.fetchResult();        // Ergebnisse abholen
 ```
 
-`measure()` selbst ist genau so implementiert und bleibt unverändert nutzbar.
+Genau dieses Schema fährt `systemlib::readRadar()` — siehe
+[11-Hardware-und-Integration.md](11-Hardware-und-Integration.md).
 
-Damit senden die Sensoren einer Gruppe allerdings gleichzeitig — zum
-Übersprechen siehe
+Damit senden alle Sensoren gleichzeitig — zum Übersprechen siehe
 [05-Fehlerbehandlung-und-Troubleshooting.md](05-Fehlerbehandlung-und-Troubleshooting.md#8-übersprechen-zwischen-mehreren-sensoren).
-Im Projekt steuert `RADAR_PARALLEL_GROUP` in [params.h](../../include/params.h),
-wie viele Sensoren zusammen messen; umgesetzt in `systemlib::readRadarGroup()`.
+
+## Das Ergebnis: `XM125DistanceResult`
+
+`getLastResult()` liefert eine Referenz auf diese Struktur:
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `valid` | `bool` | `true` = die Werte stammen aus einer fehlerfreien Messung. Nach I²C-Fehler, `DETECTOR_ERROR`, Timeout oder `MEASURE_ERROR` steht hier `false`, die Zahlenwerte bleiben aber auf dem letzten guten Stand |
+| `timestampMs` | `uint32_t` | `millis()` beim Einlesen — zusammen mit `getResultAgeMs()` die Antwort auf "wie alt ist der Wert?" |
+| `durationMs` | `uint16_t` | Dauer von `startMeasurement()` bis Ergebnis (Diagnose) |
+| `numDistances` | `uint8_t` | Anzahl gefundener Peaks (0–10) |
+| `nearStartEdge` | `bool` | Objekt dicht an `config.startMm` |
+| `calibrationNeeded` | `bool` | Sensor fordert `recalibrate()` an |
+| `measureError` | `bool` | Messung selbst meldet einen Fehler |
+| `temperature` | `int16_t` | °C, geringe Absolutgenauigkeit lt. Datenblatt |
+| `peakDistanceRaw[10]` | `uint8_t` | unkalibrierte "Counts" — siehe Warnung unten |
+| `peakDistanceReg[10]` | `uint32_t` | ungekürztes Registerwort je Peak |
+| `peakStrength[10]` | `int32_t` | Signalstärke je Peak (1000×-Einheit) |
 
 ## API-Überblick
 
@@ -68,12 +103,17 @@ wie viele Sensoren zusammen messen; umgesetzt in `systemlib::readRadarGroup()`.
 | `applyConfigAndCalibrate(timeoutMs = 3000)` | `writeConfig()` + Kommando `APPLY_CONFIG_AND_CALIBRATE`, blockiert bis fertig |
 | `applyConfiguration(timeoutMs = 3000)` | Nur anwenden, ohne Neukalibrierung (z.B. nach Neustart mit noch gültiger alter Kalibrierung) |
 | `calibrate(timeoutMs = 3000)` | Sensor/Detektor neu kalibrieren |
-| `recalibrate(timeoutMs = 3000)` | Wie `calibrate()`, für den Fall dass `CALIBRATION_NEEDED` gesetzt ist |
-| `measure(timeoutMs = 1000)` | Startet eine Messung, wartet bis fertig, liest Ergebnis + alle Peaks ein |
-| `startMeasurement()` | Sendet nur das Messkommando und kehrt sofort zurück (wartet **nicht**) |
-| `pollMeasurement(done)` | Fragt einmal ab, ob die Messung fertig ist — blockiert nicht |
-| `fetchResult()` | Liest Ergebnisregister + Peaks der abgeschlossenen Messung ein |
-| `getNumDistances()` | Anzahl gefundener Peaks (0–10) nach `measure()` |
+| `recalibrate(timeoutMs = 3000)` | Wie `calibrate()`, für den Fall dass `calibrationNeeded` gesetzt ist |
+| `startMeasurement()` | **Messung starten**, wartet nicht |
+| `isMeasuring()` | **Läuft eine Messung?** — treibt die Zustandsmaschine, blockiert nie |
+| `getLastResult()` | **Letztes Messergebnis** als `XM125DistanceResult` (Cache, kein I²C) |
+| `hasResult()` | Kurzform für `getLastResult().valid` |
+| `getResultAgeMs()` | Alter des zwischengespeicherten Ergebnisses in ms |
+| `getState()` | `XM125MeasureState`: `IDLE`, `RUNNING`, `SETTLING`, `READY`, `FAILED` — ohne die Maschine weiterzutreiben |
+| `setMeasureTimeout(ms)` | Ab wann eine laufende Messung als verloren gilt (Default 1000 ms) |
+| `setMaxPeaksToFetch(n)` | Wie viele Peaks nach der Messung wirklich geholt werden (Default 10). Jeder Peak kostet zwei Registerlesezugriffe — wer nur Peak 0 auswertet, setzt 1 |
+| `measureBlocking(timeoutMs = 1000)` | Starten **und warten**, bis das Ergebnis da ist. Nur für Kalibrier-/Testskripte, nicht im Roboterzyklus |
+| `getNumDistances()` | Anzahl gefundener Peaks (0–10) der letzten Messung |
 | `getNearStartEdge()` | `true`, wenn ein Objekt sehr nah an `config.startMm` erkannt wurde |
 | `getCalibrationNeeded()` | `true`, wenn der Sensor eine Neukalibrierung anfordert → `recalibrate()` aufrufen |
 | `getMeasureError()` | `true`, wenn die letzte Messung einen Fehler hatte |
@@ -82,6 +122,9 @@ wie viele Sensoren zusammen messen; umgesetzt in `systemlib::readRadarGroup()`.
 | `getPeakDistanceMm(idx)` | **Aktuell identisch zu `getPeakDistanceRaw()`** — siehe Warnung unten |
 | `getPeakDistanceReg(idx)` | Ungekürztes 32-bit-Registerwort des Peaks `idx` — für die Kalibrierung, siehe Warnung unten |
 | `getPeakStrength(idx)` | Signalstärke des Peaks `idx` (1000x-Einheit, RSS-intern) |
+
+Die `get*(idx)`-Einzelzugriffe sind bequeme Sichten auf `getLastResult()` und
+kosten ebenfalls kein I²C.
 
 ## ⚠️ Unkalibrierte Peak-Distanz
 
@@ -119,7 +162,7 @@ Zu jedem Punkt gibt der Sketch das vollständige Registerwort in **vier
 Deutungen** aus — als `uint32`, byte-getauscht als `uint32`, als `float` und
 byte-getauscht als `float`. Passt die Gerade über dem 8-bit-Rohwert schlecht
 (Restfehler > 100 mm), ist die Spalte, die sauber mit der Distanz mitläuft,
-die richtige Kodierung; sie gehört dann nach `XM125Distance::measure()`.
+die richtige Kodierung; sie gehört dann nach `XM125Distance::_readPeaks()`.
 
 Details und Reproduktionshinweise: siehe
 [05-Fehlerbehandlung-und-Troubleshooting.md](05-Fehlerbehandlung-und-Troubleshooting.md).
@@ -156,7 +199,7 @@ jeweils `+i` für Peak `i` (0-basiert, bis zu 10 Peaks).
 | Kommando | Wert | Ausgelöst durch |
 |---|---|---|
 | `APPLY_CONFIG_AND_CALIBRATE` | 1 | `applyConfigAndCalibrate()` |
-| `MEASURE_DISTANCE` | 2 | `measure()` |
+| `MEASURE_DISTANCE` | 2 | `startMeasurement()` |
 | `APPLY_CONFIGURATION` | 3 | `applyConfiguration()` |
 | `CALIBRATE` | 4 | `calibrate()` |
 | `RECALIBRATE` | 5 | `recalibrate()` |

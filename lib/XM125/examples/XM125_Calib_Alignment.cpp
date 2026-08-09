@@ -13,7 +13,7 @@
 //   1. XM125_Calib_Module.cpp       Modul kalibriert ueberhaupt?
 //   2. XM125_Calib_Alignment.cpp    <- dieses hier
 //   3. XM125_Calib_Sensitivity.cpp  signalQuality / thresholdSensitivity finden
-//   4. XM125_Calib_Crosstalk.cpp    RADAR_PARALLEL_GROUP festlegen
+//   4. XM125_Calib_Crosstalk.cpp    Uebersprechen beim gleichzeitigen Messen
 //
 // Ausführen: Datei nach src/main.cpp des Hauptprojekts kopieren (in src/ darf
 // immer nur eine Datei mit setup()/loop() liegen) und normal bauen/hochladen:
@@ -48,11 +48,12 @@ XM125Distance sensors[RADAR_NUM_SENSORS] = {
   XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
   XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
   XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  // 4. Sensor: Zeile einkommentieren, sobald RADAR_NUM_SENSORS in params.h auf 4 steht
+  //XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
 };
 
 /// Sensorbezeichnungen wie in systemlib::radarSlot() (Index -> Blickrichtung)
-static const char* SENSOR_NAMES[RADAR_NUM_SENSORS] = { "Vo", "Li", "Hi", "Re" };
+static const char* SENSOR_NAMES[RADAR_NUM_SENSORS] = { "Vo", "Li", "Hi" /*, "Re"*/ };
 
 uint8_t activeSensor = 0;
 bool    sensorReady[RADAR_NUM_SENSORS] = {};
@@ -133,7 +134,7 @@ static bool connectSensor(uint8_t idx) {
 static void monitorTick() {
   XM125Distance& radar = sensors[activeSensor];
 
-  bool ok = radar.measure(MEASURE_TIMEOUT_MS);
+  bool ok = radar.measureBlocking(MEASURE_TIMEOUT_MS);
   totalCount++;
 
   Serial.print(SENSOR_NAMES[activeSensor]); Serial.print(" 0x");
@@ -184,7 +185,7 @@ static void modeRoundRobin() {
     }
 
     XM125Distance& radar = sensors[i];
-    if (!radar.measure(MEASURE_TIMEOUT_MS)) {
+    if (!radar.measureBlocking(MEASURE_TIMEOUT_MS)) {
       Serial.println("  Messfehler/Timeout");
       continue;
     }
@@ -215,7 +216,7 @@ static void modeQuality() {
 
   for (uint8_t i = 0; i < BURST_SIZE; i++) {
     uint32_t t0 = millis();
-    bool ok = radar.measure(MEASURE_TIMEOUT_MS);
+    bool ok = radar.measureBlocking(MEASURE_TIMEOUT_MS);
     totalMs += millis() - t0;
 
     if (!ok) {

@@ -28,18 +28,18 @@ static constexpr uint32_t RADAR_SIGNAL_QUALITY        = 35000; ///< 25.0 statt D
 static constexpr uint32_t RADAR_THRESHOLD_SENSITIVITY = 400;   ///< 0.75 statt Default 0.50 -> CFAR laesst schwache Wand-Peaks durch
 static constexpr uint32_t RADAR_MEASURE_TIMEOUT_MS    = 3000;  ///< PROFILE5 + hohe Signalqualitaet braucht laenger als der 1000ms-Default
 static constexpr uint32_t RADAR_THRESHOLD_STRENGHT = -25;
-// Wie viele Sensoren gleichzeitig messen duerfen (systemlib::readRadar).
-// Die Wartezeit auf das Messergebnis faellt einmal pro Gruppe an statt einmal
-// pro Sensor -- Gruppengroesse 2 halbiert also grob die Radar-Zeit im Zyklus.
-// Gleichzeitig senden aber auch alle Sensoren einer Gruppe gleichzeitig, was
-// Uebersprechen ermoeglicht. Die Gruppen werden deshalb so gebildet, dass die
-// am weitesten voneinander weg blickenden Sensoren zusammen messen:
-//   1 = nacheinander           (kein Uebersprechen moeglich, langsamste Variante)
-//   2 = Vo+Hi, danach Li+Re    (Paare blicken entgegengesetzt -- Standard)
-//   4 = alle gleichzeitig      (schnellste Variante, hoechstes Uebersprech-Risiko)
-// Nachmessen ob 4 noch sauber laeuft: lib/XM125/examples/XM125_Calib_Crosstalk.cpp, Mode 'g'
-// (misst Trefferquote UND Zykluszeit fuer Gruppe 1/2/4) bzw. Mode 'i'/'p'.
-static constexpr uint8_t RADAR_PARALLEL_GROUP = 3;
-static_assert(RADAR_NUM_SENSORS % RADAR_PARALLEL_GROUP == 0,
-              "RADAR_PARALLEL_GROUP muss RADAR_NUM_SENSORS teilen");
+// Alle Sensoren messen grundsaetzlich GLEICHZEITIG: systemlib::readRadar()
+// stoesst eine Runde bei allen Sensoren an und sieht in den Folgezyklen nur
+// noch nach, ob die Ergebnisse da sind. Gewartet wird nirgends, die Messdauer
+// faellt also einmal fuer alle Sensoren an statt einmal pro Sensor.
+// Nachteil: alle Module senden im selben Frequenzband zur selben Zeit, also
+// ist Uebersprechen moeglich. Nachmessen, ob das die Trefferquote kostet:
+// lib/XM125/examples/XM125_Calib_Crosstalk.cpp (Mode 'g' vergleicht
+// nacheinander gegen gleichzeitig, 'i'/'p' zeigen den einzelnen Stoerer).
+// Nur wie viele PEAKS je Messung aus dem Sensor geholt werden, ist noch eine
+// Stellschraube -- jeder Peak kostet zwei Registerlesezugriffe:
+static constexpr uint8_t RADAR_PEAKS_TO_FETCH = 1; ///< ausgewertet wird nur Peak 0
+// Ein nicht erreichbarer Sensor wird neu initialisiert -- das blockiert
+// (Kalibrierung dauert bis ~2 s), darf also nicht in jedem Zyklus passieren:
+static constexpr uint32_t RADAR_REINIT_INTERVAL_MS = 2000;
 

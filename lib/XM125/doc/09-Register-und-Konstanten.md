@@ -73,7 +73,7 @@ UART-Pin des XM125 verkabelt sein.
 | Konstante | Wert | Verwendet in |
 |---|---|---|
 | `XM125_DEFAULT_APPLY_TIMEOUT_MS` | `3000` | alle Apply-/Kalibrier-/Start-/Stop-Kommandos |
-| `XM125_DEFAULT_MEASURE_TIMEOUT_MS` | `1000` | `XM125Distance::measure()` (Default-Parameter) |
+| `XM125_DEFAULT_MEASURE_TIMEOUT_MS` | `1000` | Default-Messtimeout der Zustandsmaschine, änderbar über `setMeasureTimeout()` |
 | `XM125_WAKEUP_TIMEOUT_MS` | `1500` | `wakeUp()`, indirekt `begin()` |
 
 ---
@@ -145,7 +145,7 @@ Register wurden bereits erfolgreich geschrieben.
 | Konstante | Wert | Methode |
 |---|---|---|
 | `XM125D_CMD_APPLY_CONFIG_AND_CALIBRATE` | 1 | `applyConfigAndCalibrate()` |
-| `XM125D_CMD_MEASURE_DISTANCE` | 2 | `measure()` |
+| `XM125D_CMD_MEASURE_DISTANCE` | 2 | `startMeasurement()` |
 | `XM125D_CMD_APPLY_CONFIGURATION` | 3 | `applyConfiguration()` |
 | `XM125D_CMD_CALIBRATE` | 4 | `calibrate()` |
 | `XM125D_CMD_RECALIBRATE` | 5 | `recalibrate()` |

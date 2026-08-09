@@ -77,9 +77,9 @@ obwohl das Kommando angekommen ist. Deshalb wird nach einem gemeldeten
 Schreibfehler sofort der Status gegengeprüft: Steht `BUSY`, wurde das Kommando
 offensichtlich angenommen.
 
-Derselbe Workaround steckt auch direkt in `XM125Distance::measure()`, weil
-`measure()` das Kommando selbst schreibt statt `_executeCommand()` zu nutzen
-(es braucht danach noch die Ergebnisregister).
+Derselbe Workaround steckt auch direkt in `XM125Distance::startMeasurement()`,
+weil das Messkommando nicht über `_executeCommand()` läuft (dort würde auf das
+Ergebnis gewartet — genau das soll der Messbetrieb nicht).
 
 ### `_waitNotBusy()` — Polling-Verhalten
 
@@ -107,66 +107,82 @@ Zu beachten:
   Arithmetik formuliert und daher **überlauffest** (nach 49,7 Tagen Laufzeit
   korrekt).
 
-## 3. `measure()` im Detail
+## 3. Der Messbetrieb im Detail — die Zustandsmaschine
 
-`measure()` ist aus drei einzeln aufrufbaren Bausteinen zusammengesetzt
-(**✔ Code**):
+Der Distance-Detektor misst über eine nicht blockierende Zustandsmaschine.
+**Nirgends steht ein `delay()`**; die zwei nötigen Pausen werden über
+`micros()`-Zeitstempel ausgesessen, nicht verschlafen.
 
-```cpp
-bool XM125Distance::measure(uint32_t timeoutMs) {
-    if (!startMeasurement()) return false;          // Schritt 1
-    uint32_t status = 0;
-    if (!_waitNotBusy(timeoutMs, status)) return false;   // Schritt 2
-    if (statusError(status)) return false;                // Schritt 3
-    return fetchResult();                                 // Schritte 4-7
-}
+```
+IDLE ──startMeasurement()──> RUNNING ──BUSY weg, Result gelesen──> SETTLING
+                                │                                     │
+                                │ Fehler/Timeout          Pause um,   │
+                                ▼                         Peaks da    ▼
+                             FAILED <────Fehler────────────────────  READY
 ```
 
-| Schritt | Aktion | Zeit | Baustein |
+Weitergetrieben wird sie ausschließlich von `isMeasuring()` — ein Aufruf macht
+genau **einen** Schritt und höchstens **einen** Buszugriff:
+
+| Zustand | Was `isMeasuring()` tut | Buszeit | Ergebnis |
 |---|---|---|---|
-| 1 | Kommando `MEASURE_DISTANCE` schreiben (+ Clock-Stretching-Probe) | ~0,7 ms | `startMeasurement()` |
-| 2 | `_waitNotBusy(timeoutMs)` — bzw. wiederholtes `pollMeasurement()` | Messdauer des Moduls | — |
-| 3 | `DETECTOR_ERROR` prüfen | — | (in `pollMeasurement()` enthalten) |
-| 4 | Ergebnisregister `0x0010` lesen | ~0,7 ms | `fetchResult()` |
-| 5 | Flags/Temperatur dekodieren, `numDistances` auf 10 begrenzen | — | `fetchResult()` |
-| 6 | **`delay(5)`** | 5 ms | `fetchResult()` |
-| 7 | je Peak: Distanz lesen, `delay(1)`, Stärke lesen, `delay(1)` | ~3,4 ms je Peak | `fetchResult()` |
+| `IDLE`/`READY`/`FAILED` | nichts | 0 | `false` |
+| `RUNNING`, < 2 ms seit Start | nichts (siehe unten) | 0 | `true` |
+| `RUNNING`, BUSY gesetzt | `DETECTOR_STATUS` lesen, Timeout prüfen | ~0,7 ms | `true` |
+| `RUNNING`, BUSY weg | Status lesen **+** Ergebnisregister `0x0010` lesen | ~1,4 ms | `true` (→ `SETTLING`) bzw. `false` bei 0 Peaks |
+| `SETTLING`, < 5 ms | nichts | 0 | `true` |
+| `SETTLING`, Pause um | alle zu holenden Peaks lesen (2 Register je Peak) | ~1,4 ms je Peak | `false` (→ `READY`) |
 
-`pollMeasurement(done)` ersetzt Schritt 2+3 durch **eine einzelne**
-Statusabfrage: Rückgabe `false` bei I²C-Fehler oder `DETECTOR_ERROR`,
-`done = true`, sobald `BUSY` zurückgegangen ist. Damit lässt sich die
-Wartezeit über mehrere Sensoren überlappen — der Grund, warum es die
-Zerlegung überhaupt gibt (siehe Abschnitt 5).
+### Die beiden Pausen
 
-In Schritt 7 wird seit der Erweiterung um `getPeakDistanceReg()` **beides**
-gespeichert: das ungekürzte Registerwort in `_peakDistanceReg[i]` und das
-oberste Byte in `_peakDistanceRaw[i]`.
+**`XM125D_BUSY_SETTLE_US` = 2000 µs — vor der ersten BUSY-Abfrage.**
+Die interne MCU setzt `BUSY` nicht in derselben Mikrosekunde, in der das
+Kommando ankommt. Wer sofort fragt, sieht `BUSY = 0` und würde das
+Ergebnisregister der **vorherigen** Messung als neu ausgeben. (In der früheren
+blockierenden Fassung war das ein `delay(2)` in `_executeCommand()`.)
 
-**Zu Schritt 6:** Die Pause ist empirisch nötig. Das Ergebnisregister ist
-bereits gültig (Peak-Anzahl, Temperatur, Flags), während die Firmware die
-Peak-Detailregister offenbar noch schreibt — ohne die Pause wurden
-unplausible Werte beobachtet (**✔ Code**-Kommentar). Wer die Messrate
-optimieren will, sollte diese 5 ms nicht blind entfernen, sondern gegen die
-Plausibilität der Peaks testen.
+**`XM125D_PEAK_SETTLE_US` = 5000 µs — zwischen Ergebnis- und Peak-Registern.**
+Empirisch nötig: Das Ergebnisregister ist gültig, sobald `BUSY` zurückgeht
+(Peak-Anzahl, Temperatur, Flags), während die Firmware die Peak-Detailregister
+offenbar noch schreibt — ohne die Pause wurden unplausible Werte beobachtet.
+Wer die Messrate optimieren will, sollte diese 5 ms nicht blind kürzen,
+sondern gegen die Plausibilität der Peaks testen.
 
-**Zu Schritt 7 — bekannte Schwäche:** Die Rückgabewerte von `_readReg()`
-werden hier **nicht** ausgewertet:
+Der frühere zusätzliche `delay(1)` zwischen den einzelnen Peak-Lesevorgängen
+ist entfallen: Die Peak-Register werden jetzt in einem Rutsch gelesen, nachdem
+die Settle-Pause abgelaufen ist. Im Mehrsensorbetrieb liegt zwischen
+Ergebnisregister und Peak-Lesen ohnehin mindestens ein kompletter
+Anwendungszyklus.
 
-```cpp
-uint32_t dist = 0, strength = 0;
-_readReg(XM125D_REG_PEAK0_DISTANCE + i, dist);   // Rückgabe ignoriert
-_readReg(XM125D_REG_PEAK0_STRENGTH + i, strength);
-```
+### Peaks: nur holen, was gebraucht wird
 
-Schlägt ein Lesevorgang fehl, bleiben `dist`/`strength` bei `0` und der Peak
-erscheint als "Distanz 0, Stärke 0" — `measure()` liefert trotzdem `true`.
-Anwendungen sollten Peaks mit Stärke `0` deshalb als verdächtig behandeln.
+`setMaxPeaksToFetch(n)` begrenzt, wie viele Peaks überhaupt vom Sensor geholt
+werden (jeder kostet zwei Registerlesezugriffe ≈ 1,4 ms). Das Projekt setzt
+`RADAR_PEAKS_TO_FETCH = 1`, weil `systemlib` nur Peak 0 auswertet — statt bis
+zu 20 Lesezugriffen bleiben zwei. `numDistances` bleibt die echte Anzahl; die
+Werte der übersprungenen Peaks werden auf `0` gesetzt, damit dort nicht die
+Werte der vorherigen Messung stehen bleiben. Meldet die Messung `0` Peaks,
+entfällt sowohl das Peak-Lesen als auch die 5-ms-Pause komplett.
+
+Gespeichert wird je Peak **beides**: das ungekürzte Registerwort in
+`peakDistanceReg[i]` und das oberste Byte in `peakDistanceRaw[i]`.
+
+### Fehlerbehandlung
+
+Jeder Lesevorgang wird ausgewertet — schlägt einer fehl, geht die Maschine auf
+`FAILED` und `result.valid` wird `false`. Die Zahlenwerte bleiben dabei auf dem
+letzten guten Stand stehen (der Aufrufer entscheidet über `valid` bzw.
+`getResultAgeMs()`, ob er sie noch verwenden will). Ein Peak, der als
+"Distanz 0, Stärke 0" durchrutscht, ohne dass `valid` fällt, ist damit nicht
+mehr möglich.
 
 **`numDistances`-Begrenzung:** Die Maske `0x0F` lässt Werte bis 15 zu,
-`XM125D_MAX_PEAKS` ist aber 10 — deshalb die Klemmung
-`if (_numDistances > XM125D_MAX_PEAKS) _numDistances = XM125D_MAX_PEAKS;`.
-Das schützt die Arrays vor Überlauf, falls die Firmware einen unerwarteten
-Wert liefert.
+`XM125D_MAX_PEAKS` ist aber 10 — deshalb die Klemmung auf 10. Das schützt die
+Arrays vor Überlauf, falls die Firmware einen unerwarteten Wert liefert.
+
+**Timeout:** `setMeasureTimeout(ms)` (Default 1000 ms, Projekt: 3000 ms) wird
+in `RUNNING` gegen die seit `startMeasurement()` vergangene Zeit geprüft. Die
+Anwendung braucht **keine** eigene Abbruchlogik mehr.
 
 ## 4. `XM125Presence::update()` im Detail
 
@@ -196,7 +212,9 @@ Grundlage: 9 Bit je Byte (8 Datenbits + ACK), 100 kbit/s → **90 µs pro Byte**
 | `writeConfig()` Distance (14 Register + 14 × `delay(1)`) | 98 | **~23 ms** |
 | `writeConfig()` Presence (23 Register + 23 × `delay(1)`) | 161 | **~38 ms** |
 | `update()` Presence (4 Reads) | 32 | **~3 ms** |
-| `measure()` Nachlauf: 5 ms + 4 Peaks × (2 Reads + 2 ms) | | **~19 ms** bei 4 Peaks |
+| `startMeasurement()` (1 Write) | 7 | ~0,63 ms |
+| `isMeasuring()` in `RUNNING` (1 Read) | 8 | ~0,72 ms |
+| Peaks holen (2 Reads je Peak) | 16 je Peak | ~1,4 ms je Peak |
 
 Bei **400 kHz** wären alle Buszeiten viertelt — die Testskripte verwenden
 aber bewusst 100 kHz, weil das dem Modul mehr Toleranz beim Clock-Stretching
@@ -204,26 +222,34 @@ lässt (siehe [05-Fehlerbehandlung](05-Fehlerbehandlung-und-Troubleshooting.md#1
 
 ### Konsequenz für mehrere Sensoren
 
-Vier Distance-Sensoren **nacheinander** per `measure()` abzufragen kostet
+Vier Distance-Sensoren **nacheinander** blockierend abzufragen kostet
 `4 × (Messdauer + Nachlauf)`. Bei ~50 ms Messdauer je Sensor sind das ~280 ms
-pro Runde, also gut 3 Hz Positionsrate.
+pro Runde, also gut 3 Hz Positionsrate — und die Hauptschleife steht in dieser
+Zeit still.
 
-Die Messdauer besteht fast vollständig aus Warten — deshalb überlappt
-`systemlib::readRadarGroup()` sie über die zerlegte Mess-API:
+Der Messbetrieb wartet deshalb überhaupt nicht mehr:
+`systemlib::readRadar()` stößt eine Runde bei **allen** Sensoren gleichzeitig
+an und sieht in den folgenden Zyklen nur noch nach.
 
-| `RADAR_PARALLEL_GROUP` | Gruppen | Wartezeit pro Runde | Übersprechen |
+| Variante | Zeit im Zyklus | Rundendauer | Übersprechen |
 |---|---|---|---|
-| 1 | 4 × einzeln | 4 × Messdauer | ausgeschlossen |
-| **2** (Projektstandard) | {Vo, Hi}, {Li, Re} | 2 × Messdauer | gering — die Paare blicken entgegengesetzt |
-| 4 | alle zusammen | 1 × Messdauer | am größten |
+| nacheinander blockierend (früher) | volle Messdauer × Sensoranzahl | 4 × Messdauer | ausgeschlossen |
+| gleichzeitig blockierend | volle Messdauer | 1 × Messdauer | möglich |
+| **gleichzeitig, nicht blockierend (heute)** | **~1 Buszugriff je Sensor (< 1 ms)** | 1 × Messdauer | möglich |
 
-Die Gruppen entstehen über die Schrittweite `numGroups`: Bei 2er-Gruppen
-messen jeweils die **entgegengesetzt** blickenden Sensoren zusammen, nicht die
-benachbarten. Welcher Wert tragbar ist, misst
-[XM125_WallCalibration.cpp](../examples/XM125_WallCalibration.cpp)
-im Modus `i`.
+Die Rundendauer ändert sich zwischen den beiden Gleichzeitig-Varianten nicht —
+was sich ändert, ist die Zeit, die der Zyklus dafür **stillsteht**: statt der
+vollen Messdauer nur noch ein Statusregister je Sensor. Bei drei Sensoren sind
+das rund 2 ms pro Zyklus statt ~50 ms.
+
+Ob der Gleichzeitigbetrieb Trefferquote kostet, misst
+[XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp) im Modus `g`
+(nacheinander gegen gleichzeitig).
 
 Weitere Stellschrauben, wenn es noch schneller sein muss:
+
+- `setMaxPeaksToFetch(n)` — nur die Peaks holen, die ausgewertet werden
+  (Projekt: 1 statt 10, spart bis zu 18 Registerlesezugriffe je Messung),
 
 - `endMm` reduzieren (kürzerer Messbereich = kürzere Messung),
 - `signalQuality` senken — kostet aber Reichweitenreserve am Bereichsende,
@@ -233,10 +259,17 @@ Weitere Stellschrauben, wenn es noch schneller sein muss:
 
 ## 6. Blockierverhalten & Echtzeit
 
-- **Alles ist blockierend.** `delay()` und Polling-Schleifen laufen ohne
-  `yield()`-Aufrufe; während `applyConfigAndCalibrate()` steht die
-  Hauptschleife bis zu 3 s still. Für eine Roboter-Regelschleife heißt das:
-  **Kalibrierung nur in `setup()` bzw. in klar definierten Pausen.**
+- **Der Messbetrieb blockiert nicht.** `startMeasurement()`, `isMeasuring()`
+  und `getLastResult()` kehren immer sofort zurück; die Zustandsmaschine
+  enthält kein `delay()` und keine Warteschleife.
+- **Die Einrichtung blockiert weiterhin.** `begin()`, `writeConfig()`,
+  `applyConfig*()`, `calibrate()`, `recalibrate()` — und das ausdrücklich für
+  Testskripte gedachte `measureBlocking()`. Während
+  `applyConfigAndCalibrate()` steht die Hauptschleife bis zu 3 s still. Für
+  eine Roboter-Regelschleife heißt das: **Kalibrierung nur in `setup()` bzw.
+  in klar definierten Pausen** — und ein Wiederanlaufversuch für einen toten
+  Sensor gedrosselt, siehe `RADAR_REINIT_INTERVAL_MS` in
+  [params.h](../../include/params.h).
 - **Nicht ISR-tauglich.** Die Methoden nutzen `Wire` und `millis()`/`delay()`
   — Aufrufe aus einem Interrupt-Handler sind nicht zulässig.
 - **Keine Bus-Arbitrierung zwischen Instanzen.** Mehrere `XM125*`-Objekte am
@@ -254,9 +287,10 @@ Weitere Stellschrauben, wenn es noch schneller sein muss:
 |---|---|
 | `XM125Base` (Bus-Zeiger, Adresse, 2 Pins) | ~8 Byte |
 | `XM125DistanceConfig` (12 × `uint32_t` + 2 × `bool`) | ~52 Byte |
-| Peak-Arrays (10 × `uint8_t` + 10 × `uint32_t` + 10 × `int32_t`) | 90 Byte |
-| Ergebnis-Flags/Temperatur/`_lastFailedConfigRegister` | ~8 Byte |
-| **`XM125Distance` gesamt** | **≈ 160 Byte je Instanz** |
+| `XM125DistanceResult`: Peak-Arrays (10 × `uint8_t` + 10 × `uint32_t` + 10 × `int32_t`) | 90 Byte |
+| `XM125DistanceResult`: Flags, Temperatur, Zeitstempel, Dauer | ~14 Byte |
+| Zustandsmaschine (Zustand, Timeout, Zeitstempel, Peak-Zähler) | ~16 Byte |
+| **`XM125Distance` gesamt** | **≈ 185 Byte je Instanz** |
 | `XM125PresenceConfig` (16 × `uint32_t` + 7 × `bool`) | ~72 Byte |
 | **`XM125Presence` gesamt** | **≈ 105 Byte je Instanz** |
 
@@ -269,19 +303,19 @@ Weitere Stellschrauben, wenn es noch schneller sein muss:
 
 | # | Eigenheit | Auswirkung |
 |---|---|---|
-| 1 | Register-Getter liefern bei I²C-Fehler `0` | Fehler nicht von echtem `0` unterscheidbar |
-| 2 | Peak-Lesefehler in `measure()` werden ignoriert | Peak erscheint als `0`/`0` |
-| 3 | `update()` meldet nur Fehler des ersten Registers | Alte Distanz-/Score-Werte bleiben unbemerkt stehen |
-| 4 | `_waitNotBusy()` bricht bei einem einzelnen Lesefehler ab | Störimpuls → Kommando gilt als fehlgeschlagen, obwohl es lief |
-| 5 | Kein `delay` im Busy-Polling | maximale Buslast während Kalibrierung |
+| 1 | Register-Getter in `XM125Base` liefern bei I²C-Fehler `0` | Fehler nicht von echtem `0` unterscheidbar |
+| 2 | Nach einem Fehlversuch bleiben die Zahlenwerte im Ergebnis stehen | nur `valid`/`timestampMs` zeigen, dass sie alt sind |
+| 3 | `update()` (Presence) meldet nur Fehler des ersten Registers | Alte Distanz-/Score-Werte bleiben unbemerkt stehen |
+| 4 | `_waitNotBusy()` bricht bei einem einzelnen Lesefehler ab | Störimpuls → Kalibrierkommando gilt als fehlgeschlagen, obwohl es lief |
+| 5 | Kein `delay` im Busy-Polling der Kalibrierkommandos | maximale Buslast während Kalibrierung |
 | 6 | `wakeUp()` mit `intPin` ist ein reiner Busy-Wait | blockiert bis 1500 ms ohne `yield()` |
 | 7 | `getPeakDistanceMm()` ist ein Platzhalter | **keine echten Millimeter**, siehe [07-Kalibrierung.md](07-Kalibrierung.md) |
 | 8 | `sleep()` wirkt nur mit verkabeltem `wakePin` | ohne Pin folgenlos (bewusst so) |
 | 9 | `begin()` ruft `Wire.begin()` **nicht** auf | muss die Anwendung tun |
 | 10 | Firmwaretyp wird nicht erkannt | falsche Klasse → `PROTOCOL_STATUS != 0` |
-| 11 | `pollMeasurement()` hat **keinen** Timeout | die Warteschleife der Anwendung muss selbst abbrechen (Vorbild: `RADAR_MEASURE_TIMEOUT_MS` in `readRadarGroup()`) |
-| 12 | `fetchResult()` prüft nicht, ob überhaupt eine Messung lief | zu früh aufgerufen liefert es die Register der **vorherigen** Messung |
+| 11 | Nach einem Timeout misst der Sensor evtl. noch weiter | das nächste `startMeasurement()` kann auf einen `BUSY`-Sensor treffen; die Anwendung zählt Fehlschläge (`RADAR_MAX_CONSEC_FAILURES`) und initialisiert dann neu |
+| 12 | `getLastResult()` prüft nicht, ob überhaupt schon gemessen wurde | vor der ersten Messung ist alles `0` und `valid == false` |
 
-Punkte 1–4 sind bewusste Vereinfachungen, keine Bugs im Sinne von "falsches
+Punkte 1–5 sind bewusste Vereinfachungen, keine Bugs im Sinne von "falsches
 Verhalten" — sie sind hier dokumentiert, damit man sie beim Debuggen nicht
 für Sensorfehler hält.

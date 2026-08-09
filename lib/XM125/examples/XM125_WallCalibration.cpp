@@ -84,7 +84,7 @@ CalPoint calPoints[MAX_CAL_POINTS];
 uint8_t  calPointCount = 0;
 
 struct BurstResult {
-  uint8_t  ok;            ///< measure() ohne Fehler
+  uint8_t  ok;            ///< Messung ohne Fehler
   uint8_t  detections;    ///< davon mit mindestens einem Peak
   uint8_t  rawMedian;
   uint32_t regMedian;
@@ -216,7 +216,7 @@ static BurstResult runBurst(uint8_t idx, uint8_t n, bool disturb = false) {
     }
 
     uint32_t t0 = millis();
-    bool ok = radar.measure(MEASURE_TIMEOUT);
+    bool ok = radar.measureBlocking(MEASURE_TIMEOUT);
     totalMs += (millis() - t0);
 
     if (!ok) {
@@ -350,18 +350,17 @@ static void modeInterference() {
   Serial.println();
 
   if (lostDetections <= 0 && strengthDrop < 10.0f) {
-    Serial.println("  -> Kein messbares Uebersprechen. RADAR_PARALLEL_GROUP = 4 moeglich");
-    Serial.println("     (alle vier gleichzeitig, schnellster Zyklus).");
+    Serial.println("  -> Kein messbares Uebersprechen. Der Gleichzeitigbetrieb aller");
+    Serial.println("     Sensoren (systemlib::readRadar()) ist damit unbedenklich.");
   } else if (lostDetections <= 1 && strengthDrop < 25.0f) {
-    Serial.println("  -> Schwaches Uebersprechen. RADAR_PARALLEL_GROUP = 2 ist der");
-    Serial.println("     sichere Kompromiss (Vo+Hi, dann Li+Re -- Paare blicken");
-    Serial.println("     entgegengesetzt und sehen sich gegenseitig kaum).");
+    Serial.println("  -> Schwaches Uebersprechen. Im Blick behalten, aber der");
+    Serial.println("     Gleichzeitigbetrieb bleibt vertretbar.");
   } else {
-    Serial.println("  -> Deutliches Uebersprechen. RADAR_PARALLEL_GROUP = 1 setzen");
-    Serial.println("     (nacheinander messen) oder 2 gegenpruefen. Vorher lohnt ein");
-    Serial.println("     Blick auf die Montage: zeigen zwei Sensoren teilweise in");
-    Serial.println("     dieselbe Richtung, oder reflektiert die Wand von einem zum");
-    Serial.println("     anderen (z.B. in einer Ecke)?");
+    Serial.println("  -> Deutliches Uebersprechen. Der Roboter misst trotzdem immer");
+    Serial.println("     gleichzeitig, also an der Ursache ansetzen: zeigen zwei");
+    Serial.println("     Sensoren teilweise in dieselbe Richtung, oder reflektiert die");
+    Serial.println("     Wand von einem zum anderen (z.B. in einer Ecke)? Details liefert");
+    Serial.println("     XM125_Calib_Crosstalk.cpp (Mode 'p').");
   }
   Serial.println("===================================================================");
 }
@@ -464,7 +463,7 @@ static void modeFit() {
     Serial.println("  ist dann vermutlich NICHT linear in der Distanz. Oben stehen zu");
     Serial.println("  jedem Punkt die vier Deutungen des vollstaendigen Registerworts --");
     Serial.println("  diejenige, die sauber mit der Distanz mitlaeuft, ist die richtige");
-    Serial.println("  Kodierung und gehoert in XM125Distance::measure().");
+    Serial.println("  Kodierung und gehoert in XM125Distance::_readPeaks().");
   } else {
     Serial.println();
     Serial.println("  Passt. Werte in XM125Distance::getPeakDistanceMm() eintragen.");
@@ -477,7 +476,7 @@ static void modeMonitor() {
   static uint16_t seen = 0, total = 0;
 
   uint32_t t0 = millis();
-  bool ok = radar.measure(MEASURE_TIMEOUT);
+  bool ok = radar.measureBlocking(MEASURE_TIMEOUT);
   uint32_t dt = millis() - t0;
   total++;
 
@@ -513,7 +512,7 @@ static void printHelp() {
   Serial.println(" a <0..3>  Sensor waehlen (0x51/0x52/0x53/0x54)");
   Serial.println(" m         Dauermessung an/aus (zeigt, ob die Wand gesehen wird)");
   Serial.println(" s         Parameter-Sweep bei 2,5 m -> empfohlene Einstellungen");
-  Serial.println(" i         Uebersprech-Test -> empfohlenes RADAR_PARALLEL_GROUP");
+  Serial.println(" i         Uebersprech-Test: stoeren sich gleichzeitig messende Sensoren?");
   Serial.println(" d <cm>    Kalibrierpunkt bei bekanntem Abstand aufnehmen, z.B. 'd 150'");
   Serial.println(" f         Kalibrierpunkte auswerten (Rohwert -> mm)");
   Serial.println(" c         Kalibrierpunkte loeschen");

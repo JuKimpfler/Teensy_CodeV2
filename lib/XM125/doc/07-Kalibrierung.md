@@ -11,8 +11,8 @@ Dieses Kapitel beschreibt **beide** Dinge, die im Zusammenhang mit dem XM125
 Ein dritter Vorgang heißt zwar nicht "Kalibrierung", gehört aber in dieselbe
 Inbetriebnahme: die **Abstimmung der Empfindlichkeit** (`signalQuality`,
 `thresholdSensitivity`, `reflectorShape`) darauf, dass die Holzwand bei 2,5 m
-zuverlässig als Peak erkannt wird, plus die Frage, wie viele Sensoren
-gleichzeitig messen dürfen (`RADAR_PARALLEL_GROUP`). Die Ergebnisse und
+zuverlässig als Peak erkannt wird, plus die Frage, ob sich die gleichzeitig
+messenden Sensoren gegenseitig stören. Die Ergebnisse und
 Begründungen stehen in
 [04-Konfiguration.md](04-Konfiguration.md#in-diesem-projekt-verwendete-werte)
 und [05, Abschnitt 8](05-Fehlerbehandlung-und-Troubleshooting.md#8-übersprechen-zwischen-mehreren-sensoren).
@@ -32,7 +32,7 @@ voraus, dass der vorherige stimmt:
 | 1 | [XM125_Calib_Module.cpp](../examples/XM125_Calib_Module.cpp) | Modul-interne Kalibrierung: läuft sie durch, wie lange dauert sie, hält sie im Warmbetrieb? (Teil A) | — (Diagnose) |
 | 2 | [XM125_Calib_Alignment.cpp](../examples/XM125_Calib_Alignment.cpp) | Mechanische Ausrichtung: Sensor auf maximale Echostärke drehen | Montage |
 | 3 | [XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp) | Empfindlichkeit: `signalQuality` × `thresholdSensitivity`, dazu `maxProfile` und `reflectorShape` | `RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY` in [params.h](../../include/params.h) |
-| 4 | [XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp) | Übersprechen: wie viele Sensoren dürfen gleichzeitig messen? | `RADAR_PARALLEL_GROUP` in [params.h](../../include/params.h) |
+| 4 | [XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp) | Übersprechen: stören sich die gleichzeitig messenden Sensoren? | Montage / Empfindlichkeit (kein Parameter) |
 
 Alle vier konfigurieren mit den Werten aus `params.h` und kalibrieren wie
 `systemlib::setupRadarSens()` — was hier gemessen wird, gilt damit auch für
@@ -220,12 +220,12 @@ Empfohlenes Muster (so in
 [XM125_Distance.cpp](../examples/XM125_Distance.cpp)):
 
 ```cpp
-if (!radar.measure(3000)) {
-  if (radar.getCalibrationNeeded()) {
-    radar.recalibrate();     // billiger als calibrate()
-  }
-  return;
+if (radar.isMeasuring()) return;
+
+if (!radar.hasResult() && radar.getCalibrationNeeded()) {
+  radar.recalibrate();       // billiger als calibrate()
 }
+radar.startMeasurement();
 ```
 
 Robusteres Muster für den Dauerbetrieb — auch prüfen, wenn die Messung
@@ -235,7 +235,7 @@ Robusteres Muster für den Dauerbetrieb — auch prüfen, wenn die Messung
 static uint8_t  recalTries   = 0;
 static uint32_t lastRecalMs  = 0;
 
-bool ok = radar.measure(3000);
+if (radar.isMeasuring()) return;
 
 if (radar.getCalibrationNeeded() && millis() - lastRecalMs > 2000) {
   lastRecalMs = millis();
@@ -268,7 +268,7 @@ in [XM125Distance.h](../XM125Distance.h) + **📘 Acconeer**).
 | Konstante | Wert | Verwendet von |
 |---|---|---|
 | `XM125_DEFAULT_APPLY_TIMEOUT_MS` | **3000 ms** | `applyConfigAndCalibrate()`, `applyConfiguration()`, `calibrate()`, `recalibrate()`, `XM125Presence::start()/stop()` |
-| `XM125_DEFAULT_MEASURE_TIMEOUT_MS` | **1000 ms** | `measure()` (Default) |
+| `XM125_DEFAULT_MEASURE_TIMEOUT_MS` | **1000 ms** | Messtimeout der Zustandsmaschine (Default), änderbar über `setMeasureTimeout()`; das Projekt setzt `RADAR_MEASURE_TIMEOUT_MS` = 3000 ms |
 | `XM125_WAKEUP_TIMEOUT_MS` | **1500 ms** | `wakeUp()` / `begin()` |
 
 Der Kommentar in [XM125.h](../XM125.h) nennt "~1–2 s" als realistische
@@ -458,7 +458,7 @@ es liefert das vollständige Registerwort, während `getPeakDistanceRaw()` 24 de
 32 Bits verwirft:
 
 ```cpp
-if (radar.measure(3000) && radar.getNumDistances() > 0) {
+if (radar.measureBlocking(3000) && radar.getNumDistances() > 0) {   // Kalibrierskript: warten ist hier ok
   uint32_t w = radar.getPeakDistanceReg(0);
   Serial.print("Peak0 Register: 0x"); Serial.print(w, HEX);
   Serial.print("  Bytes: ");
@@ -738,7 +738,7 @@ läuft monoton mit der Distanz mit?
 
 **4. Übersprechen** — `XM125_Calib_Crosstalk`
 
-- [ ] Modus `g` gefahren, `RADAR_PARALLEL_GROUP` entsprechend gesetzt
+- [ ] Modus `g` gefahren (nacheinander gegen gleichzeitig), Ergebnis bewertet
 - [ ] Bei Auffälligkeiten Modus `p`: welches Sensorpaar stört sich?
 
 **Rohwert-Kalibrierung (Teil B)**

@@ -1,15 +1,14 @@
 // XM125_Calib_Crosstalk.cpp
-// ── Kalibriermethode 4: UEBERSPRECHEN und Gruppengroesse ──────────────────────
+// ── Kalibriermethode 4: UEBERSPRECHEN ─────────────────────────────────────────
 //
-// Beantwortet: Wie viele der vier Sensoren duerfen GLEICHZEITIG messen, ohne
-// sich gegenseitig zu stoeren?
+// Beantwortet: Stoeren sich die Sensoren gegenseitig, wenn sie GLEICHZEITIG
+// messen -- und wenn ja, welches Paar?
 //
-// Ergebnis wandert nach lib/include/params.h:
-//   RADAR_PARALLEL_GROUP   1 = nacheinander, 2 = Vo+Hi dann Li+Re, 4 = alle
-// systemlib::readRadar() bildet damit die Messgruppen. Groessere Gruppen
-// verkuerzen den Zyklus (die Wartezeit auf das Ergebnis faellt einmal pro Gruppe
-// an statt einmal pro Sensor), erlauben aber Uebersprechen: alle vier Module
-// senden im selben Frequenzband.
+// Der Roboter misst grundsaetzlich mit allen Sensoren gleichzeitig
+// (systemlib::readRadar(): anstossen, nie warten, Ergebnisse abholen). Nur so
+// faellt die Messdauer einmal statt einmal pro Sensor an. Dieses Skript prueft,
+// was dieser Betrieb an Trefferquote kostet; Gegenmittel sind Montage
+// (Blickrichtungen trennen) und Empfindlichkeit, kein Parameter in params.h.
 //
 // Reihenfolge der Kalibrierskripte:
 //   1. XM125_Calib_Module.cpp       Modul kalibriert ueberhaupt?
@@ -42,11 +41,12 @@ XM125Distance sensors[RADAR_NUM_SENSORS] = {
   XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
   XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
   XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  // 4. Sensor: Zeile einkommentieren, sobald RADAR_NUM_SENSORS in params.h auf 4 steht
+  //XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
 };
 
 /// Sensorbezeichnungen wie in systemlib::radarSlot() (Index -> Blickrichtung)
-static const char* SENSOR_NAMES[RADAR_NUM_SENSORS] = { "Vo", "Li", "Hi", "Re" };
+static const char* SENSOR_NAMES[RADAR_NUM_SENSORS] = { "Vo", "Li", "Hi" /*, "Re"*/ };
 
 uint8_t activeSensor = 0;
 bool    sensorReady[RADAR_NUM_SENSORS] = {};
@@ -87,6 +87,8 @@ static float strengthDropPct(int32_t quiet, int32_t noisy) {
 /** Projektkonfiguration aus params.h -- identisch zu systemlib::setupRadarSens(). */
 static bool applyProjectConfig(uint8_t idx) {
   XM125Distance& radar = sensors[idx];
+
+  radar.setMeasureTimeout(MEASURE_TIMEOUT_MS);
 
   radar.config.startMm                       = RADAR_START_MM;
   radar.config.endMm                         = RADAR_END_MM;
@@ -149,7 +151,7 @@ static BurstResult runBurst(uint8_t idx, uint8_t n, uint8_t disturbMask) {
     }
 
     uint32_t t0 = millis();
-    bool ok = radar.measure(MEASURE_TIMEOUT_MS);
+    bool ok = radar.measureBlocking(MEASURE_TIMEOUT_MS);
     totalMs += (millis() - t0);
 
     if (!ok) {
@@ -171,15 +173,18 @@ static BurstResult runBurst(uint8_t idx, uint8_t n, uint8_t disturbMask) {
 }
 
 /**
- * Eine komplette Radar-Runde wie systemlib::readRadar(): alle Sensoren in
- * Gruppen der Groesse groupSize, Gruppenbildung ueber die Schrittweite
- * numGroups (bei 2er-Gruppen also {Vo,Hi} und {Li,Re} -- entgegengesetzte
- * Blickrichtungen).
+ * Eine Sensorgruppe messen lassen: erst bei allen startMeasurement(), dann
+ * reihum isMeasuring() bis alle durch sind, dann die Ergebnisse aus dem Cache
+ * holen. Gruppenbildung ueber die Schrittweite `stride`; stride == 1 ab
+ * `first` == 0 ist die Betriebsart des Roboters (alle gleichzeitig, siehe
+ * systemlib::readRadar()), grosse Schrittweiten messen nacheinander.
+ *
+ * Anders als im Roboter wird hier bewusst gewartet, bis die Gruppe fertig ist
+ * -- dieses Skript misst ja gerade, was eine Runde kostet.
  */
 static void readGroup(uint8_t first, uint8_t stride, bool detected[RADAR_NUM_SENSORS],
                       int32_t strength[RADAR_NUM_SENSORS], uint8_t& failures) {
   bool pending[RADAR_NUM_SENSORS] = {};
-  bool done[RADAR_NUM_SENSORS]    = {};
 
   for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
     if (!sensorReady[i]) continue;
@@ -187,33 +192,23 @@ static void readGroup(uint8_t first, uint8_t stride, bool detected[RADAR_NUM_SEN
     else                               failures++;
   }
 
-  uint32_t waitStart = millis();
   bool anyPending = true;
   while (anyPending) {
     anyPending = false;
     for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
       if (!pending[i]) continue;
+      if (sensors[i].isMeasuring()) { anyPending = true; continue; }
 
-      bool finished = false;
-      if (!sensors[i].pollMeasurement(finished)) { pending[i] = false; failures++; }
-      else if (finished)                         { pending[i] = false; done[i] = true; }
-      else                                        anyPending = true;
+      // Fertig (oder abgebrochen -- den Timeout fuehrt die Library selbst).
+      pending[i] = false;
+      if (!sensors[i].hasResult()) { failures++; continue; }
+
+      const XM125DistanceResult& res = sensors[i].getLastResult();
+      if (res.numDistances == 0) continue;
+
+      detected[i] = true;
+      strength[i] = res.peakStrength[0];
     }
-    if (anyPending && (millis() - waitStart) >= MEASURE_TIMEOUT_MS) {
-      for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
-        if (pending[i]) { pending[i] = false; failures++; }
-      }
-      break;
-    }
-  }
-
-  for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
-    if (!done[i]) continue;
-    if (!sensors[i].fetchResult()) { failures++; continue; }
-    if (sensors[i].getNumDistances() == 0) continue;
-
-    detected[i] = true;
-    strength[i] = sensors[i].getPeakStrength(0);
   }
 }
 
@@ -299,10 +294,10 @@ static void modeInterference() {
 
   if (lost <= 0 && drop < 10.0f) {
     Serial.println("  -> Kein messbares Uebersprechen. Mit 'g' gegenpruefen, wie viel");
-    Serial.println("     Zykluszeit RADAR_PARALLEL_GROUP = 4 wirklich spart.");
+    Serial.println("     Rundendauer der Gleichzeitigbetrieb wirklich spart.");
   } else if (lost <= 1 && drop < 25.0f) {
-    Serial.println("  -> Schwaches Uebersprechen. RADAR_PARALLEL_GROUP = 2 ist der sichere");
-    Serial.println("     Kompromiss (Vo+Hi, dann Li+Re -- Paare blicken entgegengesetzt).");
+    Serial.println("  -> Schwaches Uebersprechen. Mit 'g' pruefen, ob es ueber eine ganze");
+    Serial.println("     Runde ins Gewicht faellt, und mit 'p' das stoerende Paar suchen.");
   } else {
     Serial.println("  -> Deutliches Uebersprechen. Mit 'p' klaeren, WELCHER Nachbar stoert,");
     Serial.println("     und ob die Montage schuld ist (zwei Sensoren mit ueberlappendem");
@@ -360,15 +355,20 @@ static void modePairMatrix() {
 }
 
 /**
- * Der eigentliche Entscheidungstest: komplette Radar-Runden mit Gruppengroesse
- * 1, 2 und 4 -- gemessen wird beides, was zaehlt: Trefferquote je Sensor und
- * Dauer einer kompletten Runde.
+ * Der eigentliche Entscheidungstest: komplette Radar-Runden nacheinander gegen
+ * alle gleichzeitig -- gemessen wird beides, was zaehlt: Trefferquote je Sensor
+ * und Dauer einer kompletten Runde.
+ *
+ * Der Roboter misst immer gleichzeitig (systemlib::readRadar()). Dieser Test
+ * beantwortet also nicht mehr "welche Gruppengroesse einstellen", sondern
+ * "kostet der Gleichzeitigbetrieb Trefferquote?" -- wenn ja, ist die Montage
+ * bzw. die Empfindlichkeit dran, nicht mehr ein Parameter in params.h.
  */
 static void modeGroupCompare() {
   Serial.println();
-  Serial.println("=== Gruppengroessen im Vergleich ==================================");
+  Serial.println("=== Nacheinander gegen gleichzeitig ===============================");
   Serial.print("Je "); Serial.print(CYCLE_ROUNDS);
-  Serial.println(" komplette Runden ueber alle vier Sensoren, wie systemlib::readRadar().");
+  Serial.println(" komplette Runden ueber alle Sensoren, wie systemlib::readRadar().");
   Serial.println("Vor jedem Sensor sollte eine Wand stehen, sonst fehlen Trefferquoten.");
   Serial.println();
 
@@ -379,13 +379,13 @@ static void modeGroupCompare() {
     Serial.println();
   }
 
-  const uint8_t groupSizes[3] = { 1, 2, 4 };
-  CycleResult   results[3];
+  const uint8_t groupSizes[2] = { 1, RADAR_NUM_SENSORS }; // 1 = nacheinander
+  CycleResult   results[2];
 
   Serial.println(" Gruppe  Zyklus     Vo      Li      Hi      Re     Fehler");
   Serial.println(" ------  --------   -----   -----   -----   -----  ------");
 
-  for (uint8_t k = 0; k < 3; k++) {
+  for (uint8_t k = 0; k < 2; k++) {
     results[k] = runCycles(groupSizes[k], CYCLE_ROUNDS);
 
     Serial.print("   "); Serial.print(groupSizes[k]); Serial.print("    ");
@@ -399,7 +399,7 @@ static void modeGroupCompare() {
 
   Serial.println();
   Serial.println(" Staerke im Median je Sensor:");
-  for (uint8_t k = 0; k < 3; k++) {
+  for (uint8_t k = 0; k < 2; k++) {
     Serial.print("   Gruppe "); Serial.print(groupSizes[k]); Serial.print(":  ");
     for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
       Serial.print(SENSOR_NAMES[i]); Serial.print("=");
@@ -408,38 +408,32 @@ static void modeGroupCompare() {
     Serial.println();
   }
 
-  // Bewertung gegen Gruppe 1 (nacheinander = per Definition stoerungsfrei)
-  const CycleResult& ref = results[0];
-  uint8_t best = 1;
-  for (uint8_t k = 1; k < 3; k++) {
-    bool acceptable = true;
-    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
-      if (!sensorReady[i]) continue;
-      if (results[k].detections[i] + 1 < ref.detections[i]) acceptable = false;      // mehr als 1 Treffer verloren
-      if (strengthDropPct(ref.strengthMedian[i], results[k].strengthMedian[i]) > 25.0f) acceptable = false;
-    }
-    if (acceptable) best = groupSizes[k];
+  // Bewertung gegen "nacheinander" (per Definition stoerungsfrei)
+  const CycleResult& ref  = results[0];
+  const CycleResult& para = results[1];
+  bool acceptable = true;
+  for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
+    if (!sensorReady[i]) continue;
+    if (para.detections[i] + 1 < ref.detections[i]) acceptable = false;   // mehr als 1 Treffer verloren
+    if (strengthDropPct(ref.strengthMedian[i], para.strengthMedian[i]) > 25.0f) acceptable = false;
   }
 
   Serial.println();
-  Serial.print("  Empfehlung fuer lib/include/params.h:");
-  Serial.println();
-  Serial.print("    static constexpr uint8_t RADAR_PARALLEL_GROUP = "); Serial.print(best);
-  Serial.println(";");
-
-  uint16_t refMs = ref.cycleMs;
-  for (uint8_t k = 0; k < 3; k++) {
-    if (groupSizes[k] != best) continue;
-    Serial.print("    Zykluszeit "); Serial.print(refMs); Serial.print(" ms -> ");
-    Serial.print(results[k].cycleMs); Serial.print(" ms");
-    if (refMs > 0 && results[k].cycleMs < refMs) {
-      Serial.print("  (-"); Serial.print(100 - (100UL * results[k].cycleMs) / refMs); Serial.print(" %)");
-    }
-    Serial.println();
+  Serial.print("    Rundendauer "); Serial.print(ref.cycleMs); Serial.print(" ms -> ");
+  Serial.print(para.cycleMs); Serial.print(" ms");
+  if (ref.cycleMs > 0 && para.cycleMs < ref.cycleMs) {
+    Serial.print("  (-"); Serial.print(100 - (100UL * para.cycleMs) / ref.cycleMs); Serial.print(" %)");
   }
-  if (best == 1) {
-    Serial.println("    -> Parallelbetrieb kostet hier zu viele Treffer. Vor dem Aufgeben");
-    Serial.println("       lohnt ein Blick auf die Montage ('p' zeigt das stoerende Paar).");
+  Serial.println();
+
+  if (acceptable) {
+    Serial.println("    -> Gleichzeitig messen kostet keine nennenswerte Trefferquote.");
+    Serial.println("       Der Betrieb in systemlib::readRadar() ist damit bestaetigt.");
+  } else {
+    Serial.println("    -> Gleichzeitig messen kostet Treffer. Der Roboter misst trotzdem");
+    Serial.println("       immer gleichzeitig, also hier ansetzen: Montage pruefen ('p'");
+    Serial.println("       zeigt das stoerende Paar) oder Empfindlichkeit nachziehen");
+    Serial.println("       (XM125_Calib_Sensitivity.cpp).");
   }
   Serial.println("===================================================================");
 }
@@ -452,16 +446,15 @@ static void printHelp() {
   Serial.println(" a <0..3>  Referenzsensor waehlen (0=Vo, 1=Li, 2=Hi, 3=Re)");
   Serial.println(" i         allein gegen 'alle Nachbarn senden mit'");
   Serial.println(" p         paarweise: welcher einzelne Nachbar stoert?");
-  Serial.println(" g         komplette Runden mit Gruppe 1 / 2 / 4  -> Empfehlung");
+  Serial.println(" g         komplette Runden: nacheinander gegen gleichzeitig");
   Serial.println(" k         alle Sensoren neu kalibrieren (nacheinander)");
   Serial.println(" ?         diese Hilfe");
   Serial.println();
   Serial.print(" aktiv: "); Serial.print(SENSOR_NAMES[activeSensor]);
   Serial.print(" 0x"); Serial.print(RADAR_SENSOR_ADDRS[activeSensor], HEX);
   Serial.print("  bereit: "); Serial.print(readyCount()); Serial.print("/");
-  Serial.print(RADAR_NUM_SENSORS);
-  Serial.print("  aktuell in params.h: RADAR_PARALLEL_GROUP = ");
-  Serial.println(RADAR_PARALLEL_GROUP);
+  Serial.println(RADAR_NUM_SENSORS);
+  Serial.println(" Betrieb im Roboter: alle Sensoren messen gleichzeitig.");
   Serial.println("===================================================================");
 }
 

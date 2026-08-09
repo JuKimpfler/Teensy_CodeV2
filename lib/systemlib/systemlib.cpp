@@ -109,8 +109,10 @@ void systemlib::initialize()
     Button_EXP.setup(true);
 
     for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
-        RADAR_sensorReady[i] = setupRadarSens(i);
+        RADAR_sensorReady[i]  = setupRadarSens(i);
+        RADAR_lastSetupMs[i]  = millis();
     }
+    startRadarRound(); // erste Messung laeuft schon, waehrend der Rest hochfaehrt
 
     ir_ring.read_gains(IR_Gains);
     ir_ring.read_offsets(IR_Offsets);
@@ -160,98 +162,89 @@ RadarData* systemlib::radarSlot(uint8_t idx)
 void systemlib::radarMeasureFailed(uint8_t idx)
 {
     RADAR_consecFailures[idx]++;
-    if (RADAR_consecFailures[idx] >= RADAR_MAX_CONSEC_FAILURES) {
-        RADAR_consecFailures[idx] = 0;
-        RADAR_sensorReady[idx] = setupRadarSens(idx);
-    }
+    if (RADAR_consecFailures[idx] < RADAR_MAX_CONSEC_FAILURES) return;
+
+    // Sensor gilt als tot. Hier NICHT neu initialisieren -- setupRadarSens()
+    // blockiert bis zu ~2 s. Das uebernimmt retryRadarSetup() gedrosselt beim
+    // naechsten Rundenstart.
+    RADAR_consecFailures[idx] = 0;
+    RADAR_sensorReady[idx]    = false;
+
+    RadarData* slot = radarSlot(idx);
+    if (slot != nullptr) slot->isCon = false;
 }
 
 void systemlib::readRadar(void){
-    // Die Sensoren messen gruppenweise parallel: erst bei allen Sensoren einer
-    // Gruppe die Messung anstossen, dann gemeinsam warten, dann die Ergebnisse
-    // abholen. Die Messdauer faellt dadurch einmal pro Gruppe an statt einmal
-    // pro Sensor. Gruppengroesse: RADAR_PARALLEL_GROUP in params.h.
-    //
-    // numGroups als Schrittweite bildet automatisch die Gruppen mit der
-    // groessten Blickrichtungs-Trennung: bei 2er-Gruppen sind das {Vo, Hi} und
-    // {Li, Re}, also jeweils entgegengesetzt blickende Sensoren.
-    constexpr uint8_t numGroups = RADAR_NUM_SENSORS / RADAR_PARALLEL_GROUP;
-    for (uint8_t g = 0; g < numGroups; g++) {
-        readRadarGroup(g, numGroups);
+    // Nicht blockierend: hier wird nie auf ein Messergebnis gewartet.
+    // Je Aufruf wird bei jedem laufenden Sensor genau einmal nachgesehen
+    // (isMeasuring() = hoechstens ein Registerlesezugriff). Sobald die Runde
+    // komplett ist, startet sofort die naechste -- bei allen Sensoren
+    // gleichzeitig, siehe startRadarRound().
+    bool roundRunning = false;
+
+    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
+        if (!RADAR_measurePending[i]) continue;
+
+        if (RADAR_sensors[i].isMeasuring()) {
+            roundRunning = true;
+            continue;
+        }
+
+        RADAR_measurePending[i] = false;
+        if (RADAR_sensors[i].hasResult()) takeRadarResult(i);
+        else                              radarMeasureFailed(i);
+    }
+
+    if (!roundRunning) startRadarRound();
+}
+
+void systemlib::startRadarRound(void)
+{
+    // Alle Sensoren zusammen anstossen: startMeasurement() schreibt nur das
+    // Kommando (< 1 ms), sie messen also praktisch zeitgleich und die Messdauer
+    // faellt einmal fuer alle an statt einmal pro Sensor.
+    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
+        if (!RADAR_sensorReady[i]) {
+            retryRadarSetup(i);
+            continue;
+        }
+
+        RADAR_measurePending[i] = RADAR_sensors[i].startMeasurement();
+        if (!RADAR_measurePending[i]) radarMeasureFailed(i);
     }
 }
 
-void systemlib::readRadarGroup(uint8_t first, uint8_t stride)
+void systemlib::takeRadarResult(uint8_t idx)
 {
-    bool pending[RADAR_NUM_SENSORS] = {};
-    bool done[RADAR_NUM_SENSORS]    = {};
+    RADAR_consecFailures[idx] = 0;
 
-    // 1. Messung bei allen Sensoren der Gruppe anstossen (blockiert nicht)
-    for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
-        if (!RADAR_sensorReady[i]) {
-            RADAR_sensorReady[i] = setupRadarSens(i);
-            continue;
-        }
-        if (RADAR_sensors[i].startMeasurement()) {
-            pending[i] = true;
-        } else {
-            radarMeasureFailed(i);
-        }
-    }
+    RadarData* slot = radarSlot(idx);
+    if (slot == nullptr) return;
 
-    // 2. Gemeinsam warten, bis alle Sensoren der Gruppe fertig sind
-    uint32_t waitStart = millis();
-    bool anyPending = true;
-    while (anyPending) {
-        anyPending = false;
-        for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
-            if (!pending[i]) continue;
+    // Peak 0: bei peakSorting = CLOSEST das naechstgelegene Objekt.
+    // Peaks == 0 (keine Wand erkannt) liefert Dist/Strenght = 0, damit kein
+    // alter Wert stehen bleibt und "reagiert nicht" sichtbar wird.
+    const XM125DistanceResult& res = RADAR_sensors[idx].getLastResult();
+    slot->Peaks    = res.numDistances;
+    slot->Dist     = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
+    slot->Strenght = (res.numDistances > 0) ? res.peakStrength[0]    : 0;
+    slot->isCon    = true;
+}
 
-            bool finished = false;
-            if (!RADAR_sensors[i].pollMeasurement(finished)) {
-                pending[i] = false;
-                radarMeasureFailed(i);
-            } else if (finished) {
-                pending[i] = false;
-                done[i]    = true;
-            } else {
-                anyPending = true;
-            }
-        }
+void systemlib::retryRadarSetup(uint8_t idx)
+{
+    // setupRadarSens() blockiert (wakeUp-Timeout + Kalibrierung, bis ~2 s).
+    // Ein abgezogener Sensor wuerde damit jeden Zyklus ausbremsen, deshalb
+    // hoechstens alle RADAR_REINIT_INTERVAL_MS ein Versuch.
+    if ((millis() - RADAR_lastSetupMs[idx]) < RADAR_REINIT_INTERVAL_MS) return;
 
-        if (anyPending && (millis() - waitStart) >= RADAR_MEASURE_TIMEOUT_MS) {
-            for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
-                if (pending[i]) { pending[i] = false; radarMeasureFailed(i); }
-            }
-            break;
-        }
-    }
-
-    // 3. Ergebnisse abholen
-    for (uint8_t i = first; i < RADAR_NUM_SENSORS; i += stride) {
-        if (!done[i]) continue;
-
-        XM125Distance& radar = RADAR_sensors[i];
-        if (!radar.fetchResult()) {
-            radarMeasureFailed(i);
-            continue;
-        }
-        RADAR_consecFailures[i] = 0;
-
-        RadarData* slot = radarSlot(i);
-        if (slot == nullptr) continue;
-
-        // Peak 0: bei peakSorting = CLOSEST das naechstgelegene Objekt.
-        // Peaks == 0 (keine Wand erkannt) liefert Dist/Strenght = 0, damit kein
-        // alter Wert stehen bleibt und "reagiert nicht" sichtbar wird.
-        slot->Peaks    = radar.getNumDistances();
-        slot->Dist     = radar.getPeakDistanceRaw(0);
-        slot->Strenght = radar.getPeakStrength(0);
-        slot->isCon    = true;
-    }
+    RADAR_lastSetupMs[idx] = millis();
+    RADAR_sensorReady[idx] = setupRadarSens(idx);
 }
 
 bool systemlib::setupRadarSens(uint8_t idx) {
+  if (idx >= RADAR_NUM_SENSORS) return false;
+
   XM125Distance& radar = RADAR_sensors[idx];
   RadarData* slot = radarSlot(idx);
 
@@ -259,6 +252,11 @@ bool systemlib::setupRadarSens(uint8_t idx) {
     if (slot != nullptr) slot->isCon = false;
     return false;
   }
+
+  // Messbetrieb: nie auf ein Ergebnis warten, und pro Messung nur die Peaks
+  // holen, die auch ausgewertet werden (jeder Peak = zwei Registerlesezugriffe).
+  radar.setMeasureTimeout(RADAR_MEASURE_TIMEOUT_MS);
+  radar.setMaxPeaksToFetch(RADAR_PEAKS_TO_FETCH);
 
   // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h
   radar.config.startMm = RADAR_START_MM;

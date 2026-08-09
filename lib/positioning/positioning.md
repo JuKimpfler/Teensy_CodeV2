@@ -185,7 +185,7 @@ void loop() {
 
   Positioning::RadarReading rd[Positioning::RADAR_COUNT];
   for (uint8_t i = 0; i < Positioning::RADAR_COUNT; i++) {
-    rd[i].valid = radarSensor[i].measure();
+    rd[i].valid = radarSensor[i].hasResult();   // nach isMeasuring() == false
     if (!rd[i].valid) continue;
     uint8_t n = radarSensor[i].getNumDistances();
     if (n > Positioning::RADAR_MAX_PEAKS) n = Positioning::RADAR_MAX_PEAKS;

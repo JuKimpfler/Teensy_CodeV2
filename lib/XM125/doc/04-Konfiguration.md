@@ -100,11 +100,11 @@ Zahlen aus, die nach `params.h` gehören; `maxProfile` (Mode `p`) und
 `reflectorShape` (Mode `r`) lassen sich dort ebenfalls gegenprüfen.
 
 > **Messzeit beachten:** `signalQuality` und `endMm` gehen beide direkt in die
-> Dauer einer Messung ein. `systemlib::readRadar()` misst deshalb gruppenweise
-> parallel (`RADAR_PARALLEL_GROUP`, Standard 2 → Vo+Hi, dann Li+Re), sodass die
-> Wartezeit einmal pro Gruppe statt einmal pro Sensor anfällt. Wer die Werte
-> weiter hochdreht, sollte die Zykluszeit (`giveCycleTime()`) im Auge behalten.
-> Zum Übersprechen bei paralleler Messung siehe
+> Dauer einer Messung ein. Auf die Zykluszeit schlägt das nicht mehr durch:
+> `systemlib::readRadar()` lässt alle Sensoren gleichzeitig messen und wartet
+> nie auf ein Ergebnis — es verzögert sich lediglich, wie oft eine neue
+> Messung fertig wird (`getResultAgeMs()` zeigt, wie alt der Wert ist).
+> Zum Übersprechen beim gleichzeitigen Messen siehe
 > [05-Fehlerbehandlung-und-Troubleshooting.md](05-Fehlerbehandlung-und-Troubleshooting.md#8-übersprechen-zwischen-mehreren-sensoren).
 
 ---

@@ -197,7 +197,7 @@ pio device monitor -b 115200
    `XM125_Calib_Alignment` (Sensor auf maximale Echostärke ausrichten) →
    `XM125_Calib_Sensitivity` (`RADAR_SIGNAL_QUALITY`,
    `RADAR_THRESHOLD_SENSITIVITY`) → `XM125_Calib_Crosstalk`
-   (`RADAR_PARALLEL_GROUP`). Ergebnisse nach
+   (stören sich die gleichzeitig messenden Sensoren?). Ergebnisse nach
    [params.h](../../include/params.h) übertragen.
 5. **`XM125_Distance_Multi`** — alle vier Sensoren, inklusive PDS-Ausgabe.
 6. Erst danach die Positionsbibliothek dazunehmen.
@@ -219,7 +219,7 @@ PowerDebugger PDS;
 void setup() { PDS.init(); }
 
 void loop() {
-  // ... measure() ...
+  // ... isMeasuring() == false, Ergebnis abgeholt ...
   PDS.Channel(150 + i, radar.getPeakDistanceRaw(0));   // Kanäle 150..153
   PDS.update();
 }
@@ -245,24 +245,33 @@ sondern über die `systemlib`. Alle Zahlen dazu stehen zentral in
 | `RADAR_END_MM` | 2700 | 200 mm Reserve, damit 2500 mm nicht auf der Bereichskante liegt |
 | `RADAR_SIGNAL_QUALITY` | 25000 | mehr SNR am Bereichsende (Holzwand) |
 | `RADAR_THRESHOLD_SENSITIVITY` | 750 | CFAR lässt schwache Wand-Peaks durch |
-| `RADAR_MEASURE_TIMEOUT_MS` | 3000 | PROFILE5 + hohe Signalqualität brauchen länger als der 1000-ms-Default |
-| `RADAR_PARALLEL_GROUP` | 2 | wie viele Sensoren gleichzeitig messen |
+| `RADAR_MEASURE_TIMEOUT_MS` | 3000 | PROFILE5 + hohe Signalqualität brauchen länger als der 1000-ms-Default; wird per `setMeasureTimeout()` in die Library gesetzt |
+| `RADAR_PEAKS_TO_FETCH` | 1 | wie viele Peaks je Messung wirklich geholt werden — `systemlib` wertet nur Peak 0 aus |
+| `RADAR_REINIT_INTERVAL_MS` | 2000 | Mindestabstand zwischen zwei Wiederanlaufversuchen für einen toten Sensor (die Neuinitialisierung blockiert) |
 
-Ablauf in der `systemlib`:
+Ablauf in der `systemlib` — **es wird nie auf ein Messergebnis gewartet**:
 
 - `setupRadarSens(idx)` — `begin()` + Konfiguration aus `params.h` +
-  `applyConfigAndCalibrate()` für einen Sensor.
-- `readRadar()` — bildet aus `RADAR_PARALLEL_GROUP` die Messgruppen und ruft
-  je Gruppe `readRadarGroup()`.
-- `readRadarGroup(first, stride)` — nutzt die zerlegte Mess-API: erst bei
-  allen Sensoren der Gruppe `startMeasurement()`, dann gemeinsam
-  `pollMeasurement()` bis fertig (mit eigenem Timeout), dann `fetchResult()`.
-- `radarMeasureFailed(idx)` — zählt Fehlschläge und initialisiert den Sensor
-  nach `RADAR_MAX_CONSEC_FAILURES` komplett neu.
+  `setMeasureTimeout()`/`setMaxPeaksToFetch()` + `applyConfigAndCalibrate()`
+  für einen Sensor. Blockiert, läuft deshalb nur beim Start bzw. gedrosselt.
+- `readRadar()` — sieht je Zyklus bei jedem laufenden Sensor **einmal** mit
+  `isMeasuring()` nach (höchstens ein Registerlesezugriff), übernimmt fertige
+  Ergebnisse und startet die nächste Runde, sobald alle durch sind.
+- `startRadarRound()` — `startMeasurement()` bei **allen** Sensoren
+  hintereinander: sie messen damit gleichzeitig, die Messdauer fällt einmal
+  für alle an.
+- `takeRadarResult(idx)` — `getLastResult()` in `RadarVo/Li/Hi/Re` übernehmen.
+- `radarMeasureFailed(idx)` — zählt Fehlschläge und markiert den Sensor nach
+  `RADAR_MAX_CONSEC_FAILURES` als nicht bereit (ohne zu blockieren).
+- `retryRadarSetup(idx)` — höchstens alle `RADAR_REINIT_INTERVAL_MS` ein
+  blockierender Wiederanlaufversuch für einen als tot markierten Sensor.
+
+Zeitbedarf im Zyklus: rund ein Buszugriff je Sensor (< 1 ms), plus einmal je
+Runde das Lesen von Ergebnis- und Peak-Registern.
 
 Die Werte für `RADAR_SIGNAL_QUALITY` und `RADAR_THRESHOLD_SENSITIVITY` stammen
-aus [XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp),
-`RADAR_PARALLEL_GROUP` aus
+aus [XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp);
+ob der Gleichzeitigbetrieb Trefferquote kostet, misst
 [XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp) —
 wird die Hardware oder die Zielumgebung geändert (andere Wand, anderes
 Gehäuse), gehören sie neu gemessen.
@@ -276,7 +285,7 @@ Ringreihenfolge (vorne, rechts, hinten, links):
 Positioning::RadarReading rd[Positioning::RADAR_COUNT];
 
 for (uint8_t i = 0; i < Positioning::RADAR_COUNT; i++) {
-  rd[i].valid = radarSensor[i].measure();
+  rd[i].valid = radarSensor[i].hasResult();   // nach isMeasuring() == false
   if (!rd[i].valid) continue;
 
   uint8_t n = radarSensor[i].getNumDistances();

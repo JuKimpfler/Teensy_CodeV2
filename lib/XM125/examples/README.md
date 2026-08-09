@@ -87,9 +87,11 @@ Distance-Detector-API.
   aufrufen. Bei Fehlschlag wird unterschieden zwischen I²C-Schreibfehler
   (`getLastFailedConfigRegister() != 0xFFFF`) und Kommando-Fehlschlag
   (Timeout/`DETECTOR_ERROR`), dazu Protocol-/Detector-Status ausgegeben.
-- `loop()` misst zyklisch (`measure(3000)`), gibt Messdauer, Peak-Anzahl,
-  Temperatur und `NEAR_START_EDGE` aus. Bei Fehlschlag: Diagnose, bei
-  `getCalibrationNeeded()` automatisch `recalibrate()`, nach 5
+- `loop()` misst zyklisch **ohne zu warten**: `startMeasurement()`, dann in
+  jedem Durchlauf `isMeasuring()` prüfen und erst bei `false` das Ergebnis
+  über `getLastResult()` abholen. Ausgegeben werden Messdauer, Peak-Anzahl,
+  Temperatur und `NEAR_START_EDGE`. Bei Fehlschlag: Diagnose, bei
+  `calibrationNeeded` automatisch `recalibrate()`, nach 5
   Fehlschlägen in Folge komplette Neuinitialisierung.
 - Zu jedem Peak: Rohwert (`getPeakDistanceRaw()`, 0–255 "Counts") und
   Signalstärke — **keine** echten Millimeter (siehe Warnung im Code und
@@ -200,9 +202,10 @@ zu hohe, unnötig fehleranfällige Empfindlichkeiten.
 
 ## 6. `XM125_Calib_Crosstalk.cpp`
 
-**Zweck:** Kalibriermethode 4 von 4 — wie viele der vier Sensoren dürfen
-gleichzeitig messen, ohne sich gegenseitig zu stören? Ergebnis wandert nach
-`lib/include/params.h` (`RADAR_PARALLEL_GROUP`).
+**Zweck:** Kalibriermethode 4 von 4 — stören sich die Sensoren gegenseitig,
+wenn sie gleichzeitig messen? Der Roboter misst immer gleichzeitig
+(`systemlib::readRadar()`); Gegenmittel bei Befund sind Montage und
+Empfindlichkeit, kein Parameter in `params.h`.
 
 **Befehle:**
 
@@ -211,7 +214,7 @@ gleichzeitig messen, ohne sich gegenseitig zu stören? Ergebnis wandert nach
 | `a <0..3>` | Referenzsensor wählen |
 | `i` | Grundtest: Referenzsensor allein vs. alle drei Nachbarn senden gleichzeitig mit — Trefferverlust und Stärkeverlust |
 | `p` | Paarweise: jeder Nachbar einzeln als Störer — zeigt, **welches** Sensorpaar sich nicht verträgt |
-| `g` | **Hauptmodus:** komplette Messrunden (wie `systemlib::readRadar()`) mit Gruppengröße 1, 2 und 4 — Trefferquote je Sensor UND Zykluszeit nebeneinander, daraus eine konkrete Empfehlung |
+| `g` | **Hauptmodus:** komplette Messrunden (wie `systemlib::readRadar()`) einmal nacheinander und einmal gleichzeitig — Trefferquote je Sensor UND Rundendauer nebeneinander, daraus eine Bewertung |
 | `k` | Alle Sensoren nacheinander neu kalibrieren |
 
 **Warum eigenständig:** Übersprechen lässt sich nur mit allen vier Sensoren
@@ -321,7 +324,7 @@ Positionsbibliothek verrechnen.
 | `XM125_Calib_Module` | Kalibrierung 1/4 | Modul-Kalibrierung läuft sauber? | je nach Modus |
 | `XM125_Calib_Alignment` | Kalibrierung 2/4 | Montage | läuft dauerhaft |
 | `XM125_Calib_Sensitivity` | Kalibrierung 3/4 | `RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY` | Sweep: mehrere Minuten |
-| `XM125_Calib_Crosstalk` | Kalibrierung 4/4 | `RADAR_PARALLEL_GROUP` | unter einer Minute |
+| `XM125_Calib_Crosstalk` | Kalibrierung 4/4 | Übersprechen beim gleichzeitigen Messen | unter einer Minute |
 | `XM125_Distance_Multi` | Integrationstest | alle 4 Sensoren + PDS | läuft dauerhaft |
 | `XM125_Presence` | Beispiel | Presence-Detector-API | läuft dauerhaft |
 | `XM125_WallCalibration` | Kalibrierung (offen) | Rohwert → mm (Teil B) | Messreihe, mehrere Punkte |

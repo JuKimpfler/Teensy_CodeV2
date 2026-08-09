@@ -9,17 +9,51 @@
  * ║  bereits von Metern um).                                                 ║
  * ╚══════════════════════════════════════════════════════════════════════════╝
  *
- * Beispiel-Verwendung:
+ * ── Die Library wartet nie auf ein Messergebnis ───────────────────────────
+ * Eine Messung dauert je nach Konfiguration 20-200 ms. Diese Zeit darf der
+ * Roboterzyklus nicht mit Warten verbringen, deshalb besteht der Messbetrieb
+ * aus genau drei Kommandos:
+ *
+ *   1. startMeasurement()   Messung starten   -- ein Registerschreibzugriff,
+ *                                                kehrt sofort zurueck
+ *   2. isMeasuring()        laeuft eine Messung? -- treibt die interne
+ *                                                Zustandsmaschine weiter und
+ *                                                kostet hoechstens EINEN
+ *                                                Registerlesezugriff
+ *   3. getLastResult()      letztes Messergebnis abfragen -- reiner Zugriff
+ *                                                auf den Cache, kein I²C
+ *
+ * Sobald isMeasuring() false liefert, hat die Library das Ergebnis bereits
+ * eingelesen; getLastResult() ist dann aktuell. Zwischen zwei Runden bleibt
+ * das letzte Ergebnis abrufbar -- auch waehrend die naechste Messung laeuft.
+ *
+ * Beispiel-Verwendung (ein Sensor):
  *   XM125Distance radar;
  *   radar.begin(Wire1);
  *   radar.config.startMm = 200;
  *   radar.config.endMm   = 4000;
  *   radar.applyConfigAndCalibrate();
+ *   radar.startMeasurement();
  *   ...
- *   if (radar.measure()) {
- *     for (uint8_t i = 0; i < radar.getNumDistances(); i++)
- *       Serial.println(radar.getPeakDistanceMm(i));
+ *   void loop() {
+ *     if (!radar.isMeasuring()) {                  // fertig?
+ *       const XM125DistanceResult& r = radar.getLastResult();
+ *       if (r.valid && r.numDistances > 0) {
+ *         Serial.println(r.peakDistanceRaw[0]);
+ *       }
+ *       radar.startMeasurement();                  // naechste Runde
+ *     }
  *   }
+ *
+ * Mehrere Sensoren messen gleichzeitig, indem bei allen erst
+ * startMeasurement() aufgerufen wird und danach reihum isMeasuring():
+ *   for (auto& r : sensoren) r.startMeasurement();  // alle zusammen los
+ *   ...
+ *   bool laeuft = false;
+ *   for (auto& r : sensoren) if (r.isMeasuring()) laeuft = true;
+ *   if (!laeuft) { ... }        // alle Ergebnisse liegen vor
+ * So faellt die Messdauer einmal fuer alle Sensoren an statt einmal pro
+ * Sensor. Umgesetzt in systemlib::readRadar().
  */
 
 #include "XM125.h"
@@ -52,6 +86,24 @@ static constexpr uint32_t XM125D_CMD_APPLY_CONFIGURATION        = 3;
 static constexpr uint32_t XM125D_CMD_CALIBRATE                  = 4;
 static constexpr uint32_t XM125D_CMD_RECALIBRATE                = 5;
 
+// ── Timing der Zustandsmaschine (nicht blockierend, siehe .cpp) ──────────────
+/**
+ * Wartezeit nach dem Messkommando, bevor das erste Mal auf BUSY geprueft wird.
+ * Die interne MCU des Moduls setzt BUSY nicht in derselben Mikrosekunde, in der
+ * das Kommando ankommt. Ohne diese Sperre koennte der erste Poll BUSY=0 sehen
+ * und das Ergebnisregister der VORHERIGEN Messung als neu ausgeben.
+ */
+static constexpr uint32_t XM125D_BUSY_SETTLE_US = 2000;
+/**
+ * Wartezeit zwischen Ergebnisregister und Peak-Registern. Das Result-Register
+ * (Peak-Anzahl, Temperatur, Flags) ist gueltig, sobald BUSY zurueckgeht; die
+ * Peak-Detailregister braucht die Firmware erkennbar ein paar Millisekunden
+ * laenger -- ohne diese Pause wurden unplausible Werte beobachtet. Die Pause
+ * wird nicht verschlafen, sondern ueber die Zustandsmaschine ausgesessen
+ * (Zustand SETTLING kostet keinen einzigen Buszugriff).
+ */
+static constexpr uint32_t XM125D_PEAK_SETTLE_US = 5000;
+
 // ── Enums für Konfigurationsregister ──────────────────────────────────────────
 enum XM125DMaxProfile : uint32_t {
     XM125D_PROFILE1 = 1, XM125D_PROFILE2 = 2, XM125D_PROFILE3 = 3,
@@ -70,6 +122,15 @@ enum XM125DPeakSorting : uint32_t {
 enum XM125DReflectorShape : uint32_t {
     XM125D_REFLECTOR_GENERIC = 1,
     XM125D_REFLECTOR_PLANAR  = 2,
+};
+
+/** Zustand der Messung eines Sensors, abfragbar ueber getState(). */
+enum class XM125MeasureState : uint8_t {
+    IDLE,     ///< noch nie gemessen bzw. nach begin()
+    RUNNING,  ///< Kommando abgesetzt, der Sensor rechnet
+    SETTLING, ///< BUSY ist weg, die Peak-Register brauchen noch ein paar ms
+    READY,    ///< Ergebnis vollstaendig eingelesen (siehe getLastResult())
+    FAILED,   ///< abgebrochen: I²C-Fehler, DETECTOR_ERROR oder Timeout
 };
 
 // ── Detector-Status Bits, spezifisch für Distance-Firmware (Reg 0x0003) ──────
@@ -110,6 +171,37 @@ struct XM125DistanceConfig {
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
+//  XM125DistanceResult  —  vollstaendiges Ergebnis EINER Messung
+// ═════════════════════════════════════════════════════════════════════════════
+/**
+ * Wird von der Library gefuellt, sobald eine Messung durchgelaufen ist, und
+ * bleibt bis zum naechsten Ergebnis unveraendert stehen -- auch waehrend schon
+ * die naechste Messung laeuft. getLastResult() liefert genau diese Struktur.
+ *
+ * Nach einem Fehlversuch (I²C, DETECTOR_ERROR, Timeout, MEASURE_ERROR) steht
+ * `valid` auf false, die Zahlenwerte bleiben aber auf dem letzten guten Stand.
+ * Wer nur frische Werte verarbeiten will, prueft `valid` und/oder `timestampMs`.
+ */
+struct XM125DistanceResult {
+    bool     valid             = false; ///< true = die Werte stammen aus einer fehlerfreien Messung
+    uint32_t timestampMs       = 0;     ///< millis() beim Einlesen des Ergebnisses
+    uint16_t durationMs        = 0;     ///< von startMeasurement() bis Ergebnis (Diagnose)
+
+    uint8_t  numDistances      = 0;     ///< Anzahl gefundener Peaks (0..10)
+    bool     nearStartEdge     = false; ///< Objekt dicht an config.startMm
+    bool     calibrationNeeded = false; ///< Sensor fordert recalibrate() an
+    bool     measureError      = false; ///< Messung selbst meldet einen Fehler
+    int16_t  temperature       = 0;     ///< °C, geringe Absolutgenauigkeit lt. Datenblatt
+
+    /** Siehe Warnung bei getPeakDistanceRaw(): unkalibrierte "Counts", keine mm. */
+    uint8_t  peakDistanceRaw[XM125D_MAX_PEAKS] = {};
+    /** Ungekuerztes 32-bit-Registerwort je Peak -- Grundlage der Rohwert-Kalibrierung. */
+    uint32_t peakDistanceReg[XM125D_MAX_PEAKS] = {};
+    /** Signalstaerke je Peak (1000x-Einheit lt. Datenblatt, RSS-intern). */
+    int32_t  peakStrength[XM125D_MAX_PEAKS]    = {};
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
 //  XM125Distance  —  Distance-Detector-Applikation
 // ═════════════════════════════════════════════════════════════════════════════
 class XM125Distance : public XM125Base {
@@ -118,6 +210,8 @@ public:
         : XM125Base(i2cAddr, wakePin, intPin) {}
 
     XM125DistanceConfig config; ///< Vor applyConfigAndCalibrate() anpassen
+
+    // ── Einrichtung (blockiert, laeuft nur beim Start) ────────────────────
 
     /**
      * Schreibt alle Werte aus `config` in die Konfigurationsregister.
@@ -136,46 +230,91 @@ public:
     /** Nur anwenden, ohne Neukalibrierung (z.B. nach Neustart mit alter Kalibrierung). */
     bool applyConfiguration(uint32_t timeoutMs = XM125_DEFAULT_APPLY_TIMEOUT_MS);
 
-    /** Sensor/Detektor neu kalibrieren (z.B. wenn CALIBRATION_NEEDED gesetzt ist). */
+    /** Sensor/Detektor neu kalibrieren (z.B. wenn calibrationNeeded gesetzt ist). */
     bool calibrate(uint32_t timeoutMs = XM125_DEFAULT_APPLY_TIMEOUT_MS);
     bool recalibrate(uint32_t timeoutMs = XM125_DEFAULT_APPLY_TIMEOUT_MS);
 
+    // ═══ Messbetrieb: die drei Kommandos ══════════════════════════════════
+
     /**
-     * Startet eine Messung, wartet bis fertig und liest das Ergebnisregister
-     * sowie alle vorhandenen Peaks ein.
-     * @return true wenn Messung ohne Fehler abgeschlossen wurde.
+     * MESSUNG STARTEN. Sendet MEASURE_DISTANCE und kehrt sofort zurueck --
+     * es wird NICHT auf das Ergebnis gewartet (Kosten: ein Registerschreib-
+     * zugriff, < 1 ms). Ein bereits vorliegendes Ergebnis bleibt bis zum
+     * Eintreffen des neuen ueber getLastResult() abrufbar.
+     * @return false, wenn das Kommando den Sensor nicht erreicht hat
+     *         (Zustand wechselt dann auf FAILED).
      */
-    bool measure(uint32_t timeoutMs = XM125_DEFAULT_MEASURE_TIMEOUT_MS);
-
-    // ── Zerlegte Messung fuer mehrere Sensoren parallel ───────────────────
-    // measure() blockiert waehrend der gesamten Messung. Sollen mehrere
-    // Sensoren gleichzeitig messen, stattdessen: bei allen startMeasurement(),
-    // dann alle pollMeasurement() bis fertig, dann alle fetchResult(). Die
-    // Wartezeit faellt so nur einmal an statt einmal pro Sensor.
-    // Siehe systemlib::readRadarGroup().
-
-    /** Sendet das Messkommando und kehrt sofort zurueck (wartet NICHT). */
     bool startMeasurement();
 
     /**
-     * Fragt einmal ab, ob die laufende Messung fertig ist -- blockiert nicht.
-     * @param done  wird true, sobald BUSY zurueckgegangen ist
-     * @return false bei I2C-Fehler oder gesetztem DETECTOR_ERROR
+     * LAEUFT EINE MESSUNG? Treibt dabei die Zustandsmaschine weiter: prueft
+     * BUSY, holt bei Bedarf Ergebnis- und Peak-Register ab und setzt den
+     * Zustand auf READY oder FAILED. Blockiert nie.
+     *
+     * Kosten je Aufruf: hoechstens ein Registerlesezugriff (Zustand RUNNING),
+     * in SETTLING gar keiner, und in IDLE/READY/FAILED ebenfalls keiner --
+     * mehrfaches Aufrufen kostet also nichts, sobald die Messung durch ist.
+     *
+     * @return true solange die Messung laeuft; false sobald das Ergebnis
+     *         vollstaendig eingelesen ist ODER der Versuch fehlgeschlagen
+     *         ist (unterscheiden ueber hasResult() bzw. getState()).
      */
-    bool pollMeasurement(bool& done);
+    bool isMeasuring();
 
     /**
-     * Liest Ergebnisregister und Peaks der abgeschlossenen Messung ein.
-     * Erst aufrufen, wenn pollMeasurement() `done` gemeldet hat.
+     * LETZTES MESSERGEBNIS ABFRAGEN. Reiner Cache-Zugriff, kein I²C, keine
+     * Wartezeit -- darf beliebig oft aufgerufen werden.
      */
-    bool fetchResult();
+    const XM125DistanceResult& getLastResult() const { return _result; }
 
-    // ── Zugriff auf zuletzt eingelesenes Ergebnis (nach measure()) ────────
-    uint8_t  getNumDistances()      const { return _numDistances; }
-    bool     getNearStartEdge()     const { return _nearStartEdge; }
-    bool     getCalibrationNeeded() const { return _calibrationNeeded; }
-    bool     getMeasureError()      const { return _measureError; }
-    int16_t  getTemperature()       const { return _temperature; } ///< °C, geringe Absolutgenauigkeit lt. Datenblatt
+    /** true, wenn das zwischengespeicherte Ergebnis aus einer fehlerfreien Messung stammt. */
+    bool hasResult() const { return _result.valid; }
+
+    /** Alter des zwischengespeicherten Ergebnisses in ms (0, wenn noch nie eines vorlag). */
+    uint32_t getResultAgeMs() const {
+        return (_result.timestampMs == 0) ? 0 : (millis() - _result.timestampMs);
+    }
+
+    /** Zustand der Zustandsmaschine, ohne sie weiterzutreiben (kein I²C). */
+    XM125MeasureState getState() const { return _state; }
+
+    // ── Stellschrauben fuer die Messdauer ─────────────────────────────────
+
+    /**
+     * Ab wann eine laufende Messung als verloren gilt: isMeasuring() liefert
+     * dann false und der Zustand wechselt auf FAILED. Default:
+     * XM125_DEFAULT_MEASURE_TIMEOUT_MS.
+     */
+    void setMeasureTimeout(uint32_t timeoutMs) { _measureTimeoutMs = timeoutMs; }
+    uint32_t getMeasureTimeout() const { return _measureTimeoutMs; }
+
+    /**
+     * Wie viele Peaks nach der Messung wirklich aus dem Sensor geholt werden
+     * (Default: alle 10). Jeder Peak kostet zwei I²C-Registerlesezugriffe --
+     * wer nur den staerksten/naechsten Peak auswertet, setzt hier 1 und spart
+     * den Rest. `numDistances` im Ergebnis bleibt die echte Anzahl; die Werte
+     * der nicht geholten Peaks stehen auf 0.
+     */
+    void setMaxPeaksToFetch(uint8_t maxPeaks) {
+        _maxPeaksToFetch = (maxPeaks > XM125D_MAX_PEAKS) ? XM125D_MAX_PEAKS : maxPeaks;
+    }
+    uint8_t getMaxPeaksToFetch() const { return _maxPeaksToFetch; }
+
+    /**
+     * NUR FUER KALIBRIER-/TESTSKRIPTE: startet eine Messung und wartet
+     * blockierend, bis das Ergebnis vorliegt (startMeasurement() +
+     * isMeasuring()-Schleife). Im Roboterzyklus nicht verwenden -- das ist
+     * genau die Wartezeit, die die drei Kommandos oben vermeiden.
+     * @return true, wenn ein gueltiges Ergebnis vorliegt.
+     */
+    bool measureBlocking(uint32_t timeoutMs = XM125_DEFAULT_MEASURE_TIMEOUT_MS);
+
+    // ── Bequeme Einzelzugriffe auf getLastResult() (kein I²C) ─────────────
+    uint8_t  getNumDistances()      const { return _result.numDistances; }
+    bool     getNearStartEdge()     const { return _result.nearStartEdge; }
+    bool     getCalibrationNeeded() const { return _result.calibrationNeeded; }
+    bool     getMeasureError()      const { return _result.measureError; }
+    int16_t  getTemperature()       const { return _result.temperature; } ///< °C, geringe Absolutgenauigkeit lt. Datenblatt
 
     /**
      * ACHTUNG - UNKALIBRIERT: Diese (nicht-offizielle/angepasste) Firmware
@@ -205,12 +344,26 @@ public:
 private:
     uint16_t _lastFailedConfigRegister = 0xFFFF;
 
-    uint8_t  _numDistances      = 0;
-    bool     _nearStartEdge     = false;
-    bool     _calibrationNeeded = false;
-    bool     _measureError      = false;
-    int16_t  _temperature       = 0;
-    uint8_t  _peakDistanceRaw[XM125D_MAX_PEAKS] = {};
-    uint32_t _peakDistanceReg[XM125D_MAX_PEAKS] = {}; ///< ungekuerztes Registerwort, siehe getPeakDistanceReg()
-    int32_t  _peakStrength[XM125D_MAX_PEAKS]    = {};
+    XM125MeasureState   _state  = XM125MeasureState::IDLE;
+    XM125DistanceResult _result;
+
+    uint32_t _measureTimeoutMs = XM125_DEFAULT_MEASURE_TIMEOUT_MS;
+    uint8_t  _maxPeaksToFetch  = XM125D_MAX_PEAKS;
+
+    uint32_t _startUs      = 0; ///< micros() beim Absetzen des Messkommandos
+    uint32_t _settleUs     = 0; ///< micros() beim Lesen des Ergebnisregisters
+    uint8_t  _peaksToRead  = 0; ///< in dieser Runde noch abzuholende Peaks
+
+    /** Ein Schritt in RUNNING: BUSY pruefen und ggf. Ergebnisregister lesen. */
+    void _pollRunning();
+    /** Ein Schritt in SETTLING: nach Ablauf der Pause die Peak-Register lesen. */
+    void _pollSettling();
+    /** Ergebnisregister 0x0010 einlesen und zerlegen. */
+    bool _readResultRegister();
+    /** Peak-Register der abgeschlossenen Messung einlesen. */
+    bool _readPeaks();
+    /** Runde erfolgreich abschliessen (Zustand READY). */
+    void _finish();
+    /** Runde abbrechen (Zustand FAILED, Ergebnis als nicht mehr gueltig markieren). */
+    void _fail();
 };

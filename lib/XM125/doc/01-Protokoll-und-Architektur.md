@@ -73,11 +73,12 @@ Diese Bibliothek bildet den Ablauf über folgende Methoden ab:
 |---|---|---|
 | 1+2 | `begin()` | `begin()` |
 | 3+4 | `applyConfigAndCalibrate()` / `applyConfiguration()` | `applyConfiguration()` |
-| 5+6 | `measure()` | `start()` einmalig, danach laufend `update()` |
+| 5+6 | `startMeasurement()`, dann `isMeasuring()` bis `false`, dann `getLastResult()` | `start()` einmalig, danach laufend `update()` |
 
 **Wichtiger Unterschied zwischen den beiden Detektoren:** Der
-Distance-Detector arbeitet **request/response** (jede `measure()`-Aufruf
-löst genau eine Messung aus und blockiert bis zum Ergebnis). Der
+Distance-Detector arbeitet **request/response** (jedes `startMeasurement()`
+löst genau eine Messung aus; gewartet wird dabei nicht — `isMeasuring()`
+meldet, wann das Ergebnis vorliegt). Der
 Presence-Detector arbeitet nach `start()` **kontinuierlich selbstständig**
 im Hintergrund; `update()` liest nur das zuletzt berechnete Ergebnis aus,
 ohne selbst ein Kommando zu senden (siehe [03-Presence-Detector.md](03-Presence-Detector.md)).

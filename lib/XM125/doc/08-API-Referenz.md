@@ -231,88 +231,111 @@ Kommando `5` (`RECALIBRATE`) — leichtgewichtige Nachkalibrierung, gedacht als
 Reaktion auf `getCalibrationNeeded()`. Blockiert lang, aber deutlich kürzer
 als `calibrate()`.
 
-## `bool measure(uint32_t timeoutMs = XM125_DEFAULT_MEASURE_TIMEOUT_MS)`
+## Messbetrieb: `startMeasurement()` / `isMeasuring()` / `getLastResult()`
 
-Führt genau **eine** Messung aus und liest alle Ergebnisse ein.
-
-| | |
-|---|---|
-| **Rückgabe** | `true`, wenn die Messung ohne `MEASURE_ERROR` durchlief |
-| **Blockiert** | **lang** — bis `timeoutMs` (Default 1000 ms); die Testskripte verwenden 3000 ms, weil PROFILE5 + CFAR länger brauchen kann |
-| **Vorbedingung** | erfolgreiches `applyConfigAndCalibrate()` |
-
-Ablauf (**✔ Code**):
-
-1. Kommando `2` (`MEASURE_DISTANCE`) schreiben (mit Clock-Stretching-Absicherung).
-2. Auf `BUSY = 0` pollen; bei Timeout → `false`.
-3. `DETECTOR_ERROR` prüfen; gesetzt → `false`.
-4. Ergebnisregister `0x0010` lesen → `numDistances`, `nearStartEdge`,
-   `calibrationNeeded`, `measureError`, `temperature`.
-5. `numDistances` auf maximal 10 begrenzen.
-6. **5 ms Pause** (die Firmware braucht noch Zeit, bis die Peak-Register
-   gültig sind — ohne die Pause wurden unplausible Werte beobachtet).
-7. Je Peak: Distanz- und Stärkeregister lesen, dazwischen je 1 ms.
-
-> ⚠ **Wichtige Feinheiten:** Wenn `measure()` `false` liefert, weil das
-> Ergebnisregister nicht gelesen werden konnte, behalten die Getter ihre
-> **alten** Werte aus der vorherigen Messung. Und: Lesefehler in Schritt 7
-> werden **nicht** geprüft — schlägt ein Peak-Register-Read fehl, bleibt der
-> betreffende Wert bei 0. Details: [10-Interna-und-Timing.md](10-Interna-und-Timing.md).
-
-## Zerlegte Messung: `startMeasurement()` / `pollMeasurement()` / `fetchResult()`
-
-`measure()` ist intern genau aus diesen drei Bausteinen zusammengesetzt. Wer
-mehrere Sensoren **gleichzeitig** messen lassen will, ruft sie einzeln auf —
-dann fällt die Wartezeit einmal für die ganze Gruppe an statt einmal pro
-Sensor.
+Der Messbetrieb wartet an **keiner** Stelle auf den Sensor. Er besteht aus
+genau diesen drei Kommandos:
 
 | Methode | Rückgabe | Blockiert | Beschreibung |
 |---|---|---|---|
-| `bool startMeasurement()` | `true`, wenn das Kommando angekommen ist (inkl. Clock-Stretching-Probe) | **nein** | Schreibt `MEASURE_DISTANCE` und kehrt sofort zurück |
-| `bool pollMeasurement(bool& done)` | `false` bei I²C-Fehler **oder** gesetztem `DETECTOR_ERROR` | **nein** | Liest einmal `DETECTOR_STATUS`. Setzt `done = true`, sobald `BUSY` zurückgegangen ist. Läuft die Messung noch, ist die Rückgabe `true` und `done` bleibt `false` |
-| `bool fetchResult()` | wie `measure()` (`!measureError`) | kurz (~5 ms + 2 ms je Peak) | Liest Ergebnisregister und Peaks ein. Erst aufrufen, wenn `pollMeasurement()` `done` gemeldet hat |
+| `bool startMeasurement()` | `true`, wenn das Kommando angekommen ist (inkl. Clock-Stretching-Probe) | **nein** (< 1 ms) | Schreibt `MEASURE_DISTANCE`. Ein vorhandenes Ergebnis bleibt weiter abrufbar; bei Misserfolg → Zustand `FAILED` |
+| `bool isMeasuring()` | `true`, solange die Messung läuft | **nein** | Macht genau einen Schritt der Zustandsmaschine: BUSY prüfen, Ergebnisregister lesen, Peaks holen. Höchstens **ein** Registerlesezugriff je Aufruf, in `SETTLING`/`READY`/`FAILED`/`IDLE` gar keiner |
+| `const XM125DistanceResult& getLastResult()` | Referenz auf den Ergebnis-Cache | **nein** (0 Buszugriffe) | Das zuletzt vollständig eingelesene Ergebnis, siehe Feldtabelle unten |
 
 ```cpp
-for (auto& r : sensoren) r.startMeasurement();   // alle anstoßen
+radar.startMeasurement();          // Messung starten
 
-bool anyPending = true;                          // gemeinsam warten
-while (anyPending) {
-  anyPending = false;
-  for (auto& r : sensoren) {
-    bool done = false;
-    if (r.pollMeasurement(done) && !done) anyPending = true;
-  }
+void loop() {
+  if (radar.isMeasuring()) return; // läuft noch — Zeit gehört dem Rest
+
+  const XM125DistanceResult& res = radar.getLastResult();
+  if (res.valid) { /* auswerten */ }
+
+  radar.startMeasurement();        // nächste Runde
 }
-
-for (auto& r : sensoren) r.fetchResult();        // Ergebnisse abholen
 ```
 
-**Eigenes Timeout nötig:** Die drei Bausteine haben keinen Timeout-Parameter —
-die Warteschleife muss selbst abbrechen (im Projekt über
-`RADAR_MEASURE_TIMEOUT_MS`). Vorbild:
-`systemlib::readRadarGroup()` in [systemlib.cpp](../../systemlib/systemlib.cpp).
+`isMeasuring() == false` heißt "fertig **oder** abgebrochen". Unterschieden
+wird über `hasResult()` (bzw. `getLastResult().valid`) oder `getState()`.
 
-**Nebenwirkung:** Sensoren einer Gruppe senden dabei gleichzeitig →
-Übersprechen möglich, siehe
-[05, Abschnitt 8](05-Fehlerbehandlung-und-Troubleshooting.md#8-übersprechen-zwischen-mehreren-sensoren)
-und `RADAR_PARALLEL_GROUP` in [params.h](../../include/params.h).
+### Zustände (`XM125MeasureState getState() const`)
 
-## Ergebnis-Getter (gültig nach erfolgreichem `measure()`)
+| Zustand | Bedeutung | Buszugriff im nächsten `isMeasuring()` |
+|---|---|---|
+| `IDLE` | noch nie gemessen | keiner |
+| `RUNNING` | Kommando abgesetzt, Sensor rechnet | 1 Statusregister-Lesezugriff (erst ab 2 ms nach dem Start) |
+| `SETTLING` | `BUSY` weg, Ergebnisregister gelesen, Peak-Register brauchen noch ~5 ms | keiner |
+| `READY` | Ergebnis vollständig eingelesen | keiner |
+| `FAILED` | I²C-Fehler, `DETECTOR_ERROR` oder Timeout | keiner |
 
-| Methode | Typ | Quelle | Bedeutung |
+Die beiden internen Pausen (2 ms bis `BUSY` steht, 5 ms bis die Peak-Register
+gültig sind) werden **nicht verschlafen**, sondern über `micros()`-Zeitstempel
+ausgesessen — währenddessen kann die Anwendung andere Sensoren bedienen.
+Hintergrund: [10-Interna-und-Timing.md](10-Interna-und-Timing.md).
+
+### Stellschrauben
+
+| Methode | Wirkung |
+|---|---|
+| `void setMeasureTimeout(uint32_t ms)` | Ab wann eine laufende Messung als verloren gilt (Default `XM125_DEFAULT_MEASURE_TIMEOUT_MS` = 1000 ms; das Projekt setzt `RADAR_MEASURE_TIMEOUT_MS` = 3000 ms, weil PROFILE5 + hohe Signalqualität länger brauchen) |
+| `void setMaxPeaksToFetch(uint8_t n)` | Wie viele Peaks nach der Messung wirklich aus dem Sensor geholt werden (Default 10 = alle). Jeder Peak kostet **zwei** Registerlesezugriffe (~1,4 ms bei 100 kHz) — wer nur Peak 0 auswertet, setzt `1`. `numDistances` bleibt die echte Anzahl, die Werte der übersprungenen Peaks stehen auf `0` |
+| `uint32_t getResultAgeMs()` | Alter des Ergebnisses in ms (0, wenn noch keines vorliegt) |
+
+`n = 0` überspringt das Peak-Lesen ganz — dann ist nach dem Ergebnisregister
+sofort `READY`, ohne die 5-ms-Pause.
+
+## `bool measureBlocking(uint32_t timeoutMs = XM125_DEFAULT_MEASURE_TIMEOUT_MS)`
+
+`startMeasurement()` + `isMeasuring()`-Schleife, also **eine** Messung mit
+Warten bis zum Ergebnis.
+
+| | |
+|---|---|
+| **Rückgabe** | `true`, wenn danach ein gültiges Ergebnis vorliegt |
+| **Blockiert** | **lang** — bis das Ergebnis da ist, längstens `timeoutMs` |
+| **Wofür** | ausschließlich Kalibrier- und Testskripte, die ohnehin nichts anderes tun |
+
+> ⚠ Nicht im Roboterzyklus verwenden — das ist genau die Wartezeit, die die
+> drei Kommandos oben vermeiden. `timeoutMs` gilt nur für diesen einen Aufruf;
+> der über `setMeasureTimeout()` gesetzte Wert bleibt danach erhalten.
+
+## Ergebnis: `XM125DistanceResult`
+
+| Feld | Typ | Quelle | Bedeutung |
 |---|---|---|---|
-| `getNumDistances()` | `uint8_t` | Reg `0x0010` Bit 0–3 | Anzahl gefundener Peaks, 0–10 (Bibliothek begrenzt auf 10) |
-| `getNearStartEdge()` | `bool` | Bit 8 | Objekt sehr nah an `config.startMm` — Messwert dort unzuverlässig |
-| `getCalibrationNeeded()` | `bool` | Bit 9 | Modul fordert Nachkalibrierung an → `recalibrate()` |
-| `getMeasureError()` | `bool` | Bit 10 | Messung fehlerhaft |
-| `getTemperature()` | `int16_t` | Bit 16–31 | Sensortemperatur in °C, **nur relative Genauigkeit** |
-| `getPeakDistanceRaw(idx)` | `uint8_t` | Reg `0x0011 + idx`, oberstes Byte | Roh-"Counts" 0–255. `0`, wenn `idx >= getNumDistances()` |
-| `getPeakDistanceMm(idx)` | `uint32_t` | s.o. | ⚠ **aktuell identisch zum Rohwert — keine echten Millimeter**, siehe [07-Kalibrierung.md Teil B](07-Kalibrierung.md#teil-b--kalibrierung-der-peak-rohwerte-counts--mm) |
-| `getPeakDistanceReg(idx)` | `uint32_t` | Reg `0x0011 + idx`, **ungekürzt** | Das vollständige 32-Bit-Registerwort. Für die Kalibriermessung protokollieren, **nicht** den 8-Bit-Wert — welche Bits die Distanz tragen, ist die offene Frage. `0`, wenn `idx >= getNumDistances()` |
-| `getPeakStrength(idx)` | `int32_t` | Reg `0x001B + idx` | Signalstärke (1000×-Einheit, RSS-intern). `0`, wenn `idx >= getNumDistances()` |
+| `valid` | `bool` | — | `true` = fehlerfreie, vollständig eingelesene Messung. Bei I²C-Fehler, `DETECTOR_ERROR`, Timeout oder `MEASURE_ERROR` steht hier `false` — die **Zahlenwerte bleiben dann auf dem letzten guten Stand** |
+| `timestampMs` | `uint32_t` | — | `millis()` beim Einlesen |
+| `durationMs` | `uint16_t` | — | `startMeasurement()` → Ergebnis, für Diagnose |
+| `numDistances` | `uint8_t` | Reg `0x0010` Bit 0–3 | Anzahl gefundener Peaks, 0–10 (Bibliothek begrenzt auf 10) |
+| `nearStartEdge` | `bool` | Bit 8 | Objekt sehr nah an `config.startMm` — Messwert dort unzuverlässig |
+| `calibrationNeeded` | `bool` | Bit 9 | Modul fordert Nachkalibrierung an → `recalibrate()` |
+| `measureError` | `bool` | Bit 10 | Messung fehlerhaft |
+| `temperature` | `int16_t` | Bit 16–31 | Sensortemperatur in °C, **nur relative Genauigkeit** |
+| `peakDistanceRaw[i]` | `uint8_t` | Reg `0x0011 + i`, oberstes Byte | Roh-"Counts" 0–255 |
+| `peakDistanceReg[i]` | `uint32_t` | Reg `0x0011 + i`, **ungekürzt** | Das vollständige 32-Bit-Registerwort. Für die Kalibriermessung protokollieren, **nicht** den 8-Bit-Wert |
+| `peakStrength[i]` | `int32_t` | Reg `0x001B + i` | Signalstärke (1000×-Einheit, RSS-intern) |
+
+## Ergebnis-Getter (bequeme Sicht auf `getLastResult()`)
+
+| Methode | Typ | Feld in `XM125DistanceResult` |
+|---|---|---|
+| `hasResult()` | `bool` | `valid` |
+| `getNumDistances()` | `uint8_t` | `numDistances` |
+| `getNearStartEdge()` | `bool` | `nearStartEdge` |
+| `getCalibrationNeeded()` | `bool` | `calibrationNeeded` |
+| `getMeasureError()` | `bool` | `measureError` |
+| `getTemperature()` | `int16_t` | `temperature` |
+| `getPeakDistanceRaw(idx)` | `uint8_t` | `peakDistanceRaw[idx]`, `0` wenn `idx >= numDistances` |
+| `getPeakDistanceMm(idx)` | `uint32_t` | s.o. — ⚠ **aktuell identisch zum Rohwert, keine echten Millimeter**, siehe [07-Kalibrierung.md Teil B](07-Kalibrierung.md#teil-b--kalibrierung-der-peak-rohwerte-counts--mm) |
+| `getPeakDistanceReg(idx)` | `uint32_t` | `peakDistanceReg[idx]`, `0` wenn `idx >= numDistances` |
+| `getPeakStrength(idx)` | `int32_t` | `peakStrength[idx]`, `0` wenn `idx >= numDistances` |
 
 Alle Getter sind `const`, machen **keinen** I²C-Zugriff und blockieren nicht —
-sie liefern den Zustand der letzten `measure()`.
+sie liefern den Stand der letzten abgeschlossenen Messung.
+
+> Wurde `setMaxPeaksToFetch(n)` mit `n < numDistances` gesetzt, sind die
+> Werte der nicht geholten Peaks `0` (und nicht etwa noch die der vorherigen
+> Messung).
 
 Die Peaks sind gemäß `config.peakSorting` sortiert: bei `CLOSEST` ist Index 0
 der nächstgelegene, bei `STRONGEST` der stärkste Reflektor.
@@ -404,19 +427,19 @@ damit die Grundlage, um `intraDetectionThreshold` /
 | `applyConfigAndCalibrate()` | 300–2000 ms | 3000 ms + Config-Write |
 | `calibrate()` | 300–2000 ms | 3000 ms |
 | `recalibrate()` | < 500 ms | 3000 ms |
-| `measure()` | 20–200 ms (je nach `endMm`, Profil, `signalQuality`) | `timeoutMs` + ~5 ms + 2 ms je Peak |
-| `startMeasurement()` | < 1 ms | < 1 ms |
-| `pollMeasurement()` | < 1 ms | < 1 ms |
-| `fetchResult()` | ~5 ms + 2 ms je Peak | dito |
+| `startMeasurement()` | ~0,7 ms | ~1,4 ms (mit Clock-Stretching-Probe) |
+| `isMeasuring()` | 0 oder ~0,7 ms (ein Statusregister) | ~0,7 ms + einmalig ~1,4 ms je geholtem Peak |
+| `getLastResult()` / `hasResult()` / `getState()` | 0 (nur Speicherzugriff) | 0 |
+| `measureBlocking()` | 20–200 ms (je nach `endMm`, Profil, `signalQuality`) | `timeoutMs` + ~5 ms + ~1,4 ms je Peak |
 | `start()` / `stop()` (Presence) | wenige ms | 3000 ms |
 | `update()` (Presence) | < 2 ms | < 2 ms |
 | alle `get*()`-Ergebnis-Getter | 0 (nur Speicherzugriff) | 0 |
 
-**Für Regelschleifen wichtig:** Alle Kommando-Methoden mit `timeoutMs`-Parameter
-blockieren bis zum Ergebnis. Nicht blockierend ist nur die zerlegte Messung
-(`startMeasurement()` / `pollMeasurement()` / `fetchResult()`) — und auch die
-verlangt, dass die Anwendung die Wartezeit selbst überbrückt und ein eigenes
-Timeout mitbringt. Eine vollständige State-Machine wie bei
-[SRF08](../../SRF08/SRF08.md) gibt es nicht; die Kalibrierkommandos bleiben
-in jedem Fall blockierend und gehören deshalb in `setup()` bzw. in klar
-definierte Pausen.
+**Für Regelschleifen wichtig:** Der Messbetrieb des Distance-Detektors
+blockiert nicht — `startMeasurement()`, `isMeasuring()` und `getLastResult()`
+kehren immer sofort zurück, Timeout und die internen Pausen führt die
+Zustandsmaschine selbst. Blockierend bleiben nur die Einrichtungskommandos
+(`applyConfig*`, `calibrate`, `recalibrate`, `begin`) und das ausdrücklich für
+Testskripte gedachte `measureBlocking()`; sie gehören in `setup()` bzw. in
+klar definierte Pausen. Beim Presence-Detektor misst das Modul nach `start()`
+ohnehin selbstständig weiter, `update()` holt nur ab.
