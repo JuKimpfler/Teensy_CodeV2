@@ -21,7 +21,7 @@
 static constexpr int8_t WAKE_PIN = -1;
 static constexpr int8_t INT_PIN  = -1;
 
-XM125Distance radar(0x51, WAKE_PIN, INT_PIN);
+XM125Distance radar(0x55, WAKE_PIN, INT_PIN);
 
 // Nach so vielen aufeinanderfolgenden Fehlschlaegen wird neu verbunden und
 // konfiguriert. Sinnvoll z.B. bei floatendem WAKE_UP-Pin, wenn der Sensor
@@ -61,9 +61,13 @@ bool setupSensor() {
   // Messbereich und Parameter anpassen
   radar.config.startMm = 200;
   radar.config.endMm   = 2500;
-  radar.config.maxProfile = XM125D_PROFILE5;
-  radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;
+  radar.config.maxProfile = XM125D_PROFILE3;
+  radar.config.thresholdMethod = XM125D_THRESHOLD_FIXED_STRENGTH;
+  radar.config.fixedStrengthThreshold = -25;
   radar.config.peakSorting = XM125D_SORT_STRONGEST;
+  radar.config.signalQuality = 35;
+  radar.config.reflectorShape = XM125D_REFLECTOR_PLANAR;
+  //radar.config.closeRangeLeakageCancellation = false;
 
   Serial.println("Konfiguriere & kalibriere (kann bis zu einigen Sekunden dauern)...");
   if (!radar.applyConfigAndCalibrate()) {
@@ -149,21 +153,30 @@ void loop() {
   // Es wird nie auf den Sensor gewartet: laeuft die Messung noch, ist loop()
   // sofort wieder draussen -- in einem echten Programm bleibt genau diese Zeit
   // fuer Regler, Motoren und die uebrigen Sensoren.
-  if (measurementPending) {
-    if (radar.isMeasuring()) return;
-
-    measurementPending = false;
-    handleResult();
+  if(digitalRead(10)){
+    radar.applyConfigAndCalibrate();
+    Serial.println("Config Applyed and Calibrated");
+    delay(4000);
+    Serial.println("Starting .........");
+    delay(1000);
   }
+  else{
+    if (measurementPending) {
+      if (radar.isMeasuring()) return;
 
-  measurementPending = radar.startMeasurement();
-  if (!measurementPending) {
-    Serial.println("Messkommando kam nicht an (I2C).");
-    printDiagnostics();
-    consecutiveFailures++;
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-      consecutiveFailures = 0;
-      setupSensor();
+      measurementPending = false;
+      handleResult();
+    }
+
+    measurementPending = radar.startMeasurement();
+    if (!measurementPending) {
+      Serial.println("Messkommando kam nicht an (I2C).");
+      printDiagnostics();
+      consecutiveFailures++;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        consecutiveFailures = 0;
+        setupSensor();
+      }
     }
   }
 }

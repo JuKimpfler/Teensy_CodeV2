@@ -32,8 +32,8 @@ ADC108S102 ADC_Motor(&SPI1,ADC108S102_Motor_CS);
 
 XM125Distance RADAR_sensors[RADAR_NUM_SENSORS] = {
   XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  //XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  //XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
   //XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
 };
 
@@ -284,8 +284,10 @@ bool systemlib::setupRadarSens(uint8_t idx) {
 }
 
 void systemlib::calibRadar(){
-    XM125Distance& radar = RADAR_sensors[0];
-    radar.calibrate();
+    for(int i = 0;i<RADAR_NUM_SENSORS;i++){
+        XM125Distance& radar = RADAR_sensors[i];
+        radar.calibrate();
+    }
 }
 
 /* -------------- BNO -------------- */

@@ -194,7 +194,7 @@ struct XM125DistanceResult {
     int16_t  temperature       = 0;     ///< °C, geringe Absolutgenauigkeit lt. Datenblatt
 
     /** Siehe Warnung bei getPeakDistanceRaw(): unkalibrierte "Counts", keine mm. */
-    uint8_t  peakDistanceRaw[XM125D_MAX_PEAKS] = {};
+    uint16_t  peakDistanceRaw[XM125D_MAX_PEAKS] = {};
     /** Ungekuerztes 32-bit-Registerwort je Peak -- Grundlage der Rohwert-Kalibrierung. */
     uint32_t peakDistanceReg[XM125D_MAX_PEAKS] = {};
     /** Signalstaerke je Peak (1000x-Einheit lt. Datenblatt, RSS-intern). */

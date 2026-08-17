@@ -9,8 +9,8 @@
 
 #define BNO_ADDRESS 0x28
 
-static constexpr uint8_t RADAR_NUM_SENSORS = 3;
-static constexpr uint8_t RADAR_SENSOR_ADDRS[RADAR_NUM_SENSORS] = { 0x51, 0x52, 0x53};
+static constexpr uint8_t RADAR_NUM_SENSORS = 1;
+static constexpr uint8_t RADAR_SENSOR_ADDRS[RADAR_NUM_SENSORS] = { 0x55 };
 static constexpr int8_t  RADAR_WAKE_PIN = -1;
 static constexpr int8_t  RADAR_INT_PIN  = -1;
 
@@ -24,10 +24,10 @@ static constexpr int8_t  RADAR_INT_PIN  = -1;
 // (Ausrichtung) und lib/XM125/examples/XM125_Calib_Module.cpp (Kalibrierung laeuft durch?).
 static constexpr uint32_t RADAR_START_MM = 150;   ///< naeher am Sensor liegt der Roboter selbst
 static constexpr uint32_t RADAR_END_MM   = 2500;  ///< 200 mm Reserve, damit 2500 mm nicht auf der Bereichskante liegt
-static constexpr uint32_t RADAR_SIGNAL_QUALITY        = 35000; ///< 25.0 statt Default 15.0 -> mehr SNR am Bereichsende
+static constexpr uint32_t RADAR_SIGNAL_QUALITY        = 35; ///< 25.0 statt Default 15.0 -> mehr SNR am Bereichsende
 static constexpr uint32_t RADAR_THRESHOLD_SENSITIVITY = 400;   ///< 0.75 statt Default 0.50 -> CFAR laesst schwache Wand-Peaks durch
 static constexpr uint32_t RADAR_MEASURE_TIMEOUT_MS    = 3000;  ///< PROFILE5 + hohe Signalqualitaet braucht laenger als der 1000ms-Default
-static constexpr uint32_t RADAR_THRESHOLD_STRENGHT = -25;
+static constexpr uint32_t RADAR_THRESHOLD_STRENGHT = -23;
 // Alle Sensoren messen grundsaetzlich GLEICHZEITIG: systemlib::readRadar()
 // stoesst eine Runde bei allen Sensoren an und sieht in den Folgezyklen nur
 // noch nach, ob die Ergebnisse da sind. Gewartet wird nirgends, die Messdauer

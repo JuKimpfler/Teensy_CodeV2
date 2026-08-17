@@ -39,6 +39,11 @@ void setup()
 
 void loop()
 {
+  if(PDS1.getParamBool(0)){
+    sys.calibRadar();
+    delay(1000);
+  }
+
   sys.readSensors();
 
   sys.MoDataVL.Speed = abs(param1);

@@ -174,7 +174,7 @@ bool XM125Distance::_readPeaks() {
         // Byte-Wert unveraendert als "Counts" gespeichert, siehe
         // getPeakDistanceRaw() / getPeakDistanceMm() in XM125Distance.h.
         _result.peakDistanceReg[i] = dist; // ungekuerzt, fuer die Kalibriermessung
-        _result.peakDistanceRaw[i] = static_cast<uint8_t>(dist >> 24);
+        _result.peakDistanceRaw[i] = static_cast<uint16_t>(dist);
         _result.peakStrength[i]    = static_cast<int32_t>(strength);
     }
     return true;

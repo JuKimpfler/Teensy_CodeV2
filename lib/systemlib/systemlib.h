@@ -25,7 +25,7 @@ extern BNO055 BNO;
 
 struct RadarData
 {
-    uint8_t Dist;
+    uint16_t Dist;
     int32_t Strenght;
     uint8_t Peaks;
     bool isCon = true;
