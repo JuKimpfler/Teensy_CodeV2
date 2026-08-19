@@ -85,7 +85,7 @@ Weitere Ergebnisregister: `PRESENCE_DISTANCE` (`0x0011`),
 ## Hinweis zur Fehlerbehandlung
 
 Meldet `hasDetectorError()` einen Fehler, hilft laut Testcode
-([test/XM125_Presence.cpp](../../../test/XM125_Presence.cpp)) meist ein
+([XM125_Presence.cpp](../examples/XM125_Presence.cpp)) meist ein
 einfaches `stop()` gefolgt von `start()`, um den Detektor neu zu
 initialisieren — ein komplettes `applyConfiguration()` ist dafür in der
 Regel nicht nötig, solange sich die Konfiguration nicht geändert hat.

@@ -88,7 +88,7 @@ namespace Positioning
 
     struct RadarReading
     {
-        bool     valid     = false; // measure() war erfolgreich
+        bool     valid     = false; // gueltiges Messergebnis vorhanden
         uint8_t  peakCount = 0;
         RadarPeak peaks[RADAR_MAX_PEAKS];
     };

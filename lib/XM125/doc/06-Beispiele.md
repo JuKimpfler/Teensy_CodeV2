@@ -1,13 +1,15 @@
 # Beispiele
 
 Diese Beispiele sind gekürzte/kommentierte Auszüge aus den tatsächlichen
-Testskripten im Projekt. Vollständiger, lauffähiger Code steht in den
-verlinkten Originaldateien.
+Skripten im Projekt. Vollständiger, lauffähiger Code steht in den verlinkten
+Originaldateien unter [lib/XM125/examples/](../examples/README.md) — dort
+auch eine ausführliche Erklärung, was jedes Skript genau tut und wie es zu
+bedienen ist.
 
 ## 1. Connectivity-Test (Basis-Klasse, firmware-unabhängig)
 
-Quelle: [test/XM125_Connectivity.cpp](../../../test/XM125_Connectivity.cpp)
-· Ausführen mit `pio test -e teensy40 -f XM125_Connectivity`
+Quelle: [XM125_Connectivity.cpp](../examples/XM125_Connectivity.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
 
 Prüft I²C-Erreichbarkeit, Wake/Ready-Sequenz sowie Version- und
 Status-Register — unabhängig davon, ob Distance- oder Presence-Firmware
@@ -41,8 +43,8 @@ void loop() {
 
 ## 2. Einzelsensor-Distanzmessung
 
-Quelle: [test/XM125_Distance.cpp](../../../test/XM125_Distance.cpp)
-· Ausführen mit `pio test -e teensy40 -f XM125_Distance`
+Quelle: [XM125_Distance.cpp](../examples/XM125_Distance.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
 
 ```cpp
 #include <Wire.h>
@@ -70,27 +72,30 @@ void setup() {
 }
 
 void loop() {
-  if (!radar.measure(3000)) {
-    if (radar.getCalibrationNeeded()) radar.recalibrate();
-    return;
+  if (radar.isMeasuring()) return;        // laeuft noch -- nicht warten
+
+  const XM125DistanceResult& res = radar.getLastResult();
+  if (!res.valid) {
+    if (res.calibrationNeeded) radar.recalibrate();
+  } else {
+    Serial.print("Peaks: "); Serial.print(res.numDistances);
+    Serial.print("  Temp: "); Serial.println(res.temperature);
+
+    for (uint8_t i = 0; i < res.numDistances; i++) {
+      Serial.print("  Peak "); Serial.print(i);
+      Serial.print(": raw="); Serial.print(res.peakDistanceRaw[i]);   // 0-255 Counts, unkalibriert
+      Serial.print(" Staerke="); Serial.println(res.peakStrength[i]);
+    }
   }
 
-  uint8_t n = radar.getNumDistances();
-  Serial.print("Peaks: "); Serial.print(n);
-  Serial.print("  Temp: "); Serial.println(radar.getTemperature());
-
-  for (uint8_t i = 0; i < n; i++) {
-    Serial.print("  Peak "); Serial.print(i);
-    Serial.print(": raw="); Serial.print(radar.getPeakDistanceRaw(i));   // 0-255 Counts, unkalibriert
-    Serial.print(" Staerke="); Serial.println(radar.getPeakStrength(i));
-  }
+  radar.startMeasurement();               // naechste Runde
 }
 ```
 
 ## 3. Vier Distanzsensoren an einem I²C-Bus
 
-Quelle: [src/XM125_Distance_Multi.cpp](../../../src/XM125_Distance_Multi.cpp)
-· Ausführen mit `pio test -e teensy40 -f XM125_Distance_Multi`
+Quelle: [XM125_Distance_Multi.cpp](../examples/XM125_Distance_Multi.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
 
 Verkabelung: alle 4 Sensoren an `Wire` (SDA/SCL), unterschiedliche
 Hardware-Adressen `0x51`/`0x52`/`0x53`/`0x54`.
@@ -126,22 +131,29 @@ void setup() {
 }
 
 void loop() {
+  // Alle Sensoren messen gleichzeitig: nur nachsehen, nie warten.
+  bool laeuft = false;
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
-    if (!sensorReady[i]) { sensorReady[i] = setupSensor(i); continue; }
+    if (!measurePending[i]) continue;
+    if (sensors[i].isMeasuring()) { laeuft = true; continue; }
 
-    XM125Distance& radar = sensors[i];
-    if (radar.measure(3000)) {
-      Serial.print("[0x"); Serial.print(SENSOR_ADDRS[i], HEX); Serial.print("] ");
-      Serial.print("Peaks="); Serial.println(radar.getNumDistances());
-    }
+    measurePending[i] = false;
+    Serial.print("[0x"); Serial.print(SENSOR_ADDRS[i], HEX); Serial.print("] ");
+    Serial.print("Peaks="); Serial.println(sensors[i].getLastResult().numDistances);
+  }
+  if (laeuft) return;
+
+  for (uint8_t i = 0; i < NUM_SENSORS; i++) {          // naechste Runde
+    if (!sensorReady[i]) { sensorReady[i] = setupSensor(i); continue; }
+    measurePending[i] = sensors[i].startMeasurement();
   }
 }
 ```
 
 ## 4. Anwesenheitserkennung (Presence)
 
-Quelle: [test/XM125_Presence.cpp](../../../test/XM125_Presence.cpp)
-· Ausführen mit `pio test -e teensy40 -f XM125_Presence`
+Quelle: [XM125_Presence.cpp](../examples/XM125_Presence.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
 
 ```cpp
 #include <Wire.h>
@@ -185,3 +197,54 @@ void loop() {
   delay(100);
 }
 ```
+
+## 5. Kalibrierung auf eine gerade Holzwand (bis 2,5 m)
+
+Quelle: [XM125_WallCalibration.cpp](../examples/XM125_WallCalibration.cpp)
+· Ausführen: nach `src/main.cpp` kopieren, `pio run -e teensy40 -t upload`
+
+Interaktives Werkzeug über die serielle Konsole. Es beantwortet die beiden
+Fragen getrennt, die bei "das Radar erkennt die Wand nicht" gern
+durcheinandergehen:
+
+| Frage | Modus |
+|---|---|
+| Wird die Wand überhaupt als Peak erkannt? | `m` (Dauermessung), `s` (Parameter-Sweep) |
+| Welche echte Distanz gehört zu welchem Rohwert? | `d <cm>` (Punkt aufnehmen), `f` (auswerten) |
+| Stören sich die Sensoren, wenn sie gleichzeitig messen? | `i` (Übersprech-Test) |
+
+**Ablauf für die Empfindlichkeit** (das, was "reagiert auf die Wand" bestimmt):
+
+1. Wand auf den *größten* gewünschten Abstand stellen — 2,5 m. Dort ist die
+   Erkennung am schwierigsten, näher wird sie nur besser.
+2. `s` eingeben. Der Sketch fährt 16 Kombinationen aus `signalQuality` ×
+   `thresholdSensitivity` ab, misst jede 20-mal und meldet Trefferquote,
+   Signalstärke und Messzeit.
+3. Der Sketch empfiehlt am Ende die *günstigste* Kombination mit 20/20
+   Treffern (möglichst wenig Signalqualität = kurze Messzeit, möglichst wenig
+   Empfindlichkeit = wenig Fehlalarme). Diese Zahlen nach
+   [params.h](../../include/params.h) übertragen.
+
+Ausgabeformat (Zahlen hier nur als Beispiel, nicht gemessen):
+
+```
+ SigQual  Sens  Erkannt  Rohwert  Staerke   Zeit
+ -------  ----  -------  -------  -------   ----
+  15000   500     3/20      41      1120    28 ms
+  15000   750    14/20      42      1180    28 ms
+  25000   750    20/20      42      1240    46 ms
+```
+
+**Ablauf für die Distanz-Zuordnung:** siehe
+[02-Distance-Detector.md](02-Distance-Detector.md#kalibrieren-mit-testxm125_wallcalibrationcpp).
+
+**Ablauf für das Übersprechen:** Wand ebenfalls auf 2,5 m, dann `i`. Der Sketch
+misst denselben Sensor einmal allein und einmal, während alle anderen
+gleichzeitig senden, und sagt daraus, ob der Gleichzeitigbetrieb Trefferquote
+kostet. Hintergrund:
+[05-Fehlerbehandlung-und-Troubleshooting.md](05-Fehlerbehandlung-und-Troubleshooting.md#8-übersprechen-zwischen-mehreren-sensoren).
+
+> Der Messaufbau entscheidet über das Ergebnis: senkrecht auf die Fläche
+> ausrichten (schon 10–15° Schräglage lenken die Reflexion an glattem Holz
+> weg vom Sensor), Abstand ab Sensor-Vorderkante messen, und im Messkegel
+> (ca. ±25°) sonst nichts stehen lassen.

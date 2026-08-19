@@ -1,6 +1,20 @@
 /**
  * XM125Distance.cpp  —  Implementierung des Distance-Detectors.
  * Siehe XM125Distance.h für Dokumentation.
+ *
+ * Der Messbetrieb ist eine nicht blockierende Zustandsmaschine:
+ *
+ *   IDLE ──startMeasurement()──> RUNNING ──BUSY weg, Result gelesen──> SETTLING
+ *                                   │                                     │
+ *                                   │ Fehler/Timeout          Pause um,   │
+ *                                   ▼                         Peaks da    ▼
+ *                                FAILED <────Fehler────────────────────  READY
+ *
+ * Weitergetrieben wird sie ausschliesslich von isMeasuring(); ein Aufruf macht
+ * genau einen Schritt und hoechstens einen Buszugriff. Nirgends steht ein
+ * delay() -- die beiden noetigen Pausen (BUSY-Anlauf, Peak-Register) werden
+ * ueber micros()-Zeitstempel ausgesessen, waehrenddessen kann der Aufrufer
+ * andere Sensoren bedienen.
  */
 
 #include "XM125Distance.h"
@@ -53,7 +67,11 @@ bool XM125Distance::recalibrate(uint32_t timeoutMs) {
     return _executeCommand(XM125D_CMD_RECALIBRATE, timeoutMs);
 }
 
-bool XM125Distance::measure(uint32_t timeoutMs) {
+/* ── Messbetrieb ──────────────────────────────────────────────────────────── */
+
+bool XM125Distance::startMeasurement() {
+    _startUs = micros();
+
     if (!_writeReg(XM125_REG_COMMAND, XM125D_CMD_MEASURE_DISTANCE)) {
         // Siehe Kommentar in XM125Base::_executeCommand: ein gemeldeter
         // Schreibfehler kann durch Clock-Stretching der internen MCU direkt
@@ -61,37 +79,92 @@ bool XM125Distance::measure(uint32_t timeoutMs) {
         // gegenpruefen, ob der Sensor bereits BUSY ist.
         uint32_t probe = 0;
         if (!_readReg(XM125_REG_DETECTOR_STATUS, probe) || !statusBusy(probe)) {
+            _fail();
             return false;
         }
     }
 
-    uint32_t status = 0;
-    if (!_waitNotBusy(timeoutMs, status)) return false;
-    if (statusError(status)) return false;
+    _peaksToRead = 0;
+    _state = XM125MeasureState::RUNNING;
+    return true;
+}
 
+bool XM125Distance::isMeasuring() {
+    switch (_state) {
+        case XM125MeasureState::RUNNING:  _pollRunning();  break;
+        case XM125MeasureState::SETTLING: _pollSettling(); break;
+        default: break; // IDLE / READY / FAILED: nichts zu tun, kein Buszugriff
+    }
+
+    return (_state == XM125MeasureState::RUNNING) ||
+           (_state == XM125MeasureState::SETTLING);
+}
+
+void XM125Distance::_pollRunning() {
+    // Die interne MCU braucht einen Moment, bis sie BUSY setzt. Wer frueher
+    // fragt, sieht BUSY=0 und wuerde das Ergebnis der vorherigen Messung als
+    // neu ausgeben -- deshalb die erste Abfrage aussetzen (ohne Buszugriff).
+    uint32_t elapsedUs = micros() - _startUs;
+    if (elapsedUs < XM125D_BUSY_SETTLE_US) return;
+
+    uint32_t status = 0;
+    if (!_readReg(XM125_REG_DETECTOR_STATUS, status)) { _fail(); return; }
+
+    if (statusBusy(status)) {
+        if (elapsedUs > _measureTimeoutMs * 1000UL) _fail(); // Sensor antwortet nicht mehr
+        return;
+    }
+    if (statusError(status)) { _fail(); return; }
+
+    // BUSY ist zurueckgegangen -> das Ergebnisregister ist ab jetzt gueltig.
+    if (!_readResultRegister()) { _fail(); return; }
+
+    if (_peaksToRead == 0) { _finish(); return; } // nichts abzuholen -> direkt fertig
+
+    _settleUs = micros();
+    _state = XM125MeasureState::SETTLING;
+}
+
+void XM125Distance::_pollSettling() {
+    // Reines Abwarten der Peak-Register-Pause: kein Buszugriff, kein delay().
+    if ((micros() - _settleUs) < XM125D_PEAK_SETTLE_US) return;
+
+    if (!_readPeaks()) { _fail(); return; }
+    _finish();
+}
+
+bool XM125Distance::_readResultRegister() {
     uint32_t result = 0;
     if (!_readReg(XM125D_REG_DISTANCE_RESULT, result)) return false;
 
-    _numDistances      = static_cast<uint8_t>(result & XM125D_RESULT_NUM_DISTANCES_MASK);
-    _nearStartEdge     = (result & XM125D_RESULT_NEAR_START_EDGE) != 0;
-    _calibrationNeeded = (result & XM125D_RESULT_CALIBRATION_NEEDED) != 0;
-    _measureError      = (result & XM125D_RESULT_MEASURE_ERROR) != 0;
-    _temperature       = static_cast<int16_t>(result >> XM125D_RESULT_TEMPERATURE_SHIFT);
+    _result.numDistances      = static_cast<uint8_t>(result & XM125D_RESULT_NUM_DISTANCES_MASK);
+    _result.nearStartEdge     = (result & XM125D_RESULT_NEAR_START_EDGE) != 0;
+    _result.calibrationNeeded = (result & XM125D_RESULT_CALIBRATION_NEEDED) != 0;
+    _result.measureError      = (result & XM125D_RESULT_MEASURE_ERROR) != 0;
+    _result.temperature       = static_cast<int16_t>(result >> XM125D_RESULT_TEMPERATURE_SHIFT);
 
-    if (_numDistances > XM125D_MAX_PEAKS) _numDistances = XM125D_MAX_PEAKS;
+    if (_result.numDistances > XM125D_MAX_PEAKS) _result.numDistances = XM125D_MAX_PEAKS;
 
-    // Kurze Pause: die Firmware braucht offenbar noch etwas Zeit, um die
-    // Peak-Detailregister zu schreiben, nachdem das Result-Register (mit
-    // NUM_DISTANCES/Temperatur/Flags) bereits gueltig ist -- ohne diese
-    // Pause wurden hier zuvor unplausible Werte beobachtet.
-    delay(5);
+    _peaksToRead = (_result.numDistances < _maxPeaksToFetch) ? _result.numDistances
+                                                             : _maxPeaksToFetch;
 
-    for (uint8_t i = 0; i < _numDistances; i++) {
+    // Peaks, die diese Runde nicht geholt werden (weil es keine gibt oder weil
+    // setMaxPeaksToFetch() sie ausblendet), auf 0 setzen -- sonst stuenden dort
+    // noch die Werte der vorherigen Messung.
+    for (uint8_t i = _peaksToRead; i < XM125D_MAX_PEAKS; i++) {
+        _result.peakDistanceRaw[i] = 0;
+        _result.peakDistanceReg[i] = 0;
+        _result.peakStrength[i]    = 0;
+    }
+    return true;
+}
+
+bool XM125Distance::_readPeaks() {
+    for (uint8_t i = 0; i < _peaksToRead; i++) {
         uint32_t dist = 0, strength = 0;
-        _readReg(XM125D_REG_PEAK0_DISTANCE + i, dist);
-        delay(1);
-        _readReg(XM125D_REG_PEAK0_STRENGTH + i, strength);
-        delay(1);
+        if (!_readReg(XM125D_REG_PEAK0_DISTANCE + i, dist))     return false;
+        if (!_readReg(XM125D_REG_PEAK0_STRENGTH + i, strength)) return false;
+
         // Diese (nicht-offizielle/angepasste) Firmware kodiert die Peak-Distanz
         // abweichend vom Acconeer-Standard-Registerprotokoll: nur das oberste
         // Byte traegt den Wert. Der genaue Skalierungsfaktor (mm pro Count,
@@ -100,16 +173,52 @@ bool XM125Distance::measure(uint32_t timeoutMs) {
         // Bis zur Kalibrierung mit bekannten Distanzen wird hier der rohe
         // Byte-Wert unveraendert als "Counts" gespeichert, siehe
         // getPeakDistanceRaw() / getPeakDistanceMm() in XM125Distance.h.
-        _peakDistanceRaw[i] = static_cast<uint8_t>(dist >> 24);
-        _peakStrength[i]    = static_cast<int32_t>(strength);
+        _result.peakDistanceReg[i] = dist; // ungekuerzt, fuer die Kalibriermessung
+        _result.peakDistanceRaw[i] = static_cast<uint16_t>(dist);
+        _result.peakStrength[i]    = static_cast<int32_t>(strength);
     }
-
-    return !_measureError;
+    return true;
 }
 
+void XM125Distance::_finish() {
+    _result.valid       = !_result.measureError;
+    _result.timestampMs = millis();
+    _result.durationMs  = static_cast<uint16_t>((micros() - _startUs) / 1000UL);
+    _state = XM125MeasureState::READY;
+}
+
+void XM125Distance::_fail() {
+    // Zahlenwerte bleiben stehen (letzter guter Stand), aber sie sind ab jetzt
+    // als nicht mehr aktuell markiert -- siehe XM125DistanceResult::valid.
+    _result.valid = false;
+    _state = XM125MeasureState::FAILED;
+}
+
+bool XM125Distance::measureBlocking(uint32_t timeoutMs) {
+    const uint32_t savedTimeout = _measureTimeoutMs;
+    _measureTimeoutMs = timeoutMs;
+
+    bool started = startMeasurement();
+    if (started) {
+        while (isMeasuring()) {
+            yield(); // Bus wird in isMeasuring() ohnehin nur einmal je Runde belegt
+        }
+    }
+
+    _measureTimeoutMs = savedTimeout;
+    return started && _result.valid;
+}
+
+/* ── Ergebniszugriffe ─────────────────────────────────────────────────────── */
+
 uint8_t XM125Distance::getPeakDistanceRaw(uint8_t idx) const {
-    if (idx >= _numDistances) return 0;
-    return _peakDistanceRaw[idx];
+    if (idx >= _result.numDistances) return 0;
+    return _result.peakDistanceRaw[idx];
+}
+
+uint32_t XM125Distance::getPeakDistanceReg(uint8_t idx) const {
+    if (idx >= _result.numDistances) return 0;
+    return _result.peakDistanceReg[idx];
 }
 
 uint32_t XM125Distance::getPeakDistanceMm(uint8_t idx) const {
@@ -119,6 +228,6 @@ uint32_t XM125Distance::getPeakDistanceMm(uint8_t idx) const {
 }
 
 int32_t XM125Distance::getPeakStrength(uint8_t idx) const {
-    if (idx >= _numDistances) return 0;
-    return _peakStrength[idx];
+    if (idx >= _result.numDistances) return 0;
+    return _result.peakStrength[idx];
 }

@@ -25,7 +25,7 @@ extern BNO055 BNO;
 
 struct RadarData
 {
-    uint8_t Dist;
+    uint16_t Dist;
     int32_t Strenght;
     uint8_t Peaks;
     bool isCon = true;
@@ -56,8 +56,10 @@ private:
     RobotDataCom ownRobot;
     RobotDataCom otherRobot;
 
-    bool    RADAR_sensorReady[RADAR_NUM_SENSORS]      = {};
-    uint8_t RADAR_consecFailures[RADAR_NUM_SENSORS] = {};
+    bool     RADAR_sensorReady[RADAR_NUM_SENSORS]    = {};
+    bool     RADAR_measurePending[RADAR_NUM_SENSORS] = {}; ///< Sensor nimmt an der laufenden Runde teil
+    uint8_t  RADAR_consecFailures[RADAR_NUM_SENSORS] = {};
+    uint32_t RADAR_lastSetupMs[RADAR_NUM_SENSORS]    = {}; ///< Bremse fuer die blockierende Neuinitialisierung
     static constexpr uint8_t RADAR_MAX_CONSEC_FAILURES = 5;
 
     /* -------------- Sensor Var -------------- */
@@ -99,7 +101,12 @@ private:
     void readIR(void);
     void readUS(void);
     void readExpanders(void);
-    void readRadar(void);
+    void readRadar(void);                 ///< nicht blockierend: nachsehen + naechste Runde starten
+    void startRadarRound(void);           ///< stoesst die Messung bei ALLEN Sensoren gleichzeitig an
+    void takeRadarResult(uint8_t idx);    ///< fertiges Ergebnis in RadarVo/Li/Hi/Re uebernehmen
+    void radarMeasureFailed(uint8_t idx); ///< Fehlerzaehler, markiert den Sensor ggf. als nicht bereit
+    void retryRadarSetup(uint8_t idx);    ///< gedrosselte Neuinitialisierung eines toten Sensors
+    RadarData* radarSlot(uint8_t idx);    ///< Index -> RadarVo/Li/Hi/Re
 
     bool setupRadarSens(uint8_t idx);
 

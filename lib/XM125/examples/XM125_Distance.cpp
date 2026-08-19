@@ -3,8 +3,16 @@
 // Misst zyklisch Distanzen im Bereich 200mm-2500mm und gibt alle
 // erkannten Peaks (Distanz + Signalstärke) über die serielle Schnittstelle aus.
 //
-// Ausführen mit:
-//   pio test -e teensy40 -f XM125_Distance
+// Zeigt gleichzeitig das nicht blockierende Messschema der Library:
+//   startMeasurement()  Messung starten, kehrt sofort zurueck
+//   isMeasuring()       laeuft die Messung noch?
+//   getLastResult()     letztes Messergebnis (Cache, kein I2C)
+// loop() wartet damit nie auf den Sensor.
+//
+// Ausführen: Datei nach src/main.cpp des Hauptprojekts kopieren (in src/ darf
+// immer nur eine Datei mit setup()/loop() liegen) und normal bauen/hochladen:
+//   pio run -e teensy40 -t upload
+// Siehe lib/XM125/examples/README.md fuer alle Beispiele im Ueberblick.
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -13,13 +21,16 @@
 static constexpr int8_t WAKE_PIN = -1;
 static constexpr int8_t INT_PIN  = -1;
 
-XM125Distance radar(0x51, WAKE_PIN, INT_PIN);
+XM125Distance radar(0x55, WAKE_PIN, INT_PIN);
 
 // Nach so vielen aufeinanderfolgenden Fehlschlaegen wird neu verbunden und
 // konfiguriert. Sinnvoll z.B. bei floatendem WAKE_UP-Pin, wenn der Sensor
 // zwischenzeitlich in einen unerreichbaren Zustand faellt.
 static constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 5;
 uint8_t consecutiveFailures = 0;
+
+/// true zwischen startMeasurement() und dem Abholen des Ergebnisses
+bool measurementPending = false;
 
 void printDiagnostics() {
   uint32_t detStatus = radar.getDetectorStatus();
@@ -44,12 +55,19 @@ bool setupSensor() {
     return false;
   }
 
+  // Profile5/CFAR kann laenger brauchen als der Default-Timeout (1000 ms)
+  radar.setMeasureTimeout(3000);
+
   // Messbereich und Parameter anpassen
   radar.config.startMm = 200;
   radar.config.endMm   = 2500;
-  radar.config.maxProfile = XM125D_PROFILE5;
-  radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;
+  radar.config.maxProfile = XM125D_PROFILE3;
+  radar.config.thresholdMethod = XM125D_THRESHOLD_FIXED_STRENGTH;
+  radar.config.fixedStrengthThreshold = -25;
   radar.config.peakSorting = XM125D_SORT_STRONGEST;
+  radar.config.signalQuality = 35;
+  radar.config.reflectorShape = XM125D_REFLECTOR_PLANAR;
+  //radar.config.closeRangeLeakageCancellation = false;
 
   Serial.println("Konfiguriere & kalibriere (kann bis zu einigen Sekunden dauern)...");
   if (!radar.applyConfigAndCalibrate()) {
@@ -91,15 +109,15 @@ void setup() {
   }
 }
 
-void loop() {
-  uint32_t measureStart = millis();
-  bool ok = radar.measure(3000); // Profile5/CFAR kann laenger brauchen als der Default (1000ms)
-  uint32_t measureMs = millis() - measureStart;
+/** Ergebnis der gerade abgeschlossenen Messung ausgeben bzw. Fehler behandeln. */
+void handleResult() {
+  const XM125DistanceResult& res = radar.getLastResult();
 
-  if (!ok) {
-    Serial.print("Messfehler oder Timeout nach "); Serial.print(measureMs); Serial.println(" ms.");
+  if (!res.valid) {
+    Serial.print("Messfehler oder Timeout nach "); Serial.print(res.durationMs);
+    Serial.println(" ms.");
     printDiagnostics();
-    if (radar.getCalibrationNeeded()) {
+    if (res.calibrationNeeded) {
       Serial.println("-> Kalibrierung wird benoetigt, rufe recalibrate() auf.");
       radar.recalibrate();
     }
@@ -109,16 +127,14 @@ void loop() {
       consecutiveFailures = 0;
       setupSensor();
     }
-    delay(200);
     return;
   }
   consecutiveFailures = 0;
 
-  uint8_t n = radar.getNumDistances();
-  Serial.print("Messung dauerte "); Serial.print(measureMs); Serial.println(" ms.");
-  Serial.print("Peaks: "); Serial.print(n);
-  Serial.print("  Temp: "); Serial.print(radar.getTemperature());
-  Serial.print(" C  NearStartEdge: "); Serial.println(radar.getNearStartEdge() ? "ja" : "nein");
+  Serial.print("Messung dauerte "); Serial.print(res.durationMs); Serial.println(" ms.");
+  Serial.print("Peaks: "); Serial.print(res.numDistances);
+  Serial.print("  Temp: "); Serial.print(res.temperature);
+  Serial.print(" C  NearStartEdge: "); Serial.println(res.nearStartEdge ? "ja" : "nein");
   Serial.print("  (config.startMm="); Serial.print(radar.config.startMm);
   Serial.print(" endMm="); Serial.print(radar.config.endMm); Serial.println(")");
 
@@ -126,9 +142,41 @@ void loop() {
   // (0-255 "Counts"), noch NICHT in echte mm/cm umgerechnet. Bitte ein
   // einzelnes Objekt auf exakt bekannter Distanz platzieren (sonst nichts
   // in Reichweite) und den Raw-Wert hier gegen die bekannte Distanz notieren.
-  for (uint8_t i = 0; i < n; i++) {
+  for (uint8_t i = 0; i < res.numDistances; i++) {
     Serial.print("  Peak "); Serial.print(i);
-    Serial.print(": raw="); Serial.print(radar.getPeakDistanceRaw(i));
-    Serial.print(" counts, Staerke="); Serial.println(radar.getPeakStrength(i));
+    Serial.print(": raw="); Serial.print(res.peakDistanceRaw[i]);
+    Serial.print(" counts, Staerke="); Serial.println(res.peakStrength[i]);
+  }
+}
+
+void loop() {
+  // Es wird nie auf den Sensor gewartet: laeuft die Messung noch, ist loop()
+  // sofort wieder draussen -- in einem echten Programm bleibt genau diese Zeit
+  // fuer Regler, Motoren und die uebrigen Sensoren.
+  if(digitalRead(10)){
+    radar.applyConfigAndCalibrate();
+    Serial.println("Config Applyed and Calibrated");
+    delay(4000);
+    Serial.println("Starting .........");
+    delay(1000);
+  }
+  else{
+    if (measurementPending) {
+      if (radar.isMeasuring()) return;
+
+      measurementPending = false;
+      handleResult();
+    }
+
+    measurementPending = radar.startMeasurement();
+    if (!measurementPending) {
+      Serial.println("Messkommando kam nicht an (I2C).");
+      printDiagnostics();
+      consecutiveFailures++;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        consecutiveFailures = 0;
+        setupSensor();
+      }
+    }
   }
 }
