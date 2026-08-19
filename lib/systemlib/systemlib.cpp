@@ -71,7 +71,7 @@ void systemlib::initialize()
     INA219_Main.setMaxCurrentShunt(15);
     INA219_Motor.setMaxCurrentShunt(15);
 
-    //BNO.init();
+    BNO.init();
     //PDS.init();
 
     MoDataVL.ID = MotorVL_ID;
@@ -138,7 +138,6 @@ void systemlib::readSensors(void)
     readRadar();
     Serial.println(measuretimer);
     //readIR();
-    //readUS();
 
     readExpanders();
 
@@ -165,7 +164,7 @@ void systemlib::radarMeasureFailed(uint8_t idx)
     if (RADAR_consecFailures[idx] < RADAR_MAX_CONSEC_FAILURES) return;
 
     // Sensor gilt als tot. Hier NICHT neu initialisieren -- setupRadarSens()
-    // blockiert bis zu ~2 s. Das uebernimmt retryRadarSetup() gedrosselt beim
+    // blockier ßbis zu ~2 s. Das uebernimmt retryRadarSetup() gedrosselt beim
     // naechsten Rundenstart.
     RADAR_consecFailures[idx] = 0;
     RADAR_sensorReady[idx]    = false;
