@@ -32,15 +32,13 @@ ADC108S102 ADC_Motor(&SPI1,ADC108S102_Motor_CS);
 
 XM125Distance RADAR_sensors[RADAR_NUM_SENSORS] = {
   XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  //XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  //XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  //XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
+  XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
 };
 
 constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
-PIDConfig cfgP;
 PID* headingControllerP;
-ADRCConfig cfgA;
 ADRC* headingControllerA;
 uint32_t lastMicrosContrl = 0;
 
@@ -258,13 +256,13 @@ bool systemlib::setupRadarSens(uint8_t idx) {
   radar.setMaxPeaksToFetch(RADAR_PEAKS_TO_FETCH);
 
   // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h
-  radar.config.startMm = RADAR_START_MM;
-  radar.config.endMm   = RADAR_END_MM;   // > 2500, damit die Wand nicht auf der Bereichskante liegt
-  radar.config.maxProfile = XM125D_PROFILE3;              // laengste Pulse = groesste Reichweite
-  radar.config.thresholdMethod = XM125D_THRESHOLD_FIXED_STRENGTH;   // adaptiv, unabhaengig von der Umgebung
-  //radar.config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
-  radar.config.fixedStrengthThreshold = RADAR_THRESHOLD_STRENGHT;
-  radar.config.signalQuality        = RADAR_SIGNAL_QUALITY;
+  radar.config.startMm = 200;
+  radar.config.endMm   = 3000;   // > 2500, damit die Wand nicht auf der Bereichskante liegt
+  radar.config.maxProfile = XM125D_PROFILE5;              // laengste Pulse = groesste Reichweite
+  radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;   // adaptiv, unabhaengig von der Umgebung
+  radar.config.thresholdSensitivity = 500;
+  //radar.config.fixedStrengthThreshold = RADAR_THRESHOLD_STRENGHT;
+  radar.config.signalQuality        = 35000;
   radar.config.peakSorting = XM125D_SORT_STRONGEST;
   // PLANAR: bei einer flaechigen Wand faellt die Echo-Amplitude langsamer mit der
   // Distanz als bei einem punktfoermigen Reflektor. Ohne diese Angabe setzt der
@@ -287,6 +285,7 @@ void systemlib::calibRadar(){
         XM125Distance& radar = RADAR_sensors[i];
         radar.calibrate();
     }
+    delay(1000);
 }
 
 /* -------------- BNO -------------- */
@@ -558,6 +557,15 @@ void systemlib::setupHeadingController(bool useADRC){
         headingControllerP = new PID(cfgP);
         headingControllerP->reset(DEG_TO_RAD*BNO_OrbitDir);
         lastMicrosContrl = micros();
+    }
+}
+
+void systemlib::setHeadingControllerConfig(){
+    if(_useADRC){
+        headingControllerA->setConfig(cfgA);
+    }
+    else{
+        headingControllerP->setConfig(cfgP);
     }
 }
 

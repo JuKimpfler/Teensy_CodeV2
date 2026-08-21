@@ -126,6 +126,9 @@ public:
     RadarData RadarRe;
     RadarData RadarLi;
 
+    ADRCConfig cfgA;
+    PIDConfig cfgP;
+
     /* -------------- Ssytem Worker -------------- */
     void initialize();
     void readSensors(void);
@@ -186,4 +189,5 @@ public:
     //void setDBGSys(void);
     //void setDBGChannel(uint8_t Channel, float Value); // 0-20 Frei für eigenen Quatsch
     void setHeading(float Heading);
+    void setHeadingControllerConfig(void);
 };
