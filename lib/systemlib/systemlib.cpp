@@ -256,9 +256,9 @@ bool systemlib::setupRadarSens(uint8_t idx) {
   radar.setMaxPeaksToFetch(RADAR_PEAKS_TO_FETCH);
 
   // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h
-  radar.config.startMm = 200;
-  radar.config.endMm   = 3000;   // > 2500, damit die Wand nicht auf der Bereichskante liegt
-  radar.config.maxProfile = XM125D_PROFILE5;              // laengste Pulse = groesste Reichweite
+  radar.config.startMm = 150;
+  radar.config.endMm   = 2500;   // > 2500, damit die Wand nicht auf der Bereichskante liegt
+  radar.config.maxProfile = XM125D_PROFILE3;              // laengste Pulse = groesste Reichweite
   radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;   // adaptiv, unabhaengig von der Umgebung
   radar.config.thresholdSensitivity = 500;
   //radar.config.fixedStrengthThreshold = RADAR_THRESHOLD_STRENGHT;
@@ -283,7 +283,7 @@ bool systemlib::setupRadarSens(uint8_t idx) {
 void systemlib::calibRadar(){
     for(int i = 0;i<RADAR_NUM_SENSORS;i++){
         XM125Distance& radar = RADAR_sensors[i];
-        radar.calibrate();
+        radar.recalibrate();
     }
     delay(1000);
 }
