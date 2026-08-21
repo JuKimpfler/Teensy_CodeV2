@@ -67,6 +67,39 @@ void XM125Base::sleep() {
     }
 }
 
+bool XM125Base::resetModule(uint32_t timeoutMs) {
+    if (_wire == nullptr) return false;
+
+    // Rueckgabewert bewusst ignoriert: das Modul startet sofort neu und
+    // quittiert die laufende Transaktion haeufig nicht mehr -- ein gemeldeter
+    // Schreibfehler heisst hier also nicht, dass das Kommando nicht ankam.
+    // Ob der Neustart geklappt hat, entscheidet allein die Bereitschafts-
+    // pruefung weiter unten.
+    _writeReg(XM125_REG_COMMAND, XM125_CMD_RESET_MODULE);
+
+    // Waehrend des Bootvorgangs antwortet der Sensor gar nicht -- in dieser
+    // Zeit auf dem Bus nachzufragen bringt nur NAKs.
+    delay(XM125_RESET_BOOT_DELAY_MS);
+
+    const uint32_t start = millis();
+
+    // Pins wieder in den Wach-Zustand bringen und abwarten, bis ueberhaupt
+    // eine Adresse quittiert wird (bei verkabeltem MCU_INT dessen Flanke).
+    if (!wakeUp(timeoutMs)) return false;
+
+    // Antworten heisst noch nicht bereit: die MCU baut RSS, Sensor und
+    // Detektor erst auf, solange steht BUSY. Lesefehler werden in dieser Phase
+    // toleriert, sie gehoeren zum Anlauf.
+    while (millis() - start < timeoutMs) {
+        uint32_t status = 0;
+        if (_readReg(XM125_REG_DETECTOR_STATUS, status) && !statusBusy(status)) {
+            return !statusError(status);
+        }
+        delay(XM125_RESET_POLL_INTERVAL_MS);
+    }
+    return false; // Timeout: Sensor meldet sich nicht bereit
+}
+
 uint32_t XM125Base::getVersionRaw() {
     uint32_t v = 0;
     _readReg(XM125_REG_VERSION, v);

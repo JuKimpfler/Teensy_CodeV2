@@ -173,6 +173,16 @@ Framerate, Auto-Profil, Auto-Schrittweite, beide Erkennungsarten aktiv).
   `interDetectionThreshold`) sind laut Acconeer-Datenblatt in einer
   1000-fachen Einheit angegeben (z.B. entspricht `1000` intern dem
   Wert `1.0`).
+- **Werksvorgaben im Code:** Jeder Default aus der Tabelle oben steht einmal
+  als benannte Konstante `XM125D_DEFAULT_*` in
+  [XM125Distance.h](../XM125Distance.h). Daraus werden sowohl die Feld-Defaults
+  von `XM125DistanceConfig` als auch die Parameter-Defaults von
+  `hardCalibration()` gespeist — beide können deshalb nicht auseinanderlaufen.
+- **Alles auf einmal setzen:** `hardCalibration()` startet das Modul neu und
+  schreibt danach **alle** Konfigurationsregister, entweder aus einer
+  `XM125DistanceConfig` oder über Einzelparameter mit Werksvorgabe als
+  Rückfallwert. Nötig ist das, weil ein Modul-Reset die Register auf
+  Werksvorgabe zurückwirft (siehe [07-Kalibrierung.md, A.5](07-Kalibrierung.md#a5-kalibrierung-ist-flüchtig)).
 - **Fehlerdiagnose beim Schreiben:** Schlägt `writeConfig()` fehl, gibt
   `getLastFailedConfigRegister()` die genaue Registeradresse zurück, bei
   der der I²C-Schreibvorgang fehlgeschlagen ist — nützlich, um einen

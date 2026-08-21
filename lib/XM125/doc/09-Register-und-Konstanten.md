@@ -75,6 +75,9 @@ UART-Pin des XM125 verkabelt sein.
 | `XM125_DEFAULT_APPLY_TIMEOUT_MS` | `3000` | alle Apply-/Kalibrier-/Start-/Stop-Kommandos |
 | `XM125_DEFAULT_MEASURE_TIMEOUT_MS` | `1000` | Default-Messtimeout der Zustandsmaschine, änderbar über `setMeasureTimeout()` |
 | `XM125_WAKEUP_TIMEOUT_MS` | `1500` | `wakeUp()`, indirekt `begin()` |
+| `XM125_RESET_BOOT_DELAY_MS` | `100` | `resetModule()` — Anlaufsperre, bevor der Bus nach dem Neustart überhaupt gefragt wird |
+| `XM125_RESET_POLL_INTERVAL_MS` | `10` | `resetModule()` — Abstand der Bereitschaftsabfragen |
+| `XM125_RESET_TIMEOUT_MS` | `3000` | `resetModule()`, indirekt `hardCalibration()` |
 
 ---
 
@@ -138,7 +141,14 @@ Beispiel: `result = 0x00190002` → 2 Peaks, keine Flags, Temperatur `0x0019` = 
 Die Reihenfolge in der Tabelle entspricht exakt der Schreibreihenfolge in
 `writeConfig()` (**✔ Code**) — hilfreich, wenn
 `getLastFailedConfigRegister()` eine Adresse meldet: alle davor stehenden
-Register wurden bereits erfolgreich geschrieben.
+Register wurden bereits erfolgreich geschrieben. Es ist außerdem die
+Reihenfolge der Parameter von `hardCalibration(startMm, endMm, …)`.
+
+Jeder Default steht im Code einmal als benannte Konstante
+`XM125D_DEFAULT_<REGISTERNAME>` (also `XM125D_DEFAULT_START_MM = 250`,
+`XM125D_DEFAULT_END_MM = 3000` usw.). Daraus werden sowohl die Feld-Defaults
+von `XM125DistanceConfig` als auch die Parameter-Defaults von
+`hardCalibration()` gespeist — beide können deshalb nicht auseinanderlaufen.
 
 ### 3.4 Kommandos
 
@@ -297,4 +307,5 @@ Presence:    Result 0x0010 | Dist 0x0011 | Intra 0x0012 | Inter 0x0013
              CMD 1=Apply 2=Start 3=Stop
 
 Timeouts:    Apply/Cal 3000 ms | Measure 1000 ms | Wakeup 1500 ms
+             Reset 3000 ms (+100 ms Anlaufsperre)
 ```

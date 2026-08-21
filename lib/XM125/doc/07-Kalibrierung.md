@@ -101,7 +101,8 @@ mitläuft — erkennbar am eigenen Status-Bit `XM125P_STATUS_SENSOR_CALIBRATE_OK
 ## A.2 Welches Kommando macht was
 
 Die Distance-Firmware kennt vier kalibrierungsrelevante Kommandos. Diese
-Library bildet sie 1:1 ab (**✔ Code**, [XM125Distance.cpp](../XM125Distance.cpp)):
+Library bildet sie 1:1 ab (**✔ Code**, [XM125Distance.cpp](../XM125Distance.cpp))
+und setzt eine fünfte Methode obendrauf, die den Modul-Reset voranstellt:
 
 | Methode | Kommando (Reg. `0x0100`) | Schreibt `config`? | Sensor-Kal. (1) | Detektor-Kal. (2–5) | Typische Dauer |
 |---|---|---|---|---|---|
@@ -109,6 +110,7 @@ Library bildet sie 1:1 ab (**✔ Code**, [XM125Distance.cpp](../XM125Distance.cp
 | `applyConfiguration()` | `3` | **ja** (`writeConfig()`) | nein | nein | kurz (~10–100 ms) |
 | `calibrate()` | `4` | nein | ja | ja | wie `applyConfigAndCalibrate()` |
 | `recalibrate()` | `5` | nein | ja (schneller Teil) | nur temperaturabhängige Teile | deutlich kürzer als `calibrate()` |
+| `hardCalibration()` | `RESET`, dann `1` | **ja** (alle 14 Register) | ja | ja | ~0,5–2,5 s |
 
 Merksätze:
 
@@ -123,6 +125,23 @@ Merksätze:
   das Flag `CALIBRATION_NEEDED` (**📘 Acconeer**: erneuert vor allem die
   temperaturabhängigen Anteile, ohne die Umgebungsreferenz komplett neu
   aufzunehmen).
+- **`hardCalibration()` = der große Hammer**: erst `XM125_CMD_RESET_MODULE`,
+  dann alle 14 Konfigurationsregister neu schreiben, dann Kommando `1`. Für
+  den Fall, dass das Modul selbst in einem kaputten Zustand steckt und ein
+  `applyConfigAndCalibrate()` deshalb gar nicht mehr greift — siehe A.5
+  (der Reset wirft die Kalibrierung *und* die Konfiguration weg, deshalb
+  gehört beides zwingend danach). Alle Konfigurationswerte sind als Parameter
+  setzbar, ohne Angabe gilt die Werksvorgabe:
+
+  ```cpp
+  radar.hardCalibration();                     // alles auf Werksvorgabe
+  radar.hardCalibration(150, 2500);            // nur Messbereich anders
+
+  XM125DistanceConfig cfg;                     // oder benannt, empfohlen
+  cfg.startMm        = RADAR_START_MM;
+  cfg.reflectorShape = XM125D_REFLECTOR_PLANAR;
+  radar.hardCalibration(cfg);
+  ```
 
 > **Achtung — Reihenfolge:** `applyConfigAndCalibrate()` schreibt *zuerst*
 > alle `config`-Register und kalibriert *danach*. Werden `startMm`, `endMm`,
@@ -196,8 +215,12 @@ Moment, in dem `applyConfigAndCalibrate()` / `calibrate()` läuft:
 
 Die Kalibrierdaten liegen im RAM der Modul-MCU (**📘 Acconeer**). Konsequenzen:
 
-- Nach **jedem** Power-Cycle, nach `XM125_CMD_RESET_MODULE` und nach einem
-  Brown-Out muss neu kalibriert werden.
+- Nach **jedem** Power-Cycle, nach `XM125_CMD_RESET_MODULE` (also auch nach
+  `resetModule()`) und nach einem Brown-Out muss neu kalibriert werden — und
+  weil der Reset zusätzlich alle Konfigurationsregister auf Werksvorgabe
+  zurücksetzt, muss auch die Konfiguration neu hoch. Genau diese Reihenfolge
+  steckt in `hardCalibration()`: Reset → alle Register schreiben →
+  kalibrieren.
 - Die Library speichert **nichts** persistent — es gibt keine Funktion, eine
   Kalibrierung zu sichern und zurückzuspielen (**✔ Code**).
 - Ein Reset des Teensys allein reicht **nicht** aus, damit das Modul seine
@@ -303,8 +326,8 @@ Nach einem fehlgeschlagenen Kalibrierkommando `getDetectorStatus()` auswerten
 | 23 | `XM125D_STATUS_CONFIG_APPLY_ERROR` | Konfiguration abgelehnt | Wertebereich prüfen (siehe [04-Konfiguration.md](04-Konfiguration.md)) |
 | 24 | `XM125D_STATUS_SENSOR_CALIBRATE_ERROR` | **Sensor-Kalibrierung (Schritt 1) fehlgeschlagen** | Versorgung/Verkabelung, Temperatur außerhalb Spezifikation, Modul-Reset |
 | 25 | `XM125D_STATUS_DETECTOR_CALIBRATE_ERROR` | **Detektor-Kalibrierung (Schritte 2–5) fehlgeschlagen** | Umgebung während Kalibrierung (Bewegung, Objekt im Nahbereich), `closeRangeLeakageCancellation` testweise aus, `startMm` erhöhen |
-| 28 | `XM125_STATUS_DETECTOR_ERROR` | Sammelfehler | s.o., danach `calibrate()` oder komplette Neuinitialisierung |
-| 31 | `XM125_STATUS_BUSY` | Kommando läuft noch | warten; bleibt es dauerhaft gesetzt → Power-Cycle |
+| 28 | `XM125_STATUS_DETECTOR_ERROR` | Sammelfehler | s.o., danach `calibrate()`, sonst `hardCalibration()` (Reset + alles neu) |
+| 31 | `XM125_STATUS_BUSY` | Kommando läuft noch | warten; bleibt es dauerhaft gesetzt → `hardCalibration()`, hilft das nicht: Power-Cycle |
 
 Auswertung als Hilfsfunktion:
 

@@ -104,6 +104,27 @@ Zieht `WAKE_UP` auf `LOW`. **Wirkungslos**, wenn `wakePin == -1`.
 > wäre das Modul danach nur per Power-Cycle erreichbar. Diese Library sendet
 > deshalb bewusst **kein** Sleep-Kommando.
 
+## `bool resetModule(uint32_t timeoutMs = XM125_RESET_TIMEOUT_MS)`
+
+Sendet `XM125_CMD_RESET_MODULE` (1381192737 = `0x52535421`, ASCII `RST!`) und
+wartet, bis die interne MCU wieder hochgefahren ist.
+
+| | |
+|---|---|
+| **Rückgabe** | `true`, wenn der Sensor wieder antwortet, `BUSY` zurückgegangen ist und kein `DETECTOR_ERROR` ansteht |
+| **Blockiert** | **lang** — 100 ms Anlaufsperre + Warten auf Bereitschaft, Worst Case `timeoutMs` |
+| **Wann** | nach `DETECTOR_ERROR`, bei hängendem `BUSY`, bei dauerhaft unplausiblen Werten |
+
+> ⚠ Ein Neustart verwirft **alles** im Modul: alle Konfigurationsregister
+> fallen auf ihre Werksvorgaben zurück und die Kalibrierung ist weg. Danach
+> muss die Konfiguration neu geschrieben **und** neu kalibriert werden — genau
+> das erledigt [`hardCalibration()`](#bool-hardcalibrationconst-xm125distanceconfig-cfg-uint32_t-timeoutms--3000-uint32_t-resettimeoutms--3000)
+> in einem Aufruf.
+
+Der Schreibfehler des Kommandos selbst wird bewusst ignoriert: das Modul
+startet sofort neu und quittiert die laufende Transaktion oft nicht mehr. Ob
+der Neustart geklappt hat, entscheidet allein die Bereitschaftsprüfung danach.
+
 ## Register-Getter
 
 ```cpp
@@ -230,6 +251,84 @@ Kommando `4` (`CALIBRATE`) — volle Neukalibrierung, **ohne** die
 Kommando `5` (`RECALIBRATE`) — leichtgewichtige Nachkalibrierung, gedacht als
 Reaktion auf `getCalibrationNeeded()`. Blockiert lang, aber deutlich kürzer
 als `calibrate()`.
+
+## `bool hardCalibration(const XM125DistanceConfig& cfg, uint32_t timeoutMs = 3000, uint32_t resetTimeoutMs = 3000)`
+
+**Harte Neukalibrierung: Sensor neu starten, danach die komplette
+Konfiguration hochladen und kalibrieren.** Drei Schritte in einem Aufruf:
+
+1. [`resetModule()`](#bool-resetmoduleuint32_t-timeoutms--xm125_reset_timeout_ms) — Modul neu starten, warten bis es bereit ist
+2. `writeConfig()` — **alle 14** Konfigurationsregister schreiben
+3. Kommando `1` (`APPLY_CONFIG_AND_CALIBRATE`) — anwenden und kalibrieren
+
+| | |
+|---|---|
+| **Rückgabe** | `true` nur, wenn Neustart, Registerschreiben und Kalibrierung alle durchgelaufen sind |
+| **Blockiert** | **sehr lang** — Worst Case `resetTimeoutMs + timeoutMs`, typisch ~1–3 s |
+| **Wann** | beim Hochfahren oder in Kalibrierskripten, **nie** im Roboterzyklus |
+
+Warum überhaupt der Neustart: Nach einem `DETECTOR_ERROR`, bei hängendem
+`BUSY` oder wenn ein Sensor dauerhaft Unsinn liefert, reicht
+`applyConfigAndCalibrate()` nicht mehr — erst der Neustart räumt den internen
+Zustand des Moduls ab. Und weil der Neustart die Register auf Werksvorgabe
+zurücksetzt, werden hier grundsätzlich **alle** Werte neu geschrieben, nicht
+nur die vom Default abweichenden.
+
+Nebenwirkungen:
+
+- `cfg` wird nach `config` übernommen — auch wenn der Aufruf scheitert, damit
+  ein späteres `applyConfiguration()` nicht heimlich die alten Werte schreibt.
+- Eine laufende Messung wird verworfen (Zustand `IDLE`, letztes Ergebnis auf
+  `valid = false`). Danach `startMeasurement()` neu aufrufen.
+- `setMeasureTimeout()` und `setMaxPeaksToFetch()` bleiben unberührt — sie
+  stehen im Treiber, nicht im Sensor.
+- Bei `false` unterscheidet `getLastFailedConfigRegister()` wie gewohnt:
+  `!= 0xFFFF` = I²C-Problem beim Schreiben, `== 0xFFFF` = es lag am Neustart
+  oder an der Kalibrierung.
+
+## `bool hardCalibration(uint32_t startMm, …)` — Einzelparameter
+
+Gleiche Funktion, nur mit einem Parameter je Konfigurationswert statt der
+Struktur. Alles Weggelassene bekommt die Werksvorgabe aus dem Datenblatt
+(`XM125D_DEFAULT_*`, siehe [09-Register-und-Konstanten.md](09-Register-und-Konstanten.md)):
+
+```cpp
+radar.hardCalibration();                     // alles auf Werksvorgabe
+radar.hardCalibration(150, 2500);            // nur Messbereich anders
+radar.hardCalibration(150, 2500, 0, false);  // + Leakage-Kompensation aus
+```
+
+Reihenfolge der Parameter (identisch zur Feldreihenfolge in
+`XM125DistanceConfig`):
+
+| # | Parameter | Default |
+|---|---|---|
+| 1 | `startMm` | 250 |
+| 2 | `endMm` | 3000 |
+| 3 | `maxStepLength` | 0 (automatisch) |
+| 4 | `closeRangeLeakageCancellation` | `true` |
+| 5 | `signalQuality` | 15000 |
+| 6 | `maxProfile` | `XM125D_PROFILE5` |
+| 7 | `thresholdMethod` | `XM125D_THRESHOLD_CFAR` |
+| 8 | `peakSorting` | `XM125D_SORT_STRONGEST` |
+| 9 | `numFramesRecordedThreshold` | 100 |
+| 10 | `fixedAmplitudeThreshold` | 100000 |
+| 11 | `thresholdSensitivity` | 500 |
+| 12 | `reflectorShape` | `XM125D_REFLECTOR_GENERIC` |
+| 13 | `fixedStrengthThreshold` | 0 |
+| 14 | `measureOnWakeup` | `false` |
+
+> Weiter hinten liegende Werte einzeln zu setzen wird schnell unleserlich
+> („was war noch der neunte Parameter?"). Dafür die Struktur-Variante nehmen —
+> dort steht jeder Wert bei seinem Namen, und nur dort lassen sich auch die
+> Zeitlimits angeben:
+>
+> ```cpp
+> XM125DistanceConfig cfg;                 // startet auf den Werksvorgaben
+> cfg.startMm        = RADAR_START_MM;
+> cfg.reflectorShape = XM125D_REFLECTOR_PLANAR;
+> radar.hardCalibration(cfg);
+> ```
 
 ## Messbetrieb: `startMeasurement()` / `isMeasuring()` / `getLastResult()`
 
@@ -427,6 +526,8 @@ damit die Grundlage, um `intraDetectionThreshold` /
 | `applyConfigAndCalibrate()` | 300–2000 ms | 3000 ms + Config-Write |
 | `calibrate()` | 300–2000 ms | 3000 ms |
 | `recalibrate()` | < 500 ms | 3000 ms |
+| `resetModule()` | ~100–500 ms | `timeoutMs` (3000 ms) |
+| `hardCalibration()` | ~0,5–2,5 s | `resetTimeoutMs` + `timeoutMs` (6000 ms) + Config-Write |
 | `startMeasurement()` | ~0,7 ms | ~1,4 ms (mit Clock-Stretching-Probe) |
 | `isMeasuring()` | 0 oder ~0,7 ms (ein Statusregister) | ~0,7 ms + einmalig ~1,4 ms je geholtem Peak |
 | `getLastResult()` / `hasResult()` / `getState()` | 0 (nur Speicherzugriff) | 0 |
@@ -439,7 +540,8 @@ damit die Grundlage, um `intraDetectionThreshold` /
 blockiert nicht — `startMeasurement()`, `isMeasuring()` und `getLastResult()`
 kehren immer sofort zurück, Timeout und die internen Pausen führt die
 Zustandsmaschine selbst. Blockierend bleiben nur die Einrichtungskommandos
-(`applyConfig*`, `calibrate`, `recalibrate`, `begin`) und das ausdrücklich für
+(`applyConfig*`, `calibrate`, `recalibrate`, `resetModule`, `hardCalibration`,
+`begin`) und das ausdrücklich für
 Testskripte gedachte `measureBlocking()`; sie gehören in `setup()` bzw. in
 klar definierte Pausen. Beim Presence-Detektor misst das Modul nach `start()`
 ohnehin selbstständig weiter, `update()` holt nur ab.

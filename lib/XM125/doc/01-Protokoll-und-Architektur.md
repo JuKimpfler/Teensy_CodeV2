@@ -56,7 +56,12 @@ Abfrage über die statischen Helfer `XM125Base::statusBusy(status)` und
 | `XM125_CMD_ENABLE_UART_LOGS` | 32 | UART-Logging aktivieren |
 | `XM125_CMD_DISABLE_UART_LOGS` | 33 | UART-Logging deaktivieren |
 | `XM125_CMD_LOG_CONFIGURATION` | 34 | Aktuelle Konfiguration ins Log schreiben |
-| `XM125_CMD_RESET_MODULE` | 1381192737 (0x52535421, "Magic Number") | Modul-Reset laut Datenblatt |
+| `XM125_CMD_RESET_MODULE` | 1381192737 (0x52535421, "Magic Number") | Modul-Reset laut Datenblatt — `XM125Base::resetModule()` |
+
+Die drei Log-Kommandos haben keine eigene Methode. `resetModule()` schon, denn
+nach dem Reset ist Nacharbeit nötig: Konfigurationsregister und Kalibrierung
+sind weg. `XM125Distance::hardCalibration()` erledigt Reset, Registerschreiben
+und Kalibrierung in einem Aufruf.
 
 ## Ablauf einer Messung (laut Acconeer User Guide)
 

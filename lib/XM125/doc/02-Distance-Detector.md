@@ -104,6 +104,8 @@ Damit senden alle Sensoren gleichzeitig — zum Übersprechen siehe
 | `applyConfiguration(timeoutMs = 3000)` | Nur anwenden, ohne Neukalibrierung (z.B. nach Neustart mit noch gültiger alter Kalibrierung) |
 | `calibrate(timeoutMs = 3000)` | Sensor/Detektor neu kalibrieren |
 | `recalibrate(timeoutMs = 3000)` | Wie `calibrate()`, für den Fall dass `calibrationNeeded` gesetzt ist |
+| `hardCalibration(cfg, timeoutMs = 3000, resetTimeoutMs = 3000)` | **Harte Neukalibrierung**: Modul neu starten, danach alle 14 Konfigurationsregister schreiben und kalibrieren. Blockiert lang, gehört ins Hochfahren |
+| `hardCalibration(startMm, endMm, …)` | Dasselbe mit Einzelparametern statt Struktur — jeder Konfigurationswert einzeln setzbar, alles Weggelassene bekommt die Werksvorgabe. `hardCalibration()` ohne Argumente = Neustart + komplette Werksvorgabe |
 | `startMeasurement()` | **Messung starten**, wartet nicht |
 | `isMeasuring()` | **Läuft eine Messung?** — treibt die Zustandsmaschine, blockiert nie |
 | `getLastResult()` | **Letztes Messergebnis** als `XM125DistanceResult` (Cache, kein I²C) |
@@ -198,8 +200,12 @@ jeweils `+i` für Peak `i` (0-basiert, bis zu 10 Peaks).
 
 | Kommando | Wert | Ausgelöst durch |
 |---|---|---|
-| `APPLY_CONFIG_AND_CALIBRATE` | 1 | `applyConfigAndCalibrate()` |
+| `APPLY_CONFIG_AND_CALIBRATE` | 1 | `applyConfigAndCalibrate()`, `hardCalibration()` |
 | `MEASURE_DISTANCE` | 2 | `startMeasurement()` |
 | `APPLY_CONFIGURATION` | 3 | `applyConfiguration()` |
 | `CALIBRATE` | 4 | `calibrate()` |
 | `RECALIBRATE` | 5 | `recalibrate()` |
+
+Dazu das gemeinsame Kommando `RESET_MODULE` (1381192737 = `0x52535421`), das
+`XM125Base::resetModule()` sendet und `hardCalibration()` seinem
+`APPLY_CONFIG_AND_CALIBRATE` voranstellt.

@@ -71,6 +71,9 @@ static constexpr uint32_t XM125_CMD_RESET_MODULE      = 1381192737UL; ///< "Magi
 static constexpr uint32_t XM125_DEFAULT_APPLY_TIMEOUT_MS   = 3000; ///< Kalibrierung kann bis zu ~1-2s dauern
 static constexpr uint32_t XM125_DEFAULT_MEASURE_TIMEOUT_MS = 1000;
 static constexpr uint32_t XM125_WAKEUP_TIMEOUT_MS          = 1500;
+static constexpr uint32_t XM125_RESET_BOOT_DELAY_MS        = 100;  ///< Anlaufzeit nach RESET_MODULE, bevor der Bus ueberhaupt gefragt wird
+static constexpr uint32_t XM125_RESET_POLL_INTERVAL_MS     = 10;   ///< Abstand der Bereitschaftsabfragen nach dem Neustart
+static constexpr uint32_t XM125_RESET_TIMEOUT_MS           = 3000; ///< bis der Sensor nach dem Neustart wieder bereit meldet
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  XM125Base  —  Low-Level I²C-Register-Zugriff, von Distance/Presence geerbt
@@ -111,6 +114,23 @@ public:
      * wäre das Modul dann nur noch per Power-Cycle erreichbar.
      */
     void sleep();
+
+    /**
+     * NEUSTART DES MODULS. Sendet XM125_CMD_RESET_MODULE ("Magic Number") und
+     * wartet blockierend, bis die interne MCU wieder hochgefahren ist.
+     *
+     * Ein Neustart verwirft ALLES, was im Modul stand: Konfigurations-
+     * register fallen auf ihre Werksvorgaben zurueck und die Kalibrierung ist
+     * weg. Danach muss die Konfiguration neu geschrieben und neu kalibriert
+     * werden -- genau das macht XM125Distance::hardCalibration().
+     *
+     * Blockiert bis zu timeoutMs (typisch einige hundert ms). Nur beim
+     * Hochfahren bzw. in Kalibrierskripten verwenden, nie im Roboterzyklus.
+     *
+     * @return true, wenn der Sensor wieder antwortet, BUSY zurueckgegangen ist
+     *         und kein DETECTOR_ERROR ansteht.
+     */
+    bool resetModule(uint32_t timeoutMs = XM125_RESET_TIMEOUT_MS);
 
     // ── Gemeinsame Register ───────────────────────────────────────────────
     uint32_t getVersionRaw();          ///< Reg 0x0000, Rohwert (Bit-Layout lt. Datenblatt prüfen)

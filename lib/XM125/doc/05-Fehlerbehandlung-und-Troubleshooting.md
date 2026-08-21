@@ -19,10 +19,13 @@ bool error = XM125Base::statusError(detStatus);
   annimmt. Prüfen, ob die richtige Klasse (`XM125Distance` vs.
   `XM125Presence`) zur geflashten Firmware passt.
 - **`error` (Bit 28, `DETECTOR_ERROR`)**: Allgemeiner Detektorfehler,
-  meist behebbar durch Neustart/Neukonfiguration.
+  meist behebbar durch Neustart/Neukonfiguration — genau das macht
+  `hardCalibration()` (Modul-Reset, alle Konfigurationsregister neu, dann
+  kalibrieren).
 - **`busy` (Bit 31)**: Ein Kommando läuft noch — sollte nach kurzer Zeit
   von selbst auf `false` gehen; bleibt es dauerhaft `true`, deutet das auf
-  einen hängenden Sensor hin (Power-Cycle nötig).
+  einen hängenden Sensor hin: erst `hardCalibration()` versuchen, hilft das
+  nicht, bleibt nur der Power-Cycle.
 
 ## Bekannte Fehlerquellen in diesem Projekt
 
@@ -122,6 +125,23 @@ if (!radar.isMeasuring()) {        // Runde fertig oder abgebrochen
 > Wiederanlauf deshalb gedrosselt: `systemlib::retryRadarSetup()` versucht es
 > höchstens alle `RADAR_REINIT_INTERVAL_MS`, sonst würde ein abgezogener
 > Sensor jeden Zyklus ausbremsen.
+
+Hilft auch das wiederholte `setupSensor()` nicht — der Sensor antwortet zwar,
+liefert aber weiter Fehlschläge oder `DETECTOR_ERROR` — steckt das Modul
+selbst in einem kaputten Zustand. Dann die nächste Stufe nehmen:
+
+```cpp
+XM125DistanceConfig cfg;               // Projektwerte aus params.h
+cfg.startMm        = RADAR_START_MM;
+cfg.endMm          = RADAR_END_MM;
+cfg.reflectorShape = XM125D_REFLECTOR_PLANAR;
+
+radar.hardCalibration(cfg);            // Modul-Reset + alle Register + Kalibrierung
+radar.startMeasurement();              // Zustandsmaschine steht danach auf IDLE
+```
+
+Das blockiert noch länger als `setupSensor()` (Reset + Kalibrierung, ~1–3 s)
+und gehört deshalb erst recht nicht ungedrosselt in den Zyklus.
 
 ### 5. Sensor bei Start nicht erreichbar (`begin()` liefert `false`)
 

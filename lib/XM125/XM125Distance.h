@@ -150,24 +150,42 @@ static constexpr uint32_t XM125D_RESULT_CALIBRATION_NEEDED   = (1UL << 9);
 static constexpr uint32_t XM125D_RESULT_MEASURE_ERROR        = (1UL << 10);
 static constexpr uint32_t XM125D_RESULT_TEMPERATURE_SHIFT    = 16; ///< Bit 16-31
 
+// ── Werksvorgaben der Konfigurationsregister (lt. Acconeer-Datenblatt) ──────
+// An genau einer Stelle definiert, damit XM125DistanceConfig und die
+// Parameterliste von hardCalibration() nicht auseinanderlaufen koennen.
+static constexpr uint32_t XM125D_DEFAULT_START_MM                      = 250;
+static constexpr uint32_t XM125D_DEFAULT_END_MM                        = 3000;
+static constexpr uint32_t XM125D_DEFAULT_MAX_STEP_LENGTH               = 0;      ///< 0 = automatisch
+static constexpr bool     XM125D_DEFAULT_CLOSE_RANGE_LEAKAGE_CANCEL    = true;
+static constexpr uint32_t XM125D_DEFAULT_SIGNAL_QUALITY                = 15000;
+static constexpr uint32_t XM125D_DEFAULT_MAX_PROFILE                   = XM125D_PROFILE5;
+static constexpr uint32_t XM125D_DEFAULT_THRESHOLD_METHOD              = XM125D_THRESHOLD_CFAR;
+static constexpr uint32_t XM125D_DEFAULT_PEAK_SORTING                  = XM125D_SORT_STRONGEST;
+static constexpr uint32_t XM125D_DEFAULT_NUM_FRAMES_RECORDED_THRESHOLD = 100;
+static constexpr uint32_t XM125D_DEFAULT_FIXED_AMPLITUDE_THRESHOLD     = 100000;
+static constexpr uint32_t XM125D_DEFAULT_THRESHOLD_SENSITIVITY         = 500;
+static constexpr uint32_t XM125D_DEFAULT_REFLECTOR_SHAPE               = XM125D_REFLECTOR_GENERIC;
+static constexpr uint32_t XM125D_DEFAULT_FIXED_STRENGTH_THRESHOLD      = 0;
+static constexpr bool     XM125D_DEFAULT_MEASURE_ON_WAKEUP             = false;
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  DistanceConfig  —  Konfigurationswerte, Default lt. Acconeer-Datenblatt
 // ═════════════════════════════════════════════════════════════════════════════
 struct XM125DistanceConfig {
-    uint32_t startMm                     = 250;
-    uint32_t endMm                       = 3000;
-    uint32_t maxStepLength                = 0;                        ///< 0 = automatisch
-    bool     closeRangeLeakageCancellation = true;
-    uint32_t signalQuality                = 15000;
-    uint32_t maxProfile                   = XM125D_PROFILE5;
-    uint32_t thresholdMethod              = XM125D_THRESHOLD_CFAR;
-    uint32_t peakSorting                  = XM125D_SORT_STRONGEST;
-    uint32_t numFramesRecordedThreshold    = 100;
-    uint32_t fixedAmplitudeThreshold      = 100000;
-    uint32_t thresholdSensitivity          = 500;
-    uint32_t reflectorShape                = XM125D_REFLECTOR_GENERIC;
-    uint32_t fixedStrengthThreshold       = 0;
-    bool     measureOnWakeup              = false;
+    uint32_t startMm                     = XM125D_DEFAULT_START_MM;
+    uint32_t endMm                       = XM125D_DEFAULT_END_MM;
+    uint32_t maxStepLength                = XM125D_DEFAULT_MAX_STEP_LENGTH;  ///< 0 = automatisch
+    bool     closeRangeLeakageCancellation = XM125D_DEFAULT_CLOSE_RANGE_LEAKAGE_CANCEL;
+    uint32_t signalQuality                = XM125D_DEFAULT_SIGNAL_QUALITY;
+    uint32_t maxProfile                   = XM125D_DEFAULT_MAX_PROFILE;
+    uint32_t thresholdMethod              = XM125D_DEFAULT_THRESHOLD_METHOD;
+    uint32_t peakSorting                  = XM125D_DEFAULT_PEAK_SORTING;
+    uint32_t numFramesRecordedThreshold    = XM125D_DEFAULT_NUM_FRAMES_RECORDED_THRESHOLD;
+    uint32_t fixedAmplitudeThreshold      = XM125D_DEFAULT_FIXED_AMPLITUDE_THRESHOLD;
+    uint32_t thresholdSensitivity          = XM125D_DEFAULT_THRESHOLD_SENSITIVITY;
+    uint32_t reflectorShape                = XM125D_DEFAULT_REFLECTOR_SHAPE;
+    uint32_t fixedStrengthThreshold       = XM125D_DEFAULT_FIXED_STRENGTH_THRESHOLD;
+    bool     measureOnWakeup              = XM125D_DEFAULT_MEASURE_ON_WAKEUP;
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -233,6 +251,88 @@ public:
     /** Sensor/Detektor neu kalibrieren (z.B. wenn calibrationNeeded gesetzt ist). */
     bool calibrate(uint32_t timeoutMs = XM125_DEFAULT_APPLY_TIMEOUT_MS);
     bool recalibrate(uint32_t timeoutMs = XM125_DEFAULT_APPLY_TIMEOUT_MS);
+
+    // ── Harte Neukalibrierung: Neustart + komplette Konfiguration ─────────
+
+    /**
+     * HARTE NEUKALIBRIERUNG. Startet den Sensor neu und laedt danach ALLE
+     * Konfigurationsregister neu hoch, gefolgt von einer vollstaendigen
+     * Kalibrierung. Drei Schritte in einem Aufruf:
+     *
+     *   1. resetModule()               Modul neu starten, warten bis bereit
+     *   2. writeConfig()               alle 14 Konfigurationsregister schreiben
+     *   3. APPLY_CONFIG_AND_CALIBRATE  anwenden, Sensor+Detektor kalibrieren
+     *
+     * Wofuer: Nach einem DETECTOR_ERROR, bei haengendem BUSY oder wenn ein
+     * Sensor dauerhaft Unsinn liefert, reicht applyConfigAndCalibrate() nicht
+     * mehr -- erst der Neustart raeumt den internen Zustand des Moduls ab. Da
+     * ein Neustart die Register auf die Werksvorgaben zuruecksetzt, werden
+     * hier grundsaetzlich ALLE Werte neu geschrieben, nicht nur die vom
+     * Default abweichenden.
+     *
+     * ACHTUNG - BLOCKIERT bis zu resetTimeoutMs + timeoutMs (typisch ~1-3 s).
+     * Gehoert ins Hochfahren oder in ein Kalibrierskript, NICHT in den
+     * Roboterzyklus. Waehrend der Kalibrierung darf sich vor dem Sensor nichts
+     * bewegen -- die Umgebung wird als Referenz aufgenommen.
+     *
+     * Eine laufende Messung wird verworfen (Zustand IDLE, letztes Ergebnis
+     * ungueltig); startMeasurement() muss danach neu aufgerufen werden. Die
+     * reinen Library-Einstellungen setMeasureTimeout() und setMaxPeaksToFetch()
+     * bleiben unberuehrt -- sie stehen im Treiber, nicht im Sensor.
+     *
+     * @param cfg             kompletter Satz Konfigurationswerte; wird in
+     *                        `config` uebernommen, auch wenn es schiefgeht.
+     * @param timeoutMs       Zeitlimit fuer Anwenden + Kalibrieren.
+     * @param resetTimeoutMs  Zeitlimit fuer den Neustart.
+     * @return true nur, wenn Neustart, Registerschreiben und Kalibrierung alle
+     *         durchgelaufen sind. Bei false zeigt getLastFailedConfigRegister()
+     *         das Register, an dem das Schreiben scheiterte (0xFFFF = es lag
+     *         nicht am Schreiben, sondern am Neustart oder an der Kalibrierung).
+     */
+    bool hardCalibration(const XM125DistanceConfig& cfg,
+                         uint32_t timeoutMs      = XM125_DEFAULT_APPLY_TIMEOUT_MS,
+                         uint32_t resetTimeoutMs = XM125_RESET_TIMEOUT_MS);
+
+    /**
+     * Gleiche Funktion, nur mit Einzelparametern statt Struktur: jeder
+     * Konfigurationswert ist einzeln setzbar, alles Weggelassene bekommt die
+     * Werksvorgabe aus dem Datenblatt (XM125D_DEFAULT_*).
+     *
+     *   radar.hardCalibration();                     // alles auf Werksvorgabe
+     *   radar.hardCalibration(150, 2500);            // nur Messbereich anders
+     *   radar.hardCalibration(150, 2500, 0, false);  // + Leakage-Kompensation aus
+     *
+     * Weiter hinten liegende Werte einzeln zu setzen wird schnell unleserlich
+     * ("was war noch der neunte Parameter?"). Dafuer die Variante mit
+     * XM125DistanceConfig nehmen -- dort steht jeder Wert bei seinem Namen:
+     *
+     *   XM125DistanceConfig cfg;                 // startet auf den Werksvorgaben
+     *   cfg.startMm        = RADAR_START_MM;
+     *   cfg.reflectorShape = XM125D_REFLECTOR_PLANAR;
+     *   radar.hardCalibration(cfg);
+     *
+     * Zeitlimits sind hier bewusst nicht anhaengbar -- die Parameterliste ist
+     * lang genug; wer sie braucht, nimmt die Struktur-Variante.
+     */
+    bool hardCalibration(uint32_t startMm,
+                         uint32_t endMm                         = XM125D_DEFAULT_END_MM,
+                         uint32_t maxStepLength                 = XM125D_DEFAULT_MAX_STEP_LENGTH,
+                         bool     closeRangeLeakageCancellation = XM125D_DEFAULT_CLOSE_RANGE_LEAKAGE_CANCEL,
+                         uint32_t signalQuality                 = XM125D_DEFAULT_SIGNAL_QUALITY,
+                         uint32_t maxProfile                    = XM125D_DEFAULT_MAX_PROFILE,
+                         uint32_t thresholdMethod               = XM125D_DEFAULT_THRESHOLD_METHOD,
+                         uint32_t peakSorting                   = XM125D_DEFAULT_PEAK_SORTING,
+                         uint32_t numFramesRecordedThreshold    = XM125D_DEFAULT_NUM_FRAMES_RECORDED_THRESHOLD,
+                         uint32_t fixedAmplitudeThreshold       = XM125D_DEFAULT_FIXED_AMPLITUDE_THRESHOLD,
+                         uint32_t thresholdSensitivity          = XM125D_DEFAULT_THRESHOLD_SENSITIVITY,
+                         uint32_t reflectorShape                = XM125D_DEFAULT_REFLECTOR_SHAPE,
+                         uint32_t fixedStrengthThreshold        = XM125D_DEFAULT_FIXED_STRENGTH_THRESHOLD,
+                         bool     measureOnWakeup               = XM125D_DEFAULT_MEASURE_ON_WAKEUP);
+
+    /** Ohne Argumente: Neustart + komplette Werksvorgabe (eigene Ueberladung,
+     *  damit der Aufruf hardCalibration() nicht zwischen den beiden oberen
+     *  Varianten mehrdeutig wird). */
+    bool hardCalibration() { return hardCalibration(XM125D_DEFAULT_START_MM); }
 
     // ═══ Messbetrieb: die drei Kommandos ══════════════════════════════════
 

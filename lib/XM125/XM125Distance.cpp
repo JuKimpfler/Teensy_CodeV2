@@ -15,6 +15,10 @@
  * delay() -- die beiden noetigen Pausen (BUSY-Anlauf, Peak-Register) werden
  * ueber micros()-Zeitstempel ausgesessen, waehrenddessen kann der Aufrufer
  * andere Sensoren bedienen.
+ *
+ * Die Einrichtung davor blockiert dagegen bewusst: writeConfig(),
+ * applyConfigAndCalibrate() und hardCalibration() (Neustart + komplette
+ * Konfiguration) laufen einmal beim Hochfahren bzw. in Kalibrierskripten.
  */
 
 #include "XM125Distance.h"
@@ -65,6 +69,62 @@ bool XM125Distance::calibrate(uint32_t timeoutMs) {
 
 bool XM125Distance::recalibrate(uint32_t timeoutMs) {
     return _executeCommand(XM125D_CMD_RECALIBRATE, timeoutMs);
+}
+
+bool XM125Distance::hardCalibration(const XM125DistanceConfig& cfg,
+                                    uint32_t timeoutMs,
+                                    uint32_t resetTimeoutMs) {
+    // Uebernehmen, bevor irgendetwas schiefgehen kann: `config` soll danach in
+    // jedem Fall den Stand zeigen, der zuletzt gewollt war -- sonst wuerde ein
+    // spaeteres applyConfiguration() heimlich die alten Werte schreiben.
+    config = cfg;
+
+    // Der Neustart macht jede laufende Messung hinfaellig: das Kommando ist
+    // mit dem alten Modulzustand verschwunden, ein spaeteres isMeasuring()
+    // wuerde auf ein Ergebnis warten, das nie kommt.
+    _state       = XM125MeasureState::IDLE;
+    _result.valid = false;
+    _peaksToRead = 0;
+
+    _lastFailedConfigRegister = 0xFFFF; // scheitert der Neustart, lag es nicht am Schreiben
+    if (!resetModule(resetTimeoutMs)) return false;
+
+    // Nach dem Neustart stehen alle Register auf Werksvorgabe -- writeConfig()
+    // in applyConfigAndCalibrate() schreibt ohnehin jedes einzelne davon neu.
+    return applyConfigAndCalibrate(timeoutMs);
+}
+
+bool XM125Distance::hardCalibration(uint32_t startMm,
+                                    uint32_t endMm,
+                                    uint32_t maxStepLength,
+                                    bool     closeRangeLeakageCancellation,
+                                    uint32_t signalQuality,
+                                    uint32_t maxProfile,
+                                    uint32_t thresholdMethod,
+                                    uint32_t peakSorting,
+                                    uint32_t numFramesRecordedThreshold,
+                                    uint32_t fixedAmplitudeThreshold,
+                                    uint32_t thresholdSensitivity,
+                                    uint32_t reflectorShape,
+                                    uint32_t fixedStrengthThreshold,
+                                    bool     measureOnWakeup) {
+    XM125DistanceConfig cfg; // Defaults stehen in der Struktur, hier wird alles gesetzt
+    cfg.startMm                        = startMm;
+    cfg.endMm                          = endMm;
+    cfg.maxStepLength                  = maxStepLength;
+    cfg.closeRangeLeakageCancellation  = closeRangeLeakageCancellation;
+    cfg.signalQuality                  = signalQuality;
+    cfg.maxProfile                     = maxProfile;
+    cfg.thresholdMethod                = thresholdMethod;
+    cfg.peakSorting                    = peakSorting;
+    cfg.numFramesRecordedThreshold     = numFramesRecordedThreshold;
+    cfg.fixedAmplitudeThreshold        = fixedAmplitudeThreshold;
+    cfg.thresholdSensitivity           = thresholdSensitivity;
+    cfg.reflectorShape                 = reflectorShape;
+    cfg.fixedStrengthThreshold         = fixedStrengthThreshold;
+    cfg.measureOnWakeup                = measureOnWakeup;
+
+    return hardCalibration(cfg);
 }
 
 /* ── Messbetrieb ──────────────────────────────────────────────────────────── */
