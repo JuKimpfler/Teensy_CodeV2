@@ -17,6 +17,10 @@ float feld_x_Valid=0;
 float feld_y_Valid=0;
 float feld_x_pos=0;
 float feld_y_pos=0;
+float pos_x_1 = 0;
+float pos_y_1 = 0;
+float pos_x_2 = 0;
+float pos_y_2 = 0;
 
 void setup()
 {
@@ -26,6 +30,8 @@ void setup()
   RadarServo.write(90);
   Serial.begin(115200);
   UART_DBG.begin(UART_DBG_BAUD);
+
+  
 
   Serial.println("------------------------------- Hallo -------------------------------");
   sys.initialize();
@@ -62,11 +68,17 @@ void loop()
   sys.cfgP.Ki = PDS.getParam(2);
   sys.setHeadingControllerConfig();
 
-  feld_x_Valid = abs(sys.RadarLi.Dist+sys.RadarRe.Dist-1800);
-  feld_y_Valid = abs(sys.RadarHi.Dist+sys.RadarVo.Dist-2400);
+  feld_x_Valid = abs(sys.RadarLi.Dist+sys.RadarRe.Dist-(1830-60));
+  feld_y_Valid = abs(sys.RadarHi.Dist+sys.RadarVo.Dist-(2430-60));
 
-  feld_x_pos = (sys.RadarLi.Dist+sys.RadarRe.Dist)/2;
-  feld_y_pos = (sys.RadarHi.Dist+sys.RadarVo.Dist)/2;
+  pos_x_1 = sys.RadarLi.Dist/10;
+  pos_y_1 = sys.RadarHi.Dist/10;
+
+  pos_x_2 = (1830-sys.RadarRe.Dist)/10;
+  pos_y_2 = (2430-sys.RadarVo.Dist)/10;
+
+  feld_x_pos = ((pos_x_1+pos_x_2)/2)-(183/2);
+  feld_y_pos = ((pos_y_1+pos_y_2)/2)-(243/2);
 
   sys.readSensors();
 
