@@ -4,10 +4,11 @@
 
 | Channel | Variable | Funktion |
 |---|---|---|
-| `1` | - | - |
-| `2` | - | - |
-| `3` | - | - |
-| `4` | - | - |
+| `0` | timer/millis() | Zeitstempel manuell |
+| `1` | Akku_V | Akku Spannung |
+| `2` | Akku_I | Akku Strom |
+| `3` | Motor_V | Motorversorgung Spannung |
+| `4` | Motor_I | Motorversorgung Strom |
 | `5` | - | - |
 | `6` | - | - |
 | `7` | - | - |
