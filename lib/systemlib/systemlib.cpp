@@ -3,7 +3,7 @@
 /* -------------- Instanzen -------------- */
 
 BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
-//PowerDebugger PDS;
+// PowerDebugger PDS;
 
 elapsedMillis cycleTimer;
 elapsedMicros cycleTimer_us;
@@ -28,18 +28,18 @@ TCA9534DW Motor_EXP(&Wire1, 0x20);
 TCA9534DW Button_EXP(&Wire1, 0x23);
 TCA9534DW Rand_EXP(&Wire1, 0x21);
 
-ADC108S102 ADC_Motor(&SPI1,ADC108S102_Motor_CS);
+ADC108S102 ADC_Motor(&SPI1, ADC108S102_Motor_CS);
 
 XM125Distance RADAR_sensors[RADAR_NUM_SENSORS] = {
-  XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
-  XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
+    XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
+    XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
+    XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
+    XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
 };
 
 constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
-PID* headingControllerP;
-ADRC* headingControllerA;
+PID *headingControllerP;
+ADRC *headingControllerA;
 uint32_t lastMicrosContrl = 0;
 
 fancyBTN BTN1(50, 6, 8, true);
@@ -47,7 +47,6 @@ fancyBTN BTN2(50, 6, 8, true);
 fancyBTN BTN3(50, 6, 8, true);
 fancyBTN BTN4(50, 6, 8, true);
 fancyBTN BTN5(50, 6, 8, true);
-
 
 /* -------------- System Worker -------------- */
 
@@ -70,7 +69,7 @@ void systemlib::initialize()
     INA219_Motor.setMaxCurrentShunt(15);
 
     BNO.init();
-    //PDS.init();
+    PDS.init();
 
     MoDataVL.ID = MotorVL_ID;
     MoDataVR.ID = MotorVR_ID;
@@ -106,9 +105,10 @@ void systemlib::initialize()
     SW_EXP.setup(true);
     Button_EXP.setup(true);
 
-    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
-        RADAR_sensorReady[i]  = setupRadarSens(i);
-        RADAR_lastSetupMs[i]  = millis();
+    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
+    {
+        RADAR_sensorReady[i] = setupRadarSens(i);
+        RADAR_lastSetupMs[i] = millis();
     }
     startRadarRound(); // erste Messung laeuft schon, waehrend der Rest hochfaehrt
 
@@ -121,10 +121,17 @@ void systemlib::initialize()
 
     setupHeadingController(true);
 
-    for(int i = 0;i<RADAR_NUM_SENSORS;i++){
-        XM125Distance& radar = RADAR_sensors[i];
+    for (int i = 0; i < RADAR_NUM_SENSORS; i++)
+    {
+        XM125Distance &radar = RADAR_sensors[i];
         radar.resetModule();
     }
+
+    PDS.bind("Akku_V", &Akku_V, 1, "V");
+    PDS.bind("Akku_I", &Akku_I, 2, "A");
+    PDS.bind("Motor_V", &Motor_V, 3, "V");
+    PDS.bind("Motor_I", &Motor_I, 4, "A");
+    PDS.bind("Zykluszeit", &cycleTime_us, 9, "us");
 }
 
 void systemlib::readSensors(void)
@@ -137,46 +144,56 @@ void systemlib::readSensors(void)
     cycleTimer_us = 0;
 
     readBNO();
-    measuretimer=0;
+    measuretimer = 0;
     readRadar();
     Serial.println(measuretimer);
-    //readIR();
+    // readIR();
 
     readExpanders();
 
-    //PDS.update();
+    if (PDS.linkOk())
+        PDS.update();
 
     updateHeadingController();
     updateMotors();
 }
 
-RadarData* systemlib::radarSlot(uint8_t idx)
+RadarData *systemlib::radarSlot(uint8_t idx)
 {
-    switch (idx) {
-        case 0:  return &RadarVo;
-        case 1:  return &RadarLi;
-        case 2:  return &RadarHi;
-        case 3:  return &RadarRe;
-        default: return nullptr;
+    switch (idx)
+    {
+    case 0:
+        return &RadarVo;
+    case 1:
+        return &RadarLi;
+    case 2:
+        return &RadarHi;
+    case 3:
+        return &RadarRe;
+    default:
+        return nullptr;
     }
 }
 
 void systemlib::radarMeasureFailed(uint8_t idx)
 {
     RADAR_consecFailures[idx]++;
-    if (RADAR_consecFailures[idx] < RADAR_MAX_CONSEC_FAILURES) return;
+    if (RADAR_consecFailures[idx] < RADAR_MAX_CONSEC_FAILURES)
+        return;
 
     // Sensor gilt als tot. Hier NICHT neu initialisieren -- setupRadarSens()
     // blockier ßbis zu ~2 s. Das uebernimmt retryRadarSetup() gedrosselt beim
     // naechsten Rundenstart.
     RADAR_consecFailures[idx] = 0;
-    RADAR_sensorReady[idx]    = false;
+    RADAR_sensorReady[idx] = false;
 
-    RadarData* slot = radarSlot(idx);
-    if (slot != nullptr) slot->isCon = false;
+    RadarData *slot = radarSlot(idx);
+    if (slot != nullptr)
+        slot->isCon = false;
 }
 
-void systemlib::readRadar(void){
+void systemlib::readRadar(void)
+{
     // Nicht blockierend: hier wird nie auf ein Messergebnis gewartet.
     // Je Aufruf wird bei jedem laufenden Sensor genau einmal nachgesehen
     // (isMeasuring() = hoechstens ein Registerlesezugriff). Sobald die Runde
@@ -184,20 +201,26 @@ void systemlib::readRadar(void){
     // gleichzeitig, siehe startRadarRound().
     bool roundRunning = false;
 
-    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
-        if (!RADAR_measurePending[i]) continue;
+    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
+    {
+        if (!RADAR_measurePending[i])
+            continue;
 
-        if (RADAR_sensors[i].isMeasuring()) {
+        if (RADAR_sensors[i].isMeasuring())
+        {
             roundRunning = true;
             continue;
         }
 
         RADAR_measurePending[i] = false;
-        if (RADAR_sensors[i].hasResult()) takeRadarResult(i);
-        else                              radarMeasureFailed(i);
+        if (RADAR_sensors[i].hasResult())
+            takeRadarResult(i);
+        else
+            radarMeasureFailed(i);
     }
 
-    if (!roundRunning) startRadarRound();
+    if (!roundRunning)
+        startRadarRound();
 }
 
 void systemlib::startRadarRound(void)
@@ -205,14 +228,17 @@ void systemlib::startRadarRound(void)
     // Alle Sensoren zusammen anstossen: startMeasurement() schreibt nur das
     // Kommando (< 1 ms), sie messen also praktisch zeitgleich und die Messdauer
     // faellt einmal fuer alle an statt einmal pro Sensor.
-    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++) {
-        if (!RADAR_sensorReady[i]) {
+    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
+    {
+        if (!RADAR_sensorReady[i])
+        {
             retryRadarSetup(i);
             continue;
         }
 
         RADAR_measurePending[i] = RADAR_sensors[i].startMeasurement();
-        if (!RADAR_measurePending[i]) radarMeasureFailed(i);
+        if (!RADAR_measurePending[i])
+            radarMeasureFailed(i);
     }
 }
 
@@ -220,17 +246,18 @@ void systemlib::takeRadarResult(uint8_t idx)
 {
     RADAR_consecFailures[idx] = 0;
 
-    RadarData* slot = radarSlot(idx);
-    if (slot == nullptr) return;
+    RadarData *slot = radarSlot(idx);
+    if (slot == nullptr)
+        return;
 
     // Peak 0: bei peakSorting = CLOSEST das naechstgelegene Objekt.
     // Peaks == 0 (keine Wand erkannt) liefert Dist/Strenght = 0, damit kein
     // alter Wert stehen bleibt und "reagiert nicht" sichtbar wird.
-    const XM125DistanceResult& res = RADAR_sensors[idx].getLastResult();
-    slot->Peaks    = res.numDistances;
-    slot->Dist     = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
-    slot->Strenght = (res.numDistances > 0) ? res.peakStrength[0]    : 0;
-    slot->isCon    = true;
+    const XM125DistanceResult &res = RADAR_sensors[idx].getLastResult();
+    slot->Peaks = res.numDistances;
+    slot->Dist = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
+    slot->Strenght = (res.numDistances > 0) ? res.peakStrength[0] : 0;
+    slot->isCon = true;
 }
 
 void systemlib::retryRadarSetup(uint8_t idx)
@@ -238,56 +265,67 @@ void systemlib::retryRadarSetup(uint8_t idx)
     // setupRadarSens() blockiert (wakeUp-Timeout + Kalibrierung, bis ~2 s).
     // Ein abgezogener Sensor wuerde damit jeden Zyklus ausbremsen, deshalb
     // hoechstens alle RADAR_REINIT_INTERVAL_MS ein Versuch.
-    if ((millis() - RADAR_lastSetupMs[idx]) < RADAR_REINIT_INTERVAL_MS) return;
+    if ((millis() - RADAR_lastSetupMs[idx]) < RADAR_REINIT_INTERVAL_MS)
+        return;
 
     RADAR_lastSetupMs[idx] = millis();
     RADAR_sensorReady[idx] = setupRadarSens(idx);
 }
 
-bool systemlib::setupRadarSens(uint8_t idx) {
-  if (idx >= RADAR_NUM_SENSORS) return false;
+bool systemlib::setupRadarSens(uint8_t idx)
+{
+    if (idx >= RADAR_NUM_SENSORS)
+        return false;
 
-  XM125Distance& radar = RADAR_sensors[idx];
-  RadarData* slot = radarSlot(idx);
+    XM125Distance &radar = RADAR_sensors[idx];
+    RadarData *slot = radarSlot(idx);
 
-  if (!radar.begin(I2C_RADAR)) {
-    if (slot != nullptr) slot->isCon = false;
-    return false;
-  }
+    if (!radar.begin(I2C_RADAR))
+    {
+        if (slot != nullptr)
+            slot->isCon = false;
+        return false;
+    }
 
-  // Messbetrieb: nie auf ein Ergebnis warten, und pro Messung nur die Peaks
-  // holen, die auch ausgewertet werden (jeder Peak = zwei Registerlesezugriffe).
-  radar.setMeasureTimeout(RADAR_MEASURE_TIMEOUT_MS);
-  radar.setMaxPeaksToFetch(RADAR_PEAKS_TO_FETCH);
+    // Messbetrieb: nie auf ein Ergebnis warten, und pro Messung nur die Peaks
+    // holen, die auch ausgewertet werden (jeder Peak = zwei Registerlesezugriffe).
+    radar.setMeasureTimeout(RADAR_MEASURE_TIMEOUT_MS);
+    radar.setMaxPeaksToFetch(RADAR_PEAKS_TO_FETCH);
 
-  // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h
-  radar.config.startMm = RADAR_START_MM;
-  radar.config.endMm   = RADAR_END_MM;   // > 2500, damit die Wand nicht auf der Bereichskante liegt
-  radar.config.maxProfile = XM125D_PROFILE5;              // laengste Pulse = groesste Reichweite
-  radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR;   // adaptiv, unabhaengig von der Umgebung
-  radar.config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
-  //radar.config.fixedStrengthThreshold = RADAR_THRESHOLD_STRENGHT;
-  radar.config.signalQuality        = RADAR_SIGNAL_QUALITY ;
-  radar.config.peakSorting = XM125D_SORT_STRONGEST;
-  // PLANAR: bei einer flaechigen Wand faellt die Echo-Amplitude langsamer mit der
-  // Distanz als bei einem punktfoermigen Reflektor. Ohne diese Angabe setzt der
-  // Detektor die Schwelle am Bereichsende zu hoch an und die Wand faellt raus.
-  radar.config.reflectorShape = XM125D_REFLECTOR_PLANAR;
-  radar.config.closeRangeLeakageCancellation = false;      // sauberer Nahbereich ab startMm
+    // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h
+    radar.config.startMm = RADAR_START_MM;
+    radar.config.endMm = RADAR_END_MM;                    // > 2500, damit die Wand nicht auf der Bereichskante liegt
+    radar.config.maxProfile = XM125D_PROFILE5;            // laengste Pulse = groesste Reichweite
+    radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR; // adaptiv, unabhaengig von der Umgebung
+    radar.config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
+    // radar.config.fixedStrengthThreshold = RADAR_THRESHOLD_STRENGHT;
+    radar.config.signalQuality = RADAR_SIGNAL_QUALITY;
+    radar.config.peakSorting = XM125D_SORT_STRONGEST;
+    // PLANAR: bei einer flaechigen Wand faellt die Echo-Amplitude langsamer mit der
+    // Distanz als bei einem punktfoermigen Reflektor. Ohne diese Angabe setzt der
+    // Detektor die Schwelle am Bereichsende zu hoch an und die Wand faellt raus.
+    radar.config.reflectorShape = XM125D_REFLECTOR_PLANAR;
+    radar.config.closeRangeLeakageCancellation = false; // sauberer Nahbereich ab startMm
 
-  if (!radar.applyConfigAndCalibrate()) {
-    uint16_t failedReg = radar.getLastFailedConfigRegister();
-    if (failedReg != 0xFFFF) { /*-> I2C-Schreibfehler bei Register 0xfailedReg*/ }
-    if (slot != nullptr) slot->isCon = false;
-    return false;
-  }
+    if (!radar.applyConfigAndCalibrate())
+    {
+        uint16_t failedReg = radar.getLastFailedConfigRegister();
+        if (failedReg != 0xFFFF)
+        { /*-> I2C-Schreibfehler bei Register 0xfailedReg*/
+        }
+        if (slot != nullptr)
+            slot->isCon = false;
+        return false;
+    }
 
-  return true;
+    return true;
 }
 
-void systemlib::calibRadar(){
-    for(int i = 0;i<RADAR_NUM_SENSORS;i++){
-        XM125Distance& radar = RADAR_sensors[i];
+void systemlib::calibRadar()
+{
+    for (int i = 0; i < RADAR_NUM_SENSORS; i++)
+    {
+        XM125Distance &radar = RADAR_sensors[i];
         radar.applyConfigAndCalibrate();
     }
     delay(1000);
@@ -389,8 +427,11 @@ float systemlib::giveMotorCurrent(void)
     INA_filter[5] = INA219_Motor.getCurrent_mA();
 
     int Summe = 0;
-    for(int i = 0; i<6 ; i++){Summe+=INA_filter[i];}
-    Summe = Summe/6;
+    for (int i = 0; i < 6; i++)
+    {
+        Summe += INA_filter[i];
+    }
+    Summe = Summe / 6;
     return Summe;
 }
 
@@ -412,73 +453,187 @@ void systemlib::readUS(void)
 }
 
 /* -------------- Aktors ------------- */
-void systemlib::setMotorData(MotorData Data){
-    if(Data.ID == MoDataVR.ID){MoDataVR = Data;}
-    else if(Data.ID == MoDataHR.ID){MoDataHR = Data;}
-    else if(Data.ID == MoDataVL.ID){MoDataVL = Data;}
-    else if(Data.ID == MoDataHL.ID){MoDataHL = Data;}
-    else if(Data.ID == MoDataDR.ID){MoDataDR = Data;}
+void systemlib::setMotorData(MotorData Data)
+{
+    if (Data.ID == MoDataVR.ID)
+    {
+        MoDataVR = Data;
+    }
+    else if (Data.ID == MoDataHR.ID)
+    {
+        MoDataHR = Data;
+    }
+    else if (Data.ID == MoDataVL.ID)
+    {
+        MoDataVL = Data;
+    }
+    else if (Data.ID == MoDataHL.ID)
+    {
+        MoDataHL = Data;
+    }
+    else if (Data.ID == MoDataDR.ID)
+    {
+        MoDataDR = Data;
+    }
 }
 
-void systemlib::updateMotors(void){
+void systemlib::updateMotors(void)
+{
     uint8_t Port_List[8];
     byte out;
-    if(MoDataVL.Speed<2){MoDataVL.Speed=0;MoDataVL.Enable=false;}
-    if(MoDataVR.Speed<2){MoDataVR.Speed=0;MoDataVR.Enable=false;}
-    if(MoDataHL.Speed<2){MoDataHL.Speed=0;MoDataHL.Enable=false;}
-    if(MoDataHR.Speed<2){MoDataHR.Speed=0;MoDataHR.Enable=false;}
-    if(MoDataDR.Speed<2){MoDataDR.Speed=0;MoDataDR.Enable=false;}
+    if (MoDataVL.Speed < 2)
+    {
+        MoDataVL.Speed = 0;
+        MoDataVL.Enable = false;
+    }
+    if (MoDataVR.Speed < 2)
+    {
+        MoDataVR.Speed = 0;
+        MoDataVR.Enable = false;
+    }
+    if (MoDataHL.Speed < 2)
+    {
+        MoDataHL.Speed = 0;
+        MoDataHL.Enable = false;
+    }
+    if (MoDataHR.Speed < 2)
+    {
+        MoDataHR.Speed = 0;
+        MoDataHR.Enable = false;
+    }
+    if (MoDataDR.Speed < 2)
+    {
+        MoDataDR.Speed = 0;
+        MoDataDR.Enable = false;
+    }
 
-    analogWrite(MotorVL_PWM,abs(MoDataVL.Speed)*2.55);
-    analogWrite(MotorVR_PWM,abs(MoDataVR.Speed)*2.55);
-    analogWrite(MotorHR_PWM,abs(MoDataHR.Speed)*2.55);
-    analogWrite(MotorHL_PWM,abs(MoDataHL.Speed)*2.55);
+    analogWrite(MotorVL_PWM, abs(MoDataVL.Speed) * 2.55);
+    analogWrite(MotorVR_PWM, abs(MoDataVR.Speed) * 2.55);
+    analogWrite(MotorHR_PWM, abs(MoDataHR.Speed) * 2.55);
+    analogWrite(MotorHL_PWM, abs(MoDataHL.Speed) * 2.55);
 
-    if(MoDataVL.Dir){Port_List[MotorVL_P1]=0;}else{Port_List[MotorVL_P1]=1;}
-    if(MoDataVR.Dir){Port_List[MotorVR_P1]=0;}else{Port_List[MotorVR_P1]=1;}
-    if(MoDataHL.Dir){Port_List[MotorHL_P1]=0;}else{Port_List[MotorHL_P1]=1;}
-    if(MoDataHR.Dir){Port_List[MotorHR_P1]=0;}else{Port_List[MotorHR_P1]=1;}
+    if (MoDataVL.Dir)
+    {
+        Port_List[MotorVL_P1] = 0;
+    }
+    else
+    {
+        Port_List[MotorVL_P1] = 1;
+    }
+    if (MoDataVR.Dir)
+    {
+        Port_List[MotorVR_P1] = 0;
+    }
+    else
+    {
+        Port_List[MotorVR_P1] = 1;
+    }
+    if (MoDataHL.Dir)
+    {
+        Port_List[MotorHL_P1] = 0;
+    }
+    else
+    {
+        Port_List[MotorHL_P1] = 1;
+    }
+    if (MoDataHR.Dir)
+    {
+        Port_List[MotorHR_P1] = 0;
+    }
+    else
+    {
+        Port_List[MotorHR_P1] = 1;
+    }
 
-    if(MoDataVL.Enable){Port_List[MotorVL_P2]=1;}else{Port_List[MotorVL_P2]=0;}
-    if(MoDataVR.Enable){Port_List[MotorVR_P2]=1;}else{Port_List[MotorVR_P2]=0;}
-    if(MoDataHL.Enable){Port_List[MotorHL_P2]=1;}else{Port_List[MotorHL_P2]=0;}
-    if(MoDataHR.Enable){Port_List[MotorHR_P2]=1;}else{Port_List[MotorHR_P2]=0;}
+    if (MoDataVL.Enable)
+    {
+        Port_List[MotorVL_P2] = 1;
+    }
+    else
+    {
+        Port_List[MotorVL_P2] = 0;
+    }
+    if (MoDataVR.Enable)
+    {
+        Port_List[MotorVR_P2] = 1;
+    }
+    else
+    {
+        Port_List[MotorVR_P2] = 0;
+    }
+    if (MoDataHL.Enable)
+    {
+        Port_List[MotorHL_P2] = 1;
+    }
+    else
+    {
+        Port_List[MotorHL_P2] = 0;
+    }
+    if (MoDataHR.Enable)
+    {
+        Port_List[MotorHR_P2] = 1;
+    }
+    else
+    {
+        Port_List[MotorHR_P2] = 0;
+    }
 
     // Konvertieren von Liste zu byte
-    for (int i = 0; i < 8; i++) {
-        if (Port_List[i] == 1) {
+    for (int i = 0; i < 8; i++)
+    {
+        if (Port_List[i] == 1)
+        {
             out |= (1 << (7 - i));
         }
     }
 
     Motor_EXP.write(out);
 
-    MoDataVL.Speed_real = ADC_Motor.read(MotorVL_AP1,true,true);
-    MoDataVL.Current = ADC_Motor.read(MotorVL_AP2,true,false);
-    MoDataVR.Speed_real = ADC_Motor.read(MotorVR_AP1,true,true);
-    MoDataVR.Current = ADC_Motor.read(MotorVR_AP2,true,false);
-    MoDataHL.Speed_real = ADC_Motor.read(MotorHL_AP1,true,true);
-    MoDataHL.Current = ADC_Motor.read(MotorHL_AP2,true,false);
-    MoDataHR.Speed_real = ADC_Motor.read(MotorHR_AP1,true,true);
-    MoDataHR.Current = ADC_Motor.read(MotorHR_AP2,true,false);
+    MoDataVL.Speed_real = ADC_Motor.read(MotorVL_AP1, true, true);
+    MoDataVL.Current = ADC_Motor.read(MotorVL_AP2, true, false);
+    MoDataVR.Speed_real = ADC_Motor.read(MotorVR_AP1, true, true);
+    MoDataVR.Current = ADC_Motor.read(MotorVR_AP2, true, false);
+    MoDataHL.Speed_real = ADC_Motor.read(MotorHL_AP1, true, true);
+    MoDataHL.Current = ADC_Motor.read(MotorHL_AP2, true, false);
+    MoDataHR.Speed_real = ADC_Motor.read(MotorHR_AP1, true, true);
+    MoDataHR.Current = ADC_Motor.read(MotorHR_AP2, true, false);
 }
 
-MotorData systemlib::giveMotorData(uint8_t ID){
+MotorData systemlib::giveMotorData(uint8_t ID)
+{
     MotorData Error_Data;
     Error_Data.ID = 100;
 
-    if(ID == MoDataVR.ID){return MoDataVR;}
-    else if(ID == MoDataHR.ID){return MoDataHR;}
-    else if(ID == MoDataVL.ID){return MoDataVL;}
-    else if(ID == MoDataHL.ID){return MoDataHL;}
-    else if(ID == MoDataDR.ID){return MoDataDR;}
-    else {return Error_Data;}
+    if (ID == MoDataVR.ID)
+    {
+        return MoDataVR;
+    }
+    else if (ID == MoDataHR.ID)
+    {
+        return MoDataHR;
+    }
+    else if (ID == MoDataVL.ID)
+    {
+        return MoDataVL;
+    }
+    else if (ID == MoDataHL.ID)
+    {
+        return MoDataHL;
+    }
+    else if (ID == MoDataDR.ID)
+    {
+        return MoDataDR;
+    }
+    else
+    {
+        return Error_Data;
+    }
 }
 
 /* -------------- Expanders -------------- */
 void systemlib::readExpanders(void)
 {
-    SW_EXP.read(); // Update the internal state of the port expander
+    SW_EXP.read();     // Update the internal state of the port expander
     Button_EXP.read(); // Update the internal state of the port expander
 
     SWI[0] = SW_EXP.readPin(4);
@@ -490,7 +645,6 @@ void systemlib::readExpanders(void)
     startSwitch = SW_EXP.readPin(5);
     RCJ = SW_EXP.readPin(6);
     RCJ_present = SW_EXP.readPin(7);
-    
 
     BTN1.update(Button_EXP.readPin(0));
     BTN2.update(Button_EXP.readPin(1));
@@ -508,106 +662,126 @@ void systemlib::readExpanders(void)
     // Example: bool pin0State = portExpander.getPinState(0);
 }
 
-bool systemlib::giveExpander(uint8_t expnum, uint8_t portnum){
-    if(expnum == 0){
+bool systemlib::giveExpander(uint8_t expnum, uint8_t portnum)
+{
+    if (expnum == 0)
+    {
         return SW_EXP.readPin(portnum);
     }
-    else if(expnum == 1){
+    else if (expnum == 1)
+    {
         return Button_EXP.readPin(portnum);
     }
-    else{
+    else
+    {
         return false;
     }
 }
 
-
-void systemlib::setupHeadingController(bool useADRC){
+void systemlib::setupHeadingController(bool useADRC)
+{
     _useADRC = useADRC;
-    if(_useADRC){
-        cfgA.order = ADRCOrder::SECOND;   // Winkel = Strecke 2. Ordnung
-        cfgA.Ts    = TS_NOMINAL;          // nur Fallback, siehe loop()
-        cfgA.dtMin = 1e-5f;               // 10 us -- gegen dt=0
-        cfgA.dtMax = 0.03f;               // 30 ms -- deckelt Ausreisser, falls das
+    if (_useADRC)
+    {
+        cfgA.order = ADRCOrder::SECOND; // Winkel = Strecke 2. Ordnung
+        cfgA.Ts = TS_NOMINAL;           // nur Fallback, siehe loop()
+        cfgA.dtMin = 1e-5f;             // 10 us -- gegen dt=0
+        cfgA.dtMax = 0.03f;             // 30 ms -- deckelt Ausreisser, falls das
                                         // Hauptprogramm mal laenger braucht
-        cfgA.wc    = 15.0f;               // Reglerbandbreite: wie schnell ausgerichtet wird
-        cfgA.wo    = 80.0f;               // Beobachterbandbreite: ca. 5x wc als Startwert
-        cfgA.b0    = 8.0f;                // grobe Schaetzung: wie stark omega_cmd auf
+        cfgA.wc = 15.0f;                // Reglerbandbreite: wie schnell ausgerichtet wird
+        cfgA.wo = 80.0f;                // Beobachterbandbreite: ca. 5x wc als Startwert
+        cfgA.b0 = 8.0f;                 // grobe Schaetzung: wie stark omega_cmd auf
                                         // die Winkelbeschleunigung wirkt -> per Test anpassen
-        cfgA.uMin  = -1.0f;
-        cfgA.uMax  =  1.0f;
-        cfgA.angleMode = true;            // WICHTIG: sorgt fuer kuerzesten Drehweg (kein +-pi Sprung)
-        cfgA.outputRateLimit = 6.0f;      // begrenzt Stellgroessen-Aenderungsrate (sanfter Anlauf)
+        cfgA.uMin = -1.0f;
+        cfgA.uMax = 1.0f;
+        cfgA.angleMode = true;       // WICHTIG: sorgt fuer kuerzesten Drehweg (kein +-pi Sprung)
+        cfgA.outputRateLimit = 6.0f; // begrenzt Stellgroessen-Aenderungsrate (sanfter Anlauf)
 
         headingControllerA = new ADRC(cfgA);
-        headingControllerA->reset(DEG_TO_RAD*BNO_OrbitDir);
+        headingControllerA->reset(DEG_TO_RAD * BNO_OrbitDir);
         lastMicrosContrl = micros();
     }
-    else{
-        cfgP.Ts    = TS_NOMINAL;          // nur Fallback, siehe loop()
-        cfgP.dtMin = 1e-5f;               // 10 us -- gegen dt=0
-        cfgP.dtMax = 0.03f;               // 30 ms -- deckelt Ausreisser, falls das
-                                        // Hauptprogramm mal laenger braucht
+    else
+    {
+        cfgP.Ts = TS_NOMINAL; // nur Fallback, siehe loop()
+        cfgP.dtMin = 1e-5f;   // 10 us -- gegen dt=0
+        cfgP.dtMax = 0.03f;   // 30 ms -- deckelt Ausreisser, falls das
+                              // Hauptprogramm mal laenger braucht
 
-        cfgP.Kp = 2.0f;                   // Start: nur P, dann I/D schrittweise zuschalten
+        cfgP.Kp = 2.0f; // Start: nur P, dann I/D schrittweise zuschalten
         cfgP.Ki = 0.5f;
         cfgP.Kd = 0.05f;
 
         cfgP.uMin = -1.0f;
-        cfgP.uMax =  1.0f;
-        cfgP.angleMode = true;            // WICHTIG: kuerzester Drehweg, kein +-pi Sprung
+        cfgP.uMax = 1.0f;
+        cfgP.angleMode = true;               // WICHTIG: kuerzester Drehweg, kein +-pi Sprung
         cfgP.derivativeOnMeasurement = true; // kein Kick bei Sollwinkel-Spruengen
-        cfgP.Tf = 0.02f;                  // D-Anteil filtern (Winkelmessung ist meist verrauscht)
-        cfgP.outputRateLimit = 6.0f;      // sanfter Anlauf / Ruckbegrenzung
+        cfgP.Tf = 0.02f;                     // D-Anteil filtern (Winkelmessung ist meist verrauscht)
+        cfgP.outputRateLimit = 6.0f;         // sanfter Anlauf / Ruckbegrenzung
 
         headingControllerP = new PID(cfgP);
-        headingControllerP->reset(DEG_TO_RAD*BNO_OrbitDir);
+        headingControllerP->reset(DEG_TO_RAD * BNO_OrbitDir);
         lastMicrosContrl = micros();
     }
 }
 
-void systemlib::setHeadingControllerConfig(){
-    if(_useADRC){
+void systemlib::setHeadingControllerConfig()
+{
+    if (_useADRC)
+    {
         headingControllerA->setConfig(cfgA);
     }
-    else{
+    else
+    {
         headingControllerP->setConfig(cfgP);
     }
 }
 
-float systemlib::giveHeadingController(){
-    if(_useADRC){
+float systemlib::giveHeadingController()
+{
+    if (_useADRC)
+    {
         return ADRC_Out;
     }
-    else{
+    else
+    {
         return PID_Out;
     }
 }
 
-void systemlib::setHeading(float Heading){
+void systemlib::setHeading(float Heading)
+{
     _OrbitHeading = Heading;
 }
 
-void systemlib::resetHeadingController(){
-    headingControllerA->reset(DEG_TO_RAD*BNO_OrbitDir);
+void systemlib::resetHeadingController()
+{
+    headingControllerA->reset(DEG_TO_RAD * BNO_OrbitDir);
 }
 
-void systemlib::updateHeadingController(){
+void systemlib::updateHeadingController()
+{
     float dt = (micros() - lastMicrosContrl) * 1e-6f; // us -> s
     lastMicrosContrl = micros();
 
-    if(_useADRC){
-        ADRC_Out = headingControllerA->update(_OrbitHeading, DEG_TO_RAD*BNO_OrbitDir, dt);
+    if (_useADRC)
+    {
+        ADRC_Out = headingControllerA->update(_OrbitHeading, DEG_TO_RAD * BNO_OrbitDir, dt);
     }
-    else{
-        PID_Out = headingControllerP->update(_OrbitHeading, DEG_TO_RAD*BNO_OrbitDir, dt);
+    else
+    {
+        PID_Out = headingControllerP->update(_OrbitHeading, DEG_TO_RAD * BNO_OrbitDir, dt);
     }
 }
 
-
-bool systemlib::giveStart(void){
-    if (RCJ_present) {
+bool systemlib::giveStart(void)
+{
+    if (RCJ_present)
+    {
         return RCJ;
-    } else {
+    }
+    else
+    {
         return startSwitch;
     }
 }

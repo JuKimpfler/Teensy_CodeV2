@@ -16,7 +16,7 @@
 #include "XM125Distance.h"
 
 #include <commlib.h>
-//#include <PDS.h>
+#include <PDS.h>
 
 #include <PID/PID.h>
 #include <ADRC/ADRC.h>
@@ -63,6 +63,10 @@ private:
     static constexpr uint8_t RADAR_MAX_CONSEC_FAILURES = 5;
 
     /* -------------- Sensor Var -------------- */
+    float Akku_V = 0.0f;
+    float Akku_I = 0.0f;
+    float Motor_V = 0.0f;
+    float Motor_I = 0.0f;
     float BNO_calibration = 0.0f;
     float BNO_eulerZ = 0.0f;
     float BNO_OrbitDir = 0.0f;
