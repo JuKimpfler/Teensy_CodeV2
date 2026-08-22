@@ -5,7 +5,7 @@
 
 systemlib sys;
 Servo RadarServo ;
-PowerDebugger PDS;
+//PowerDebugger PDS;
 
 float param1 = 0;
 float param2 = 0;
@@ -89,7 +89,7 @@ void loop()
     RadarServo.write(90);
   }
 
-  param1 = 30;//sys.giveHeadingController();
+  //param1 = 30;//sys.giveHeadingController();
 
   sys.MoDataVL.Speed = abs(param1);
   if(param1<0){sys.MoDataVL.Dir = true;}
@@ -116,5 +116,5 @@ void loop()
 
   timer = millis()/1000;
   PDS.update();
-  //param1 = PDS.getFastParam(0);
+  param1 = PDS.getFastParam(0);
 }
