@@ -643,7 +643,8 @@ void systemlib::readExpanders(void)
     SWI[4] = SW_EXP.readPin(0);
 
     startSwitch = SW_EXP.readPin(5);
-    RCJ = SW_EXP.readPin(6);
+    RCJ = Button_EXP.readPin(5);
+    RCJ_Disable = SW_EXP.readPin(6);
     RCJ_present = SW_EXP.readPin(7);
 
     BTN1.update(Button_EXP.readPin(0));
@@ -778,7 +779,7 @@ bool systemlib::giveStart(void)
 {
     if (RCJ_present)
     {
-        return RCJ;
+        return RCJ && !RCJ_Disable;
     }
     else
     {

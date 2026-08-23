@@ -86,6 +86,7 @@ private:
 
     bool SWI[5] = {false};
     bool RCJ = false;
+    bool RCJ_Disable = false;
     bool RCJ_present = false;
     bool startSwitch = false;
 
