@@ -59,14 +59,14 @@ struct PIDConfig {
                              // (auf max. plausible Zykluszeit deines
                              //  Hauptprogramms einstellen)
 
-    float Kp = 1.0f;        // Proportionalverstaerkung
+    float Kp = 0.5f;        // Proportionalverstaerkung
     float Ki = 0.0f;        // Integralverstaerkung [1/s]
     float Kd = 0.0f;        // Differentialverstaerkung [s]
 
     float uMin = -1.0f;     // untere Stellgroessengrenze
     float uMax =  1.0f;     // obere Stellgroessengrenze
 
-    bool angleMode = false; // true: Regelgroesse ist ein Winkel [rad],
+    bool angleMode = true; // true: Regelgroesse ist ein Winkel [rad],
                              // Fehler wird auf [-pi, pi] gewrapped
 
     bool derivativeOnMeasurement = true; // vermeidet Derivative Kick bei
