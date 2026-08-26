@@ -94,6 +94,14 @@ private:
     float ADRC_Out = 0;
     float PID_Out = 0;
 
+    float pos_x_1 = 0;
+    float pos_y_1 = 0;
+    float pos_x_2 = 0;
+    float pos_y_2 = 0;
+
+    float feld_x = 113;
+    float feld_y = 115; 
+
     uint8_t fancyBTNstates[5] = {0};
     /* -------------- System -------------- */
     uint16_t cycleTime = 0;
@@ -133,7 +141,8 @@ public:
     ADRCConfig cfgA;
     PIDConfig cfgP;
 
-    float Regler_in = 1;
+    float feld_x_pos = 0;
+    float feld_y_pos = 0;
 
     /* -------------- Ssytem Worker -------------- */
     void initialize();

@@ -192,11 +192,6 @@ void systemlib::radarMeasureFailed(uint8_t idx)
 
 void systemlib::readRadar(void)
 {
-    // Nicht blockierend: hier wird nie auf ein Messergebnis gewartet.
-    // Je Aufruf wird bei jedem laufenden Sensor genau einmal nachgesehen
-    // (isMeasuring() = hoechstens ein Registerlesezugriff). Sobald die Runde
-    // komplett ist, startet sofort die naechste -- bei allen Sensoren
-    // gleichzeitig, siehe startRadarRound().
     bool roundRunning = false;
 
     for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
@@ -223,6 +218,32 @@ void systemlib::readRadar(void)
 
     if (!roundRunning)
         startRadarRound();
+
+    pos_x_1 = RadarLi.Dist / 10;
+    pos_y_1 = RadarHi.Dist / 10;
+
+    pos_x_2 = ((feld_x*10) - RadarRe.Dist) / 10;
+    pos_y_2 = ((feld_y*10) - RadarVo.Dist) / 10;
+
+    if(RadarHi.Dist>feld_y-30){
+        feld_y_pos = pos_y_1;
+    }
+    else if(RadarVo.Dist>feld_y-30){
+        feld_y_pos = pos_y_2;
+    }
+    else{
+        feld_y_pos = ((pos_y_1 + pos_y_2) / 2);
+    }
+
+    if(RadarLi.Dist>feld_x-30){
+        feld_x_pos = pos_x_1;
+    }
+    else if(RadarRe.Dist>feld_x-30){
+        feld_x_pos = pos_x_2;
+    }
+    else{
+        feld_x_pos = ((pos_x_1 + pos_x_2) / 2);
+    }
 }
 
 void systemlib::startRadarRound(void)
@@ -334,6 +355,7 @@ void systemlib::calibRadar()
         radar.applyConfigAndCalibrate();
     }
     delay(1000);
+
 }
 
 /* -------------- BNO -------------- */
@@ -776,7 +798,7 @@ void systemlib::setupHeadingController(bool useADRC)
         cfgP.dtMax = 0.03f;   // 30 ms -- deckelt Ausreisser, falls das
                               // Hauptprogramm mal laenger braucht
 
-        cfgP.Kp = 0.6; // Start: nur P, dann I/D schrittweise zuschalten
+        cfgP.Kp = 0.4; // Start: nur P, dann I/D schrittweise zuschalten
         cfgP.Ki = 0;
         cfgP.Kd = 0.016f;
 
@@ -856,6 +878,16 @@ bool systemlib::giveStart(void)
 
 void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andrehwinkel){
 
+    float dy = X - feld_x_pos;
+    float dx = Y - feld_y_pos;
+
+    float distanzCm = sqrtf(dx * dx + dy * dy);
+    Speed = Speed*constrain(distanzCm / 40.0f, 0.0f, 1.0f); // 0 = am Ziel, 1 = 40cm oder mehr entfernt
+
+
+
+    setHeading(Andrehwinkel*DEG_TO_RAD);
+    setOmniWheelDir(Util.AMap(atan2f(dy, dx) * (180.0f / PI)),Speed,giveHeadingController()*100);
 }
 
 void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel){

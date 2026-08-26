@@ -13,18 +13,10 @@ float timer = 0;
 float Akku_V = 0;
 float Akku_I = 0;
 float Dist = 0;
-float feld_x_Valid = 0;
-float feld_y_Valid = 0;
-float feld_x_pos = 0;
-float feld_y_pos = 0;
-float pos_x_1 = 0;
-float pos_y_1 = 0;
-float pos_x_2 = 0;
-float pos_y_2 = 0;
-float x ;
-float y ;
 float angle ;
 float speed ;
+float x ;
+float y ;
 
 void setup()
 {
@@ -47,14 +39,12 @@ void setup()
   PDS.bind("speed", &speed, 5);
   PDS.bind("bno", &param2, 6);
 
-  PDS.bind("RadarVo1", &sys.RadarVo.Dist, 7, "mm");
-  PDS.bind("RadarVo2", &sys.RadarLi.Dist, 8, "mm");
-  PDS.bind("RadarVo3", &sys.RadarHi.Dist, 9, "mm");
-  PDS.bind("RadarVo4", &sys.RadarRe.Dist, 10, "mm");
-  PDS.bind("Feld_X_Valid", &feld_x_Valid, 11);
-  PDS.bind("Feld_Y_Valid", &feld_y_Valid, 12);
-  PDS.bind("Feld_X_Pos", &feld_x_pos, 103, "*2 cm");
-  PDS.bind("Feld_Y_Pos", &feld_y_pos, 104, "*2 cm");
+  PDS.bind("RadarVo", &sys.RadarVo.Dist, 7, "mm");
+  PDS.bind("RadarLi", &sys.RadarLi.Dist, 8, "mm");
+  PDS.bind("RadarHi", &sys.RadarHi.Dist, 9, "mm");
+  PDS.bind("RadarRe", &sys.RadarRe.Dist, 10, "mm");
+  PDS.bind("Feld_X_Pos", &sys.feld_x_pos, 103, "*2 cm");
+  PDS.bind("Feld_Y_Pos", &sys.feld_y_pos, 104, "*2 cm");
 
   sys.calibBNO();
 }
@@ -64,46 +54,30 @@ void loop()
   if (PDS.getFastParam(3)>20)
   {
     sys.calibBNO();
-    //sys.Regler_in = PDS.getParam(2);
-    //sys.cfgP.Kp = PDS.getParam(0)/10;
-    //sys.cfgP.Kd = PDS.getParam(1)/100;
-    //sys.setHeadingControllerConfig();
     delay(1000);
   }
 
-  /*feld_x_Valid = abs(sys.RadarLi.Dist + sys.RadarRe.Dist - (1830 - 60));
-  feld_y_Valid = abs(sys.RadarHi.Dist + sys.RadarVo.Dist - (2430 - 60));
-
-  pos_x_1 = sys.RadarLi.Dist / 10;
-  pos_y_1 = sys.RadarHi.Dist / 10;
-
-  pos_x_2 = (1830 - sys.RadarRe.Dist) / 10;
-  pos_y_2 = (2430 - sys.RadarVo.Dist) / 10;
-
-  feld_x_pos = ((pos_x_1 + pos_x_2) / 2) - (183 / 2);
-  feld_y_pos = ((pos_y_1 + pos_y_2) / 2) - (243 / 2);*/
+  
 
   sys.readSensors();
-
-  if (abs(sys.giveOrbitDir()) < 90)
-  {
-    RadarServo.write(sys.giveOrbitDir() + 90);
-  }
-  else
-  {
-    RadarServo.write(90);
-  }
-
 
   param2 = sys.giveOrbitDir();
 
   x = PDS.getFastParam(1);
   y = PDS.getFastParam(0);
   angle = atan2(y, x) * RAD_TO_DEG;
-  speed = min(100.0f, hypot(x, y));
+  speed = min(100.0f, hypot(x, y))/2;
+
+  if (PDS.getFastParam(2)>20)
+  {
+    sys.moveToPoint(50,50,speed,0);
+  }
+  else{
+    sys.moveDir(angle,speed,0);
+  }
 
   //sys.moveDir(angle,speed,0);
-  sys.moveDir(angle,speed,0);
+  
   //sys.setOmniWheelVek(x,y,0);
   //sys.setHeading();
   //param1 = sys.giveOrbitDir()*-0.9;
