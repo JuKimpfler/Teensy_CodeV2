@@ -3,7 +3,8 @@
  * Soll-Winkel (Heading) mit PID.
  *
  * Stellgroesse: normierte Winkelgeschwindigkeit omega_cmd [-1..1],
- * die anschliessend auf 3 Omniwheels gemischt wird.
+ * die anschliessend auf 4 Omniwheels in Sternanordnung (90 Grad
+ * versetzt, "+"-Konfiguration) gemischt wird.
  *
  * Passe getHeadingRad() und setOmniWheelSpeeds() an deine Hardware
  * (IMU/Odometrie bzw. Motortreiber) an.
@@ -30,13 +31,24 @@ float getHeadingRad() {
 }
 
 // Mischt eine normierte Drehgeschwindigkeit (und optional vx, vy) auf
-// 3 Omniwheels (120 Grad versetzt, "Kiwi-Drive"). Passe an eigene
-// Radanordnung / Motortreiber an.
+// 4 Omniwheels in Sternanordnung (0/90/180/270 Grad um den Roboter,
+// jedes Rad rollt tangential zu seinem Radius -- optisch ein 4-zackiger
+// Stern / "+"-Layout). Passe an eigene Radanordnung / Motortreiber an.
+//
+// Hinweis: Das System ist mit 4 Raedern fuer 3 Freiheitsgrade (vx, vy,
+// omega) redundant/ueberbestimmt. Die tangentiale Projektionsformel
+// liefert trotzdem für jedes Rad die korrekt vorzeichenrichtige
+// Solldrehzahl; Radschlupf gleicht die Redundanz mechanisch aus.
 void setOmniWheelSpeeds(float vx, float vy, float omega) {
-    static const float wheelAngles[3] = {
-        0.0f, 2.0f * PI / 3.0f, 4.0f * PI / 3.0f
+    // Radwinkel relativ zur Roboter-Vorwaertsachse (0 = vorne, math. positiv
+    // = gegen den Uhrzeigersinn). 0/90/180/270 Grad -> Stern/"+"-Anordnung.
+    static const float wheelAngles[4] = {
+        0.0f,               // vorne
+        PI / 2.0f,          // links
+        PI,                 // hinten
+        3.0f * PI / 2.0f    // rechts
     };
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 4; ++i) {
         float w = -sinf(wheelAngles[i]) * vx
                   +  cosf(wheelAngles[i]) * vy
                   + omega;

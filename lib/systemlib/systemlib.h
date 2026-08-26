@@ -157,9 +157,11 @@ public:
     void resetHeadingController(void);
     void moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andrehwinkel);
     void moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel);
-    void moveDir(int16_t Dir,uint8_t Speed,int16_t Andrehwinkel);
+    void moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel);
     void setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break);
     void setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break);
+    void setOmniWheelVek(float vx, float vy, float omega);
+    void setOmniWheelDir(float directionDeg, uint8_t speedPercent, float omega);
 
     /* -------------- Calculate -------------- */
     void updateHeadingController(void);

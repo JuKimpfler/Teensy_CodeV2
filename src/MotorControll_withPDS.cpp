@@ -43,10 +43,8 @@ void setup()
   PDS.bind("Timer", &timer, 0, "s");
   PDS.bind("Akku_V", &Akku_V, 1, "V");
   PDS.bind("Akku_I", &Akku_I, 2, "A");
-
-  PDS.bind("Return_x", &x, 3);
-  PDS.bind("Return_y", &y, 4);
-  PDS.bind("speed", &param1, 5);
+  PDS.bind("angle", &angle, 4);
+  PDS.bind("speed", &speed, 5);
   PDS.bind("bno", &param2, 6);
 
   //PDS.bind("RadarVo1", &sys.RadarVo.Dist, 7, "mm");
@@ -59,7 +57,6 @@ void setup()
   PDS.bind("Feld_Y_Pos", &feld_y_pos, 104, "*2 cm");
 
   sys.calibBNO();
-  //sys.calibRadar();
 }
 
 void loop()
@@ -67,7 +64,10 @@ void loop()
   if (PDS.getFastParam(3)>20)
   {
     sys.calibBNO();
-    sys.Regler_in = PDS.getParam(0);
+    //sys.Regler_in = PDS.getParam(2);
+    //sys.cfgP.Kp = PDS.getParam(0)/10;
+    //sys.cfgP.Kd = PDS.getParam(1)/100;
+    //sys.setHeadingControllerConfig();
     delay(1000);
   }
 
@@ -99,10 +99,12 @@ void loop()
 
   x = PDS.getFastParam(1);
   y = PDS.getFastParam(0);
-  angle = atan2(y, x) * 180.0f / PI;
+  angle = atan2(y, x) * RAD_TO_DEG;
   speed = min(100.0f, hypot(x, y));
 
-  sys.moveDir(angle,speed,0);
+  //sys.moveDir(angle,speed,0);
+  sys.moveDir(angle,speed,PDS.getFastParam(2));
+  //sys.setOmniWheelVek(x,y,0);
   //sys.setHeading();
   //param1 = sys.giveOrbitDir()*-0.9;
 

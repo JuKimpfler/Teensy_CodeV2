@@ -340,7 +340,7 @@ void systemlib::calibBNO(void)
 
 void systemlib::readBNO(void)
 {
-    BNO_eulerZ = Util.AMap(BNO.eulHeading());
+    BNO_eulerZ = BNO.eulHeading();
     BNO_OrbitDir = Util.AMap(BNO_eulerZ - BNO_calibration);
 }
 
@@ -540,31 +540,31 @@ void systemlib::updateMotors(void)
 {
     uint8_t Port_List[8];
     byte out;
-    if (MoDataVL.Speed < 2)
+    if (MoDataVL.Speed < 2 || giveExpander(0,3))
     {
         MoDataVL.Speed = 0;
         MoDataVL.Enable = false;
         MoDataVL.Break = true;
     }
-    if (MoDataVR.Speed < 2)
+    if (MoDataVR.Speed < 2 || giveExpander(0,3))
     {
         MoDataVR.Speed = 0;
         MoDataVR.Enable = false;
         MoDataVR.Break = true;
     }
-    if (MoDataHL.Speed < 2)
+    if (MoDataHL.Speed < 2 || giveExpander(0,3))
     {
         MoDataHL.Speed = 0;
         MoDataHL.Enable = false;
         MoDataHL.Break = true;
     }
-    if (MoDataHR.Speed < 2)
+    if (MoDataHR.Speed < 2 || giveExpander(0,3))
     {
         MoDataHR.Speed = 0;
         MoDataHR.Enable = false;
         MoDataHR.Break = true;
     }
-    if (MoDataDR.Speed < 2)
+    if (MoDataDR.Speed < 2 || giveExpander(0,3))
     {
         MoDataDR.Speed = 0;
         MoDataDR.Enable = false;
@@ -772,9 +772,9 @@ void systemlib::setupHeadingController(bool useADRC)
         cfgP.dtMax = 0.03f;   // 30 ms -- deckelt Ausreisser, falls das
                               // Hauptprogramm mal laenger braucht
 
-        cfgP.Kp = 2.0f; // Start: nur P, dann I/D schrittweise zuschalten
-        cfgP.Ki = 0.5f;
-        cfgP.Kd = 0.05f;
+        cfgP.Kp = 0.6; // Start: nur P, dann I/D schrittweise zuschalten
+        cfgP.Ki = 0;
+        cfgP.Kd = 0.016f;
 
         cfgP.uMin = -1.0f;
         cfgP.uMax = 1.0f;
@@ -858,69 +858,51 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_
 
 }
 
-void systemlib::moveDir(int16_t Dir,uint8_t Speed,int16_t Andrehwinkel){
-    
+void systemlib::setOmniWheelVek(float vx, float vy, float omega) {
+    float w[4];
+    static const float wheelAngles[4] = {45,315,135,225};
+    for (int i = 0; i < 4; ++i) {
+        w[i] = -sinf(wheelAngles[i]*DEG_TO_RAD) * -vx
+                  +  cosf(wheelAngles[i]*DEG_TO_RAD) * vy
+                  + omega;
+        w[i] = constrain(w[i], -100, 100);
+        
+    }
+    setMotorData(MoDataVL.ID,w[0],true,false);
+    setMotorData(MoDataVR.ID,w[1],true,false);
+    setMotorData(MoDataHL.ID,w[2],true,false);
+    setMotorData(MoDataHR.ID,w[3],true,false);
+}
 
-    //Dir = Dir-giveOrbitDir();
+void systemlib::setOmniWheelDir(float directionDeg, uint8_t speedPercent, float omega) {
+    directionDeg = directionDeg-giveOrbitDir();
+
+    directionDeg = Util.AMap(directionDeg);
+
+    float w[4];
+    static const float wheelAngles[4] = {45,315,135,225};
+    Serial.println("omega : "+String(omega));
  
-    Dir = Util.AMap(Dir);
-    Andrehwinkel = Util.AMap(Andrehwinkel);
-
-    setHeading(Andrehwinkel);
-    int Controller_Out = giveHeadingController();
-
-    float Vel[4]; // Velocity (-+ Speed)
-    float Vel_D[4]; // Velocity (+ Speed)
-    bool SpinDir[4]; // Turning Direction of Vel_D
-
-
-    Vel[0] = (sinf((Dir+45)*DEG_TO_RAD)*3.5*Speed) + (giveOrbitDir()*-Regler_in); // VL
-    Vel[1] = (sinf((Dir+315)*DEG_TO_RAD)*3.5*Speed) + (giveOrbitDir()*-Regler_in); // VR
-    Vel[2] = (sinf((Dir+135)*DEG_TO_RAD)*3.5*Speed) + (giveOrbitDir()*-Regler_in); // HL
-    Vel[3] = (sinf((Dir+225)*DEG_TO_RAD)*3.5*Speed) + (giveOrbitDir()*-Regler_in); // HR
-
-    for(int i = 0; i<4 ; i++){
-        if (Vel[i]<0){Vel_D[i]=Vel[i]*-1;SpinDir[i]=false;}
-        else{Vel_D[i]=Vel[i];SpinDir[i]=true;}
+    float directionRad = directionDeg * DEG_TO_RAD;
+    float speedNorm     = speedPercent / 100.0f; // 0..1
+ 
+    float vx = cosf(directionRad) * speedNorm * 100;
+    float vy = sinf(directionRad) * speedNorm * 100;
+ 
+    for (int i = 0; i < 4; ++i) {
+        w[i] = -sinf(wheelAngles[i]*DEG_TO_RAD) * -vx
+                  +  cosf(wheelAngles[i]*DEG_TO_RAD) * vy
+                  + omega;
+        w[i] = constrain(w[i], -100, 100);
     }
 
-    // Werte Mappen auf "Speed"
-    /*uint16_t Error = 0; // abweichung zu Speed des Schnellsten Rades
-    if ((Vel_D[0]>=Vel_D[1]) && (Vel_D[0]>=Vel_D[2]) && (Vel_D[0]>=Vel_D[3])){
-        Error = Speed/Vel_D[0];
-        Vel_D[0]= Vel_D[0]*Error;
-        Vel_D[1]= Vel_D[1]*Error;
-        Vel_D[2]= Vel_D[2]*Error; 
-        Vel_D[3]= Vel_D[3]*Error; 
-    }
-    if ((Vel_D[1]>=Vel_D[0]) && (Vel_D[1]>=Vel_D[2]) && (Vel_D[1]>=Vel_D[3])){
-        Error = Speed/Vel_D[1];
-        Vel_D[0]= Vel_D[0]*Error;
-        Vel_D[1]= Vel_D[1]*Error;
-        Vel_D[2]= Vel_D[2]*Error; 
-        Vel_D[3]= Vel_D[3]*Error; 
-    }
-    if ((Vel_D[2]>=Vel_D[0]) && (Vel_D[2]>=Vel_D[1]) && (Vel_D[2]>=Vel_D[3])){
-        Error = Speed/Vel_D[2];
-        Vel_D[0]= Vel_D[0]*Error;
-        Vel_D[1]= Vel_D[1]*Error;
-        Vel_D[2]= Vel_D[2]*Error; 
-        Vel_D[3]= Vel_D[3]*Error; 
-    }
-    if ((Vel_D[3]>=Vel_D[0]) && (Vel_D[3]>=Vel_D[1]) && (Vel_D[3]>=Vel_D[2])){
-        Error = Speed/Vel_D[3];
-        Vel_D[0]= Vel_D[0]*Error;
-        Vel_D[1]= Vel_D[1]*Error;
-        Vel_D[2]= Vel_D[2]*Error; 
-        Vel_D[3]= Vel_D[3]*Error; 
-    }
+    setMotorData(MoDataVL.ID,w[0],true,false);
+    setMotorData(MoDataVR.ID,w[1],true,false);
+    setMotorData(MoDataHL.ID,w[2],true,false);
+    setMotorData(MoDataHR.ID,w[3],true,false);
+}
 
-    /*for(int i = 0; i<4 ; i++){
-        if (SpinDir[i]==true){Vel_D[i] = Vel_D[i]*-1;}
-    }*/
-
-    setMotorData(MoDataVL.ID,Vel_D[0],SpinDir[0],true,false);
-    setMotorData(MoDataVR.ID,Vel_D[1],SpinDir[1],true,false);
-    setMotorData(MoDataHL.ID,Vel_D[2],SpinDir[2],true,false);
-    setMotorData(MoDataHR.ID,Vel_D[3],SpinDir[3],true,false);
+void systemlib::moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel){
+    setHeading(Andrehwinkel*DEG_TO_RAD);
+    setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
 }
