@@ -1,0 +1,54 @@
+# ============================================================
+#  GitLab CI — Teensy 4.0 Firmware
+# ============================================================
+# Baut die Firmware bei jedem Push und haengt die fertige .hex
+# als Artefakt an die Pipeline (flashen ohne lokalen Build).
+# Laeuft in einem Docker-Container unter Linux; die Teensy-
+# Toolchain holt sich PlatformIO selbst und behaelt sie im Cache.
+
+stages:
+  - build
+  - check
+
+default:
+  image: python:3.12-slim
+  before_script:
+    - pip install --quiet --upgrade platformio
+    - pio --version
+
+variables:
+  # PlatformIO legt Toolchain und Framework normalerweise unter
+  # ~/.platformio ab. GitLab kann aber nur Pfade INNERHALB des
+  # Projektverzeichnisses cachen, darum wird das Core-Dir hierher
+  # umgebogen.
+  PLATFORMIO_CORE_DIR: "$CI_PROJECT_DIR/.platformio"
+  GIT_DEPTH: "20"
+
+# Spart pro Pipeline den Download der Teensy-Plattform (~200 MB).
+# Der Build-Ordner .pio wird bewusst NICHT gecacht, damit jede
+# Pipeline sauber von Null baut und nichts Altes durchrutscht.
+cache:
+  key: platformio-core
+  paths:
+    - .platformio/
+
+build:teensy40:
+  stage: build
+  script:
+    - pio run -e teensy40
+  artifacts:
+    name: "firmware-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - .pio/build/teensy40/firmware.hex
+      - .pio/build/teensy40/firmware.elf
+    expire_in: 4 weeks
+
+# Statische Analyse mit cppcheck. Bewusst nicht blockierend:
+# ein gewachsenes Projekt bringt beim ersten Lauf reichlich
+# Findings mit. Wenn die Liste abgearbeitet ist, kann
+# "allow_failure" raus und die CI wacht ab da darueber.
+check:cppcheck:
+  stage: check
+  script:
+    - pio check -e teensy40 --skip-packages --fail-on-defect high
+  allow_failure: true
