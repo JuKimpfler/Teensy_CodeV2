@@ -104,7 +104,6 @@ private:
     /* -------------- Sensor Funktion -------------- */
     void readBNO(void);
     void readIR(void);
-    void readUS(void);
     void readExpanders(void);
     void readRadar(void);                 ///< nicht blockierend: nachsehen + naechste Runde starten
     void startRadarRound(void);           ///< stoesst die Messung bei ALLEN Sensoren gleichzeitig an
@@ -176,10 +175,6 @@ public:
     float giveMotorVoltage(void);
     float giveMainCurrent(void);
     float giveMotorCurrent(void);
-    uint16_t giveUS_vo(void) const { return US_vo; };
-    uint16_t giveUS_re(void) const { return US_re; };
-    uint16_t giveUS_hi(void) const { return US_hi; };
-    uint16_t giveUS_li(void) const { return US_li; };
     float giveBallAngle(void) const { return IR_Angle; };                                              // TODO: Implementieren
     float giveBallDistance(void) const { return IR_Distance; };                                        // TODO: Implementieren
     float giveRawBallAngle(void) const { return IR_rawAngle; };                                        // TODO: Implementieren

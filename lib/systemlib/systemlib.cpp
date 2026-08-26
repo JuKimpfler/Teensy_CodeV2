@@ -18,11 +18,6 @@ IR_ring ir_ring(ir_ring_handle);
 INA219 INA219_Main(0x40);
 INA219 INA219_Motor(0x41);
 
-SRF08Sensor SRF08_vo(SRF08_ADDR(0xE2), SRF08_RANGE_2M, SRF08_GAIN_MID);
-SRF08Sensor SRF08_re(SRF08_ADDR(0xE4), SRF08_RANGE_2M, SRF08_GAIN_MID);
-SRF08Sensor SRF08_hi(SRF08_ADDR(0xE6), SRF08_RANGE_2M, SRF08_GAIN_MID);
-SRF08Sensor SRF08_li(SRF08_ADDR(0xE8), SRF08_RANGE_2M, SRF08_GAIN_MID);
-
 TCA9534DW SW_EXP(&I2C_SW, 0x22);
 TCA9534DW Motor_EXP(&Wire1, 0x20);
 TCA9534DW Button_EXP(&Wire1, 0x23);
@@ -78,27 +73,6 @@ void systemlib::initialize()
     MoDataDR.ID = MotorDR_ID;
 
     pinMode(START_SWITCH, INPUT);
-
-    // -- US -----
-    SRF08_vo.setEMAAlpha(0.25f);
-    SRF08_hi.setEMAAlpha(0.25f);
-    SRF08_re.setEMAAlpha(0.25f);
-    SRF08_li.setEMAAlpha(0.25f);
-
-    SRF08_vo.setJumpThreshold(50);
-    SRF08_hi.setJumpThreshold(50);
-    SRF08_re.setJumpThreshold(50);
-    SRF08_li.setJumpThreshold(50);
-
-    SRF08_vo.begin(I2C_US);
-    SRF08_hi.begin(I2C_US);
-    SRF08_re.begin(I2C_US);
-    SRF08_li.begin(I2C_US);
-
-    SRF08_vo.startRanging();
-    SRF08_hi.startRanging();
-    SRF08_re.startRanging();
-    SRF08_li.startRanging();
 
     Motor_EXP.setup(false);
     Rand_EXP.setup(false);
@@ -434,23 +408,6 @@ float systemlib::giveMotorCurrent(void)
     }
     Summe = Summe / 6;
     return Summe;
-}
-
-/* -------------- US -------------- */
-
-void systemlib::readUS(void)
-{
-    if (SRF08_vo.update())
-        US_vo = SRF08_vo.getDistance(), SRF08_vo.startRanging();
-
-    if (SRF08_hi.update())
-        US_hi = SRF08_hi.getDistance(), SRF08_hi.startRanging();
-
-    if (SRF08_re.update())
-        US_re = SRF08_re.getDistance(), SRF08_re.startRanging();
-
-    if (SRF08_li.update())
-        US_li = SRF08_li.getDistance(), SRF08_li.startRanging();
 }
 
 void systemlib::setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break){
