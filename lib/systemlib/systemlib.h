@@ -199,8 +199,6 @@ public:
 
     /* -------------- set -------------- */
     void setDebugTimeout(uint16_t timeout_ms) { debugTimeout = timeout_ms; }
-    //void setDBGSys(void);
-    //void setDBGChannel(uint8_t Channel, float Value); // 0-20 Frei für eigenen Quatsch
     void setHeading(float Heading);
     void setHeadingControllerConfig(void);
 };
