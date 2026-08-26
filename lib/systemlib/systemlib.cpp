@@ -103,6 +103,31 @@ void systemlib::readSensors(void)
 
     readBNO();
     Radar.update();
+    pos_x_1 = Radar[RadarLi].Dist / 10;
+    pos_y_1 = Radar[RadarHi].Dist / 10;
+
+    pos_x_2 = ((feld_x*10) - Radar[RadarRe].Dist) / 10;
+    pos_y_2 = ((feld_y*10) - Radar[RadarVo].Dist) / 10;
+
+    if(Radar[RadarHi].Dist>feld_y-30){
+        feld_y_pos = pos_y_1;
+    }
+    else if(Radar[RadarVo].Dist>feld_y-30){
+        feld_y_pos = pos_y_2;
+    }
+    else{
+        feld_y_pos = ((pos_y_1 + pos_y_2) / 2);
+    }
+
+    if(Radar[RadarLi].Dist>feld_x-30){
+        feld_x_pos = pos_x_1;
+    }
+    else if(Radar[RadarRe].Dist>feld_x-30){
+        feld_x_pos = pos_x_2;
+    }
+    else{
+        feld_x_pos = ((pos_x_1 + pos_x_2) / 2);
+    }
     // readIR();
 
     readExpanders();
