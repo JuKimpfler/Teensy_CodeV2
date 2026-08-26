@@ -151,6 +151,7 @@ void RadarArray::_takeResult(uint8_t idx)
     _data[idx].Dist     = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
     _data[idx].Strenght = (res.numDistances > 0) ? res.peakStrength[0] : 0;
     _data[idx].isCon    = true;
+    _data[idx].Time     = millis(); // Zeitstempel fuer die Altersbewertung, siehe giveAge()
 }
 
 void RadarArray::_measureFailed(uint8_t idx)

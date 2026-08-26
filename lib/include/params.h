@@ -43,3 +43,20 @@ static constexpr uint8_t RADAR_PEAKS_TO_FETCH = 1; ///< ausgewertet wird nur Pea
 // (Kalibrierung dauert bis ~2 s), darf also nicht in jedem Zyklus passieren:
 static constexpr uint32_t RADAR_REINIT_INTERVAL_MS = 500;
 
+// ── Positionsbestimmung aus den Radarwerten (systemlib::calculatePosition) ────
+// Je Achse messen zwei gegenueberliegende Sensoren dieselbe Feldbreite aus:
+// Weg zur einen Wand + Weg zur anderen Wand = Feldgroesse. Passt das Paar
+// zusammen, ist die Position sicher; passt es nicht, hat mindestens einer der
+// beiden etwas anderes als die Wand gesehen.
+static constexpr float POS_RADAR_OFFSET_CM = 0.0f;  ///< Abstand Roboter-Mittelpunkt -> Sensorflaeche (Koordinaten zaehlen ab Mittelpunkt)
+static constexpr float POS_PAIR_TOL_CM     = 10.0f; ///< so weit darf die Summe des Paares von der Feldgroesse abweichen
+static constexpr float POS_BLIND_CM        = 30.0f; ///< misst ein Sensor mehr als Feldgroesse - POS_BLIND_CM, steht der gegenueberliegende im Blindbereich (RADAR_START_MM) und wird verworfen
+static constexpr uint32_t POS_AGE_MAX_MS   = 1000;  ///< ab diesem Alter zaehlt ein Messwert gar nicht mehr (Certainty 0)
+
+// Plausibilitaet vor der Altersbewertung. Bei einem passenden Paar wird
+// zwischen PAIR (Summe stimmt genau) und SINGLE (Abweichung = POS_PAIR_TOL_CM)
+// linear interpoliert.
+static constexpr float POS_PLAUS_PAIR     = 1.00f; ///< Paar passt zur Feldgroesse
+static constexpr float POS_PLAUS_SINGLE   = 0.60f; ///< nur ein Sensor nutzbar -> keine Gegenprobe moeglich
+static constexpr float POS_PLAUS_CONFLICT = 0.30f; ///< Paar widerspricht sich -> naeherer Wert, aber unsicher
+

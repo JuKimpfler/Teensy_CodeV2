@@ -140,7 +140,7 @@ void loop() {
 
 1. Zykluszeit erfassen (`cycleTime`, `cycleTime_us`)
 2. `delay(debugTimeout)` – **blockierende Pause**, Default 5 ms
-3. `readBNO()`, `Radar.update()` (`readIR()`/`readUS()` sind auskommentiert)
+3. `readBNO()`, `Radar.update()`, `calculatePosition()` (`readIR()`/`readUS()` sind auskommentiert)
 4. `readExpanders()` (Schalter + Taster)
 5. `PDS.update()` (Telemetrie senden/empfangen)
 6. `updateHeadingController()`
@@ -176,12 +176,82 @@ struct RadarData
     int32_t  Strenght;  // Signalstärke von Peak 0
     uint8_t  Peaks;     // Anzahl erkannter Peaks (0 = nichts gesehen)
     bool     isCon;     // false, wenn der Sensor als tot gilt
+    uint32_t Time;      // millis() der letzten übernommenen Messung (0 = noch nie)
 };
 ```
 
 Alle Sensoren messen **gleichzeitig**, `Radar.update()` **wartet nie** auf ein
 Messergebnis — Details und Zeitbedarf siehe
 [RadarArray.md](../RadarArray/RadarArray.md).
+
+---
+
+## Position aus den Radarwerten
+
+`calculatePosition()` läuft in `readSensors()` direkt nach `Radar.update()` und
+schreibt das Ergebnis nach `Position` (sowie weiterhin nach `feld_x_pos` /
+`feld_y_pos`, die `moveToPoint()` und der PDS lesen).
+
+```cpp
+struct PositionData
+{
+    float X;          // cm, 0 = linke Feldwand
+    float Y;          // cm, 0 = Wand hinter dem eigenen Tor
+    float Certainty;  // 0 = unbrauchbar ... 1 = plausibles Paar, brandaktuell
+};
+
+PositionData p = sys.givePosition();
+if (p.Certainty > 0.5f) { /* Position ist belastbar */ }
+```
+
+Je Achse arbeiten zwei **gegenüberliegende** Sensoren zusammen — X aus
+`RadarLi`/`RadarRe`, Y aus `RadarHi`/`RadarVo`. Beide messen dieselbe Strecke
+aus, also muss gelten: *Weg zur einen Wand + Weg zur anderen Wand =
+Feldgröße*. Daran wird das Paar geprüft:
+
+1. **Einzelprüfung** — der Sensor muss antworten (`isCon`), einen Peak haben
+   (`Peaks > 0`) und eine Distanz liefern, die überhaupt ins Feld passt.
+2. **Blindbereich** — misst ein Sensor mehr als `Feldgröße - POS_BLIND_CM`,
+   steht der Roboter dicht an der gegenüberliegenden Wand. Der Sensor dort ist
+   näher dran als der Radar-Blindbereich (`RADAR_START_MM` = 20 cm) und kann die
+   Wand gar nicht mehr erkennen — sein Wert fliegt raus. Melden **beide** so
+   weit, widersprechen sie sich und beide fliegen raus.
+3. **Paarprüfung** — passt die Summe zur Feldgröße, wird gemittelt. Passt sie
+   nicht, verrät die Fehlerrichtung den Schuldigen: Summe zu **klein** → einer
+   hat ein Hindernis vor der Wand gesehen (Gegner, Ball), der **längere** Weg
+   gewinnt. Summe zu **groß** → einer hat die Wand verpasst (Mehrwegecho), der
+   **kürzere** Weg gewinnt.
+
+Bleibt nichts Brauchbares übrig, bleibt die letzte Position stehen und
+`Certainty` wird `0`.
+
+### Certainty
+
+`Certainty = Plausibilität × Altersfaktor`, für die Position als Ganzes die
+**schlechtere** der beiden Achsen — eine Achse, die keiner kennt, macht auch die
+andere als Position wertlos.
+
+| Plausibilität | Fall |
+|---|---|
+| `POS_PLAUS_PAIR` (1.00) | Summe des Paares trifft die Feldgröße genau; bis `POS_PAIR_TOL_CM` Abweichung linear auf `POS_PLAUS_SINGLE` fallend |
+| `POS_PLAUS_SINGLE` (0.60) | nur ein Sensor nutzbar — keine Gegenprobe möglich |
+| `POS_PLAUS_CONFLICT` (0.30) | Paar widerspricht sich, ein Wert wurde geraten |
+| `0` | kein brauchbarer Wert |
+
+Der Altersfaktor kommt aus `Radar.giveAge(pos)` (Zeitstempel `RadarData.Time`)
+und fällt linear von `1` bei 0 ms auf `0` bei `POS_AGE_MAX_MS` (1000 ms). Bei
+einem Paar zählt der **ältere** der beiden Werte. Ein Sensor, der noch nie
+gemessen hat, liefert ein Alter von `millis()` und damit `Certainty` `0`.
+
+Alle Stellschrauben stehen in `params.h` unter *Positionsbestimmung aus den
+Radarwerten*. Dort sitzt auch `POS_RADAR_OFFSET_CM`: der Abstand vom
+Roboter-Mittelpunkt zur Sensorfläche, der auf jede Messung addiert wird, weil
+die Koordinaten ab Mittelpunkt zählen. **Noch nicht ausgemessen (0.0)** —
+solange dort `0` steht, ist die Position um genau diesen Betrag zur Wand hin
+verschoben.
+
+> Die Rechnung setzt voraus, dass der Roboter zum Feld ausgerichtet ist
+> (Heading-Regler), sonst schaut kein Sensor senkrecht auf seine Wand.
 
 ---
 
@@ -232,6 +302,9 @@ Antriebsmotoren vom `ADC_Motor`.
 | `giveOrbitDir()` | Ausrichtung relativ zur kalibrierten Nullrichtung, ±180° |
 | `Radar[RadarVo/Li/Hi/Re]` | `RadarData` des Radarsensors (Direktzugriff, auch `giveRadar(pos)`) |
 | `giveRadarCon(pos)` | antwortet der Radarsensor? |
+| `giveRadarAge(pos)` | Alter des Radarwerts in ms |
+| `givePosition()` | zuletzt berechnete `PositionData` (X/Y in cm + Certainty) |
+| `givePositionCertainty()` | nur die Certainty, 0 … 1 |
 | `giveBallAngle()` / `giveBallDistance()` | Ball im Roboter-KS |
 | `giveRawBallAngle()` / `giveRawBallDistance()` | Ball roh vom IR-Ring |
 | `giveRawSensorData(...)` / `giveTSSPData(...)` | Rohdaten des IR-Rings – **derzeit deaktiviert**, siehe `#if false` in `readIR()` |
@@ -258,6 +331,7 @@ Antriebsmotoren vom `ADC_Motor`.
 | `void setupHeadingController(bool useADRC = false)` | Regler anlegen/umschalten |
 | `void setHeading(float Heading)` | Sollrichtung **in Radiant** |
 | `void updateHeadingController()` | wird von `readSensors()` aufgerufen |
+| `PositionData calculatePosition()` | Feldposition + Certainty aus den Radarwerten, wird von `readSensors()` aufgerufen |
 | `float giveHeadingController()` | Stellgröße −1…+1 |
 
 ### Debug

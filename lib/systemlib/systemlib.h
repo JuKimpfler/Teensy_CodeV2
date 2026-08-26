@@ -42,6 +42,14 @@ struct MotorData
     bool is_running;
 };
 
+/// Ergebnis von systemlib::calculatePosition() — Feldposition mit Guetemass.
+struct PositionData
+{
+    float X = 0;         ///< cm, 0 = linke Feldwand
+    float Y = 0;         ///< cm, 0 = Wand hinter dem eigenen Tor
+    float Certainty = 0; ///< 0 = unbrauchbar (unplausibel oder uralt) ... 1 = plausibles Paar, brandaktuell
+};
+
 class systemlib
 {
 private:
@@ -81,11 +89,6 @@ private:
     float ADRC_Out = 0;
     float PID_Out = 0;
 
-    float pos_x_1 = 0;
-    float pos_y_1 = 0;
-    float pos_x_2 = 0;
-    float pos_y_2 = 0;
-
     float feld_x = 113;
     float feld_y = 115; 
 
@@ -103,6 +106,9 @@ private:
     /* -------------- Motor ----------------- */
     void updateMotors(void);
 
+    /* -------------- Position -------------- */
+    float calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSize, float lastPos, float &certainty);
+
 public:
 
     /// Alle Radarsensoren. Zugriff ueber die Einbauposition: Radar[RadarVo].Dist
@@ -117,8 +123,11 @@ public:
     ADRCConfig cfgA;
     PIDConfig cfgP;
 
-    float feld_x_pos = 0;
-    float feld_y_pos = 0;
+    float feld_x_pos = 0; ///< = Position.X, bleibt fuer moveToPoint() und den PDS erhalten
+    float feld_y_pos = 0; ///< = Position.Y, bleibt fuer moveToPoint() und den PDS erhalten
+
+    /// Letztes Ergebnis von calculatePosition(), wird in readSensors() aktualisiert.
+    PositionData Position;
 
     /* -------------- Ssytem Worker -------------- */
     void initialize();
@@ -150,6 +159,7 @@ public:
 
     /* -------------- Calculate -------------- */
     void updateHeadingController(void);
+    PositionData calculatePosition(void); ///< Feldposition + Certainty aus den Radarwerten
 
     /* -------------- give -------------- */
     float giveOrbitDir(void) const { return BNO_OrbitDir; };            // Orbital Ausrichtung
@@ -172,6 +182,9 @@ public:
     void giveButtonStates(uint8_t (&buttonStates)[5]) const {for (uint8_t i = 0; i < 5; i++){buttonStates[i] = fancyBTNstates[i];}}; // currently disabled -> change in readExpanders() to enable it
     RadarData giveRadar(uint8_t pos) const { return Radar[pos]; };       // Radar-Messwerte, pos = RadarVo/Li/Hi/Re
     bool giveRadarCon(uint8_t pos) const { return Radar.giveCon(pos); }; // antwortet der Radarsensor?
+    uint32_t giveRadarAge(uint8_t pos) const { return Radar.giveAge(pos); }; // Alter des Radarwerts in ms
+    PositionData givePosition(void) const { return Position; };          // zuletzt berechnete Feldposition + Certainty
+    float givePositionCertainty(void) const { return Position.Certainty; }; // 0 = unbrauchbar ... 1 = sicher
     bool giveExpander(uint8_t expnum, uint8_t portnum);
     bool giveExpSwitch(uint8_t switchNumber) const { return SWI[switchNumber]; };
     bool giveExpStartSwitch(void) const { return startSwitch; };

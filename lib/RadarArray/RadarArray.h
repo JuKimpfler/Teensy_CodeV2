@@ -52,6 +52,7 @@ struct RadarData
     int32_t  Strenght = 0;     ///< Signalstaerke von Peak 0
     uint8_t  Peaks    = 0;     ///< Anzahl erkannter Peaks (0 = nichts gesehen)
     bool     isCon    = false; ///< true = Sensor antwortet und ist konfiguriert
+    uint32_t Time     = 0;     ///< millis() der letzten uebernommenen Messung (0 = noch nie gemessen)
 };
 
 class RadarArray
@@ -92,6 +93,13 @@ public:
 
     /// true, wenn der Sensor antwortet und konfiguriert ist.
     bool giveCon(uint8_t pos) const { return _data[_clamp(pos)].isCon; }
+
+    /**
+     * Alter des Messwerts in ms: wie lange ist die letzte uebernommene Messung
+     * her. Ein Sensor, der noch nie gemessen hat, liefert millis() -- also einen
+     * sehr grossen Wert, der den Messwert von selbst als unbrauchbar ausweist.
+     */
+    uint32_t giveAge(uint8_t pos) const { return millis() - _data[_clamp(pos)].Time; }
 
     /// Anzahl der verbauten Sensoren (RADAR_NUM_SENSORS).
     uint8_t giveCount(void) const { return RADAR_NUM_SENSORS; }

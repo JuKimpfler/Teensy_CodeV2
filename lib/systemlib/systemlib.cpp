@@ -103,31 +103,7 @@ void systemlib::readSensors(void)
 
     readBNO();
     Radar.update();
-    pos_x_1 = Radar[RadarLi].Dist / 10;
-    pos_y_1 = Radar[RadarHi].Dist / 10;
-
-    pos_x_2 = ((feld_x*10) - Radar[RadarRe].Dist) / 10;
-    pos_y_2 = ((feld_y*10) - Radar[RadarVo].Dist) / 10;
-
-    if(Radar[RadarHi].Dist>feld_y-30){
-        feld_y_pos = pos_y_1;
-    }
-    else if(Radar[RadarVo].Dist>feld_y-30){
-        feld_y_pos = pos_y_2;
-    }
-    else{
-        feld_y_pos = ((pos_y_1 + pos_y_2) / 2);
-    }
-
-    if(Radar[RadarLi].Dist>feld_x-30){
-        feld_x_pos = pos_x_1;
-    }
-    else if(Radar[RadarRe].Dist>feld_x-30){
-        feld_x_pos = pos_x_2;
-    }
-    else{
-        feld_x_pos = ((pos_x_1 + pos_x_2) / 2);
-    }
+    calculatePosition();
     // readIR();
 
     readExpanders();
@@ -137,6 +113,170 @@ void systemlib::readSensors(void)
 
     updateHeadingController();
     updateMotors();
+}
+
+/* -------------- Position -------------- */
+
+/**
+ * Alter eines Messwerts -> Gewicht zwischen 1 (brandaktuell) und 0 (uralt).
+ * Faellt linear von 1 bei 0 ms auf 0 bei POS_AGE_MAX_MS.
+ */
+static float posAgeFactor(uint32_t age_ms)
+{
+    if (age_ms >= POS_AGE_MAX_MS)
+        return 0.0f;
+
+    return 1.0f - ((float)age_ms / (float)POS_AGE_MAX_MS);
+}
+
+/**
+ * Eine Achse aus dem gegenueberliegenden Radar-Paar bestimmen.
+ *
+ * posLow  misst gegen die Wand bei Koordinate 0,
+ * posHigh misst gegen die Wand bei Koordinate feldSize.
+ * Zusammen muessen die beiden Wege die Feldgroesse ergeben -- daran wird das
+ * Paar geprueft:
+ *
+ *   1. Ein Wert taugt nur, wenn der Sensor antwortet, einen Peak gefunden hat
+ *      und die Distanz ueberhaupt ins Feld passt.
+ *   2. Misst ein Sensor mehr als feldSize - POS_BLIND_CM, steht der Roboter
+ *      dicht an der gegenueberliegenden Wand. Der Sensor dort ist naeher dran
+ *      als der Radar-Blindbereich (RADAR_START_MM) -- sein Wert wird verworfen,
+ *      weil die Wand fuer ihn zu nah zum Erkennen ist.
+ *   3. Bleiben beide uebrig: Summe gegen feldSize pruefen. Passt sie, ist es
+ *      ein sauberes Paar -> Mittelwert. Passt sie nicht, hat einer der beiden
+ *      etwas anderes als die Wand gesehen. Welcher, verraet die Richtung des
+ *      Fehlers: ist die Summe zu KLEIN, hat einer zu kurz gemessen (Gegner oder
+ *      Ball im Weg) -> der laengere Weg gewinnt. Ist sie zu GROSS, hat einer
+ *      die Wand verpasst (Mehrwegecho) -> der kuerzere Weg gewinnt. In beiden
+ *      Faellen bleibt die Plausibilitaet niedrig, es ist geraten.
+ *
+ * Ist gar nichts brauchbar, bleibt lastPos stehen und certainty wird 0.
+ *
+ * @param feldSize  Feldgroesse dieser Achse in cm
+ * @param lastPos   letzte bekannte Position, Rueckfallwert
+ * @param certainty [out] 0 = unbrauchbar ... 1 = plausibles Paar, brandaktuell
+ * @return Position auf dieser Achse in cm
+ */
+float systemlib::calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSize, float lastPos, float &certainty)
+{
+    const RadarData &low  = Radar[posLow];
+    const RadarData &high = Radar[posHigh];
+
+    // Rohwert -> cm. Der XM125 liefert unkalibrierte Counts, die aktuell 1:1
+    // als mm gelesen werden (siehe XM125Distance.h). POS_RADAR_OFFSET_CM holt
+    // den Weg von der Sensorflaeche zum Roboter-Mittelpunkt dazu, weil die
+    // Koordinaten ab Mittelpunkt zaehlen (siehe Coding_Rules.md).
+    const float distLow  = (low.Dist  / 10.0f) + POS_RADAR_OFFSET_CM;
+    const float distHigh = (high.Dist / 10.0f) + POS_RADAR_OFFSET_CM;
+
+    const float minDist = (RADAR_START_MM / 10.0f) + POS_RADAR_OFFSET_CM;
+
+    // 1. Grundpruefung je Sensor
+    bool lowOk  = low.isCon  && (low.Peaks  > 0) && (distLow  >= minDist) && (distLow  <= feldSize + POS_PAIR_TOL_CM);
+    bool highOk = high.isCon && (high.Peaks > 0) && (distHigh >= minDist) && (distHigh <= feldSize + POS_PAIR_TOL_CM);
+
+    // 2. Blindbereich des Gegenuebers
+    const bool lowFar  = lowOk  && (distLow  > feldSize - POS_BLIND_CM);
+    const bool highFar = highOk && (distHigh > feldSize - POS_BLIND_CM);
+
+    if (lowFar && highFar)
+    {
+        // Beide melden "fast das ganze Feld" -- das kann nicht sein, keiner der
+        // beiden Werte ist zu gebrauchen.
+        lowOk  = false;
+        highOk = false;
+    }
+    else if (lowFar)
+        highOk = false;
+    else if (highFar)
+        lowOk = false;
+
+    // 3. Position und Plausibilitaet
+    float pos   = lastPos;
+    float plaus = 0.0f;
+    uint32_t age = 0;
+
+    if (lowOk && highOk)
+    {
+        const float err = fabsf((distLow + distHigh) - feldSize);
+
+        if (err <= POS_PAIR_TOL_CM)
+        {
+            // Paar passt zur Feldgroesse: beide Messungen mitteln.
+            pos   = (distLow + (feldSize - distHigh)) / 2.0f;
+            plaus = POS_PLAUS_PAIR - (err / POS_PAIR_TOL_CM) * (POS_PLAUS_PAIR - POS_PLAUS_SINGLE);
+            age   = max(Radar.giveAge(posLow), Radar.giveAge(posHigh));
+        }
+        else
+        {
+            // Summe zu klein -> einer hat ein Hindernis vor der Wand gesehen und
+            // damit zu kurz gemessen. Summe zu gross -> einer hat die Wand
+            // verpasst und zu weit gemessen. Der jeweils andere ist der bessere.
+            const bool sumTooSmall = ((distLow + distHigh) < feldSize);
+            const bool useLow      = sumTooSmall ? (distLow >= distHigh) : (distLow <= distHigh);
+
+            pos   = useLow ? distLow : (feldSize - distHigh);
+            plaus = POS_PLAUS_CONFLICT;
+            age   = Radar.giveAge(useLow ? posLow : posHigh);
+        }
+    }
+    else if (lowOk)
+    {
+        pos   = distLow;
+        plaus = POS_PLAUS_SINGLE;
+        age   = Radar.giveAge(posLow);
+    }
+    else if (highOk)
+    {
+        pos   = feldSize - distHigh;
+        plaus = POS_PLAUS_SINGLE;
+        age   = Radar.giveAge(posHigh);
+    }
+    else
+    {
+        // Nichts Brauchbares: letzte Position halten und das ehrlich melden.
+        certainty = 0.0f;
+        return lastPos;
+    }
+
+    // 4. Alter einrechnen: frische Werte behalten ihre Plausibilitaet, alte
+    //    verlieren sie linear bis auf 0.
+    certainty = constrain(plaus * posAgeFactor(age), 0.0f, 1.0f);
+
+    return constrain(pos, 0.0f, feldSize);
+}
+
+/**
+ * Feldposition aus den vier Radarwerten. Einmal je Zyklus aus readSensors(),
+ * direkt nach Radar.update().
+ *
+ * Setzt voraus, dass der Roboter zum Feld ausgerichtet ist (Heading-Regler) --
+ * jeder Sensor schaut dann senkrecht auf "seine" Wand.
+ *
+ * Certainty gilt fuer die Position als Ganzes und ist deshalb die schlechtere
+ * der beiden Achsen: eine Achse, die keiner kennt, macht auch die andere als
+ * Position wertlos.
+ *
+ * @return Position (X/Y in cm) mit Certainty 0 ... 1
+ */
+PositionData systemlib::calculatePosition(void)
+{
+    float certainty_x = 0.0f;
+    float certainty_y = 0.0f;
+
+    // X: links misst gegen x = 0, rechts gegen x = feld_x.
+    Position.X = calcAxisPosition(RadarLi, RadarRe, feld_x, Position.X, certainty_x);
+    // Y: hinten misst gegen y = 0 (eigenes Tor), vorne gegen y = feld_y.
+    Position.Y = calcAxisPosition(RadarHi, RadarVo, feld_y, Position.Y, certainty_y);
+
+    Position.Certainty = min(certainty_x, certainty_y);
+
+    // moveToPoint() und der PDS lesen weiterhin diese beiden.
+    feld_x_pos = Position.X;
+    feld_y_pos = Position.Y;
+
+    return Position;
 }
 
 void systemlib::calibRadar()

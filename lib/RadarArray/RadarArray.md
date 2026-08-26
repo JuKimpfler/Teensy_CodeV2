@@ -39,6 +39,7 @@ struct RadarData
     int32_t  Strenght;  // Signalstärke von Peak 0
     uint8_t  Peaks;     // Anzahl erkannter Peaks (0 = nichts gesehen)
     bool     isCon;     // true = Sensor antwortet und ist konfiguriert
+    uint32_t Time;      // millis() der letzten übernommenen Messung (0 = noch nie)
 };
 ```
 
@@ -57,6 +58,7 @@ einen aus dem Sensor (`RADAR_PEAKS_TO_FETCH`).
 | `calib()` | ja, ~1 s je Sensor | schreibt `config` in alle Sensoren und kalibriert neu |
 | `operator[](pos)` | – | `RadarData` der Einbauposition |
 | `giveCon(pos)` | – | antwortet der Sensor? |
+| `giveAge(pos)` | – | Alter des Messwerts in ms (`millis() - Time`); ein Sensor ohne Messung liefert `millis()` |
 | `giveCount()` | – | `RADAR_NUM_SENSORS` |
 | `giveSensor(pos)` | – | Direktzugriff auf `XM125Distance` (Temperatur, Diagnose) |
 | `config` | – | `XM125DistanceConfig` für **alle** Sensoren, vorbelegt aus `params.h` |
