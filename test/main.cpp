@@ -6,17 +6,9 @@ systemlib sys;
 
 RobotDataCom IMAS2;
 
-PowerDebugger PDS;
-
-void PDSbind()
-{
-  // Alle standard binds hier eintragen
-}
-
 void setup()
 {
   sys.initialize();
-  PDSbind();
 }
 
 void loop()
@@ -24,7 +16,13 @@ void loop()
   sys.readSensors();
 
   // if start switch
-  if (false)
+  if (sys.giveStart()) // Game Loop
+  {
+  }
+  else if (sys.giveExpStartSwitch()) // gestoppt aber homing etc. erlaubt
+  {
+  }
+  else // Motor aus
   {
   }
 }

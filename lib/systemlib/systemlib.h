@@ -16,7 +16,7 @@
 #include "XM125Distance.h"
 
 #include <commlib.h>
-//#include <PDS.h>
+#include <PDS.h>
 
 #include <PID/PID.h>
 #include <ADRC/ADRC.h>
@@ -63,6 +63,10 @@ private:
     static constexpr uint8_t RADAR_MAX_CONSEC_FAILURES = 5;
 
     /* -------------- Sensor Var -------------- */
+    float Akku_V = 0.0f;
+    float Akku_I = 0.0f;
+    float Motor_V = 0.0f;
+    float Motor_I = 0.0f;
     float BNO_calibration = 0.0f;
     float BNO_eulerZ = 0.0f;
     float BNO_OrbitDir = 0.0f;
@@ -82,6 +86,7 @@ private:
 
     bool SWI[5] = {false};
     bool RCJ = false;
+    bool RCJ_Disable = false;
     bool RCJ_present = false;
     bool startSwitch = false;
 
@@ -115,19 +120,21 @@ private:
 
 public:
 
+    RadarData RadarVo;
+    RadarData RadarHi;
+    RadarData RadarRe;
+    RadarData RadarLi;
+
     MotorData MoDataVL;
     MotorData MoDataVR;
     MotorData MoDataHL;
     MotorData MoDataHR;
     MotorData MoDataDR;
 
-    RadarData RadarVo;
-    RadarData RadarHi;
-    RadarData RadarRe;
-    RadarData RadarLi;
-
     ADRCConfig cfgA;
     PIDConfig cfgP;
+
+    float Regler_in = 1;
 
     /* -------------- Ssytem Worker -------------- */
     void initialize();
@@ -147,9 +154,15 @@ public:
     /* -------------- Aktors -------------- */
     void setMotorData(MotorData Data);
     MotorData giveMotorData(uint8_t ID);
-
     void setupHeadingController(bool useADRC = false);
     void resetHeadingController(void);
+    void moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andrehwinkel);
+    void moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel);
+    void moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel);
+    void setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break);
+    void setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break);
+    void setOmniWheelVek(float vx, float vy, float omega);
+    void setOmniWheelDir(float directionDeg, uint8_t speedPercent, float omega);
 
     /* -------------- Calculate -------------- */
     void updateHeadingController(void);

@@ -6,38 +6,43 @@
 
 #define LED_LENGTH 19
 
-#define MotorVL_ID 0
-#define MotorVR_ID 1
+#define MotorVR_ID 0 
+#define MotorVL_ID 1
 #define MotorHL_ID 2
 #define MotorHR_ID 3
 #define MotorDR_ID 4
 
 enum PinOut
 {
+    /*
+    4 -> 9 / 4
+    1 -> 4 / 9
+    2 -> 5 / 6
+    3 -> 6 / 5*/
 
     MotorVR_PWM = 4,
-    MotorVL_PWM = 5,
+    MotorVL_PWM = 9,
     MotorHL_PWM = 6,
-    MotorHR_PWM = 9,
+    MotorHR_PWM = 5,
     MotorDR_PWM = 33,
 
+    MotorVR_P1 = 6,
+    MotorVR_P2 = 7,
     MotorVL_P1 = 0,
     MotorVL_P2 = 1,
-    MotorHL_P1 = 4,
-    MotorHL_P2 = 5,
-    MotorVR_P1 = 2,
-    MotorVR_P2 = 3,
-    MotorHR_P1 = 6,
-    MotorHR_P2 = 7,
+    MotorHL_P1 = 2,
+    MotorHL_P2 = 3,
+    MotorHR_P1 = 4,
+    MotorHR_P2 = 5,
 
-    MotorVL_AP1 = 0,
-    MotorVL_AP2 = 1,
-    MotorHL_AP1 = 4,
-    MotorHL_AP2 = 5,
-    MotorVR_AP1 = 2,
-    MotorVR_AP2 = 3,
-    MotorHR_AP1 = 6,
-    MotorHR_AP2 = 7,
+    MotorVR_AP1 = 7,
+    MotorVR_AP2 = 6,
+    MotorVL_AP1 = 5,
+    MotorVL_AP2 = 4,
+    MotorHL_AP1 = 3,
+    MotorHL_AP2 = 2,
+    MotorHR_AP1 = 1,
+    MotorHR_AP2 = 0,
 
     KICKER_PORT = 18,
 
