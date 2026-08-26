@@ -47,7 +47,7 @@ void setup()
   PDS.bind("speed", &speed, 5);
   PDS.bind("bno", &param2, 6);
 
-  //PDS.bind("RadarVo1", &sys.RadarVo.Dist, 7, "mm");
+  PDS.bind("RadarVo1", &sys.RadarVo.Dist, 7, "mm");
   PDS.bind("RadarVo2", &sys.RadarLi.Dist, 8, "mm");
   PDS.bind("RadarVo3", &sys.RadarHi.Dist, 9, "mm");
   PDS.bind("RadarVo4", &sys.RadarRe.Dist, 10, "mm");
@@ -103,7 +103,7 @@ void loop()
   speed = min(100.0f, hypot(x, y));
 
   //sys.moveDir(angle,speed,0);
-  sys.moveDir(angle,speed,PDS.getFastParam(2));
+  sys.moveDir(angle,speed,0);
   //sys.setOmniWheelVek(x,y,0);
   //sys.setHeading();
   //param1 = sys.giveOrbitDir()*-0.9;

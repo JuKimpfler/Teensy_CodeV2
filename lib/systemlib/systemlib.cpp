@@ -52,6 +52,13 @@ void systemlib::initialize()
     Wire.begin();
     Wire.setClock(100000);
 
+    Rand_EXP.setup(false);
+    Motor_EXP.setup(false);
+    SW_EXP.setup(true);
+    Button_EXP.setup(true);
+    readExpanders();
+    Motor_EXP.writePin(7,false);
+
     SPI.begin();
     SPI1.begin();
 
@@ -64,6 +71,8 @@ void systemlib::initialize()
     INA219_Motor.setMaxCurrentShunt(15);
 
     BNO.init();
+    calibBNO();
+
     PDS.init();
 
     MoDataVL.ID = MotorVL_ID;
@@ -79,12 +88,12 @@ void systemlib::initialize()
     SW_EXP.setup(true);
     Button_EXP.setup(true);
 
-    //for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
-    //{
-    //    RADAR_sensorReady[i] = setupRadarSens(i);
-    //    RADAR_lastSetupMs[i] = millis();
-    //}
-    //startRadarRound(); // erste Messung laeuft schon, waehrend der Rest hochfaehrt
+    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
+    {
+        RADAR_sensorReady[i] = setupRadarSens(i);
+        RADAR_lastSetupMs[i] = millis();
+    }
+    startRadarRound(); // erste Messung laeuft schon, waehrend der Rest hochfaehrt
 
     ir_ring.read_gains(IR_Gains);
     ir_ring.read_offsets(IR_Offsets);
@@ -95,11 +104,11 @@ void systemlib::initialize()
 
     setupHeadingController();
 
-    /*for (int i = 0; i < RADAR_NUM_SENSORS; i++)
+    for (int i = 0; i < RADAR_NUM_SENSORS; i++)
     {
         XM125Distance &radar = RADAR_sensors[i];
         radar.resetModule();
-    }*/
+    }
 }
 
 void systemlib::readSensors(void)
@@ -113,7 +122,7 @@ void systemlib::readSensors(void)
 
     readBNO();
     measuretimer = 0;
-    //readRadar();
+    readRadar();
     Serial.println(measuretimer);
     // readIR();
 
@@ -171,9 +180,9 @@ void systemlib::readRadar(void)
 
     for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
     {
-        RadarData *slot = radarSlot(i);
-        if (slot->isCon==false)
-            continue;
+        //RadarData *slot = radarSlot(i);
+        //if (slot->isCon==false)
+        //    continue;
 
         if (!RADAR_measurePending[i])
             continue;
@@ -202,9 +211,9 @@ void systemlib::startRadarRound(void)
     // faellt einmal fuer alle an statt einmal pro Sensor.
     for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
     {
-        RadarData *slot = radarSlot(i);
-        if (slot->isCon==false)
-            continue;
+        //RadarData *slot = radarSlot(i);
+        //if (slot->isCon==false)
+        //    continue;
 
         if (!RADAR_sensorReady[i])
         {
@@ -497,31 +506,31 @@ void systemlib::updateMotors(void)
 {
     uint8_t Port_List[8];
     byte out;
-    if (MoDataVL.Speed < 2 || giveExpander(0,3))
+    if (MoDataVL.Speed == 0 || giveExpander(0,3))
     {
         MoDataVL.Speed = 0;
         MoDataVL.Enable = false;
         MoDataVL.Break = true;
     }
-    if (MoDataVR.Speed < 2 || giveExpander(0,3))
+    if (MoDataVR.Speed == 0 || giveExpander(0,3))
     {
         MoDataVR.Speed = 0;
         MoDataVR.Enable = false;
         MoDataVR.Break = true;
     }
-    if (MoDataHL.Speed < 2 || giveExpander(0,3))
+    if (MoDataHL.Speed == 0 || giveExpander(0,3))
     {
         MoDataHL.Speed = 0;
         MoDataHL.Enable = false;
         MoDataHL.Break = true;
     }
-    if (MoDataHR.Speed < 2 || giveExpander(0,3))
+    if (MoDataHR.Speed == 0 || giveExpander(0,3))
     {
         MoDataHR.Speed = 0;
         MoDataHR.Enable = false;
         MoDataHR.Break = true;
     }
-    if (MoDataDR.Speed < 2 || giveExpander(0,3))
+    if (MoDataDR.Speed == 0 || giveExpander(0,3))
     {
         MoDataDR.Speed = 0;
         MoDataDR.Enable = false;
