@@ -89,6 +89,17 @@ public:
      */
     explicit XM125Base(uint8_t i2cAddr = XM125_I2C_ADDR_DEFAULT, int8_t wakePin = -1, int8_t intPin = -1);
 
+    /**
+     * Adresse und Pins nachtraeglich setzen — fuer Sensor-Arrays, die erst
+     * beim Hochfahren erfahren, welcher Sensor auf welcher Adresse sitzt.
+     * Muss VOR begin() aufgerufen werden.
+     */
+    void configure(uint8_t i2cAddr, int8_t wakePin = -1, int8_t intPin = -1) {
+        _addr    = i2cAddr;
+        _wakePin = wakePin;
+        _intPin  = intPin;
+    }
+
     /** Initialisiert Pins (falls verkabelt) und prüft I²C-Erreichbarkeit. */
     bool begin(TwoWire& wire = Wire);
 

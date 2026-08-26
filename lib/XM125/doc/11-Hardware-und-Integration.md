@@ -229,10 +229,20 @@ Das ist der schnellste Weg, das Verhalten der Rohwerte über der Zeit zu sehen �
 und damit auch das beste Werkzeug für den Sägezahn-Test aus
 [07-Kalibrierung.md B.2](07-Kalibrierung.md#b2-schritt-0-erst-das-komplette-32-bit-wort-ansehen).
 
-## 9. Integration: systemlib & params.h
+## 9. Integration: RadarArray & params.h
 
 Im fertigen Roboter wird die Library nicht direkt aus `loop()` bedient,
-sondern über die `systemlib`. Alle Zahlen dazu stehen zentral in
+sondern über [RadarArray](../../RadarArray/RadarArray.md) — eine dünne Schicht,
+die alle vier Module als ein Objekt führt und in der `systemlib` als
+`sys.Radar` steckt:
+
+```cpp
+sys.Radar.begin();                      // in systemlib::initialize()
+sys.Radar.update();                     // in systemlib::readSensors()
+uint16_t d = sys.Radar[RadarVo].Dist;   // Rohwert Peak 0
+```
+
+Alle Zahlen dazu stehen zentral in
 [lib/include/params.h](../../include/params.h):
 
 | Konstante | Wert | Bedeutung |
@@ -249,22 +259,22 @@ sondern über die `systemlib`. Alle Zahlen dazu stehen zentral in
 | `RADAR_PEAKS_TO_FETCH` | 1 | wie viele Peaks je Messung wirklich geholt werden — `systemlib` wertet nur Peak 0 aus |
 | `RADAR_REINIT_INTERVAL_MS` | 2000 | Mindestabstand zwischen zwei Wiederanlaufversuchen für einen toten Sensor (die Neuinitialisierung blockiert) |
 
-Ablauf in der `systemlib` — **es wird nie auf ein Messergebnis gewartet**:
+Ablauf im `RadarArray` — **es wird nie auf ein Messergebnis gewartet**:
 
-- `setupRadarSens(idx)` — `begin()` + Konfiguration aus `params.h` +
-  `setMeasureTimeout()`/`setMaxPeaksToFetch()` + `applyConfigAndCalibrate()`
-  für einen Sensor. Blockiert, läuft deshalb nur beim Start bzw. gedrosselt.
-- `readRadar()` — sieht je Zyklus bei jedem laufenden Sensor **einmal** mit
+- `begin()` — je Sensor `begin()` + Konfiguration aus `params.h` +
+  `setMeasureTimeout()`/`setMaxPeaksToFetch()` + `applyConfigAndCalibrate()`,
+  danach die erste Messrunde. Blockiert, läuft deshalb nur beim Start.
+- `update()` — sieht je Zyklus bei jedem laufenden Sensor **einmal** mit
   `isMeasuring()` nach (höchstens ein Registerlesezugriff), übernimmt fertige
-  Ergebnisse und startet die nächste Runde, sobald alle durch sind.
-- `startRadarRound()` — `startMeasurement()` bei **allen** Sensoren
-  hintereinander: sie messen damit gleichzeitig, die Messdauer fällt einmal
-  für alle an.
-- `takeRadarResult(idx)` — `getLastResult()` in `RadarVo/Li/Hi/Re` übernehmen.
-- `radarMeasureFailed(idx)` — zählt Fehlschläge und markiert den Sensor nach
-  `RADAR_MAX_CONSEC_FAILURES` als nicht bereit (ohne zu blockieren).
-- `retryRadarSetup(idx)` — höchstens alle `RADAR_REINIT_INTERVAL_MS` ein
-  blockierender Wiederanlaufversuch für einen als tot markierten Sensor.
+  Ergebnisse und startet die nächste Runde, sobald alle durch sind. Dabei
+  intern: `startMeasurement()` bei **allen** Sensoren hintereinander, sie
+  messen damit gleichzeitig und die Messdauer fällt einmal für alle an.
+- Fehlschläge werden gezählt; nach `RADAR_MAX_CONSEC_FAILURES` gilt der Sensor
+  als tot (`Radar[pos].isCon == false`, ohne zu blockieren) und bekommt
+  höchstens alle `RADAR_REINIT_INTERVAL_MS` einen blockierenden
+  Wiederanlaufversuch.
+- `calib()` — schreibt `Radar.config` in alle Sensoren und kalibriert neu
+  (`systemlib::calibRadar()`).
 
 Zeitbedarf im Zyklus: rund ein Buszugriff je Sensor (< 1 ms), plus einmal je
 Runde das Lesen von Ergebnis- und Peak-Registern.

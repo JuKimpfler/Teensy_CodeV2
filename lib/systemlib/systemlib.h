@@ -13,7 +13,7 @@
 #include <ir_ring.h>
 #include "SPI.h"
 #include <fancyBTN.h>
-#include "XM125Distance.h"
+#include <RadarArray.h>
 
 #include <commlib.h>
 #include <PDS.h>
@@ -22,14 +22,6 @@
 #include <ADRC/ADRC.h>
 
 extern BNO055 BNO;
-
-struct RadarData
-{
-    uint16_t Dist;
-    int32_t Strenght;
-    uint8_t Peaks;
-    bool isCon = true;
-};
 
 struct MotorData
 {
@@ -55,12 +47,6 @@ class systemlib
 private:
     RobotDataCom ownRobot;
     RobotDataCom otherRobot;
-
-    bool     RADAR_sensorReady[RADAR_NUM_SENSORS]    = {};
-    bool     RADAR_measurePending[RADAR_NUM_SENSORS] = {}; ///< Sensor nimmt an der laufenden Runde teil
-    uint8_t  RADAR_consecFailures[RADAR_NUM_SENSORS] = {};
-    uint32_t RADAR_lastSetupMs[RADAR_NUM_SENSORS]    = {}; ///< Bremse fuer die blockierende Neuinitialisierung
-    static constexpr uint8_t RADAR_MAX_CONSEC_FAILURES = 5;
 
     /* -------------- Sensor Var -------------- */
     float Akku_V = 0.0f;
@@ -105,24 +91,14 @@ private:
     void readBNO(void);
     void readIR(void);
     void readExpanders(void);
-    void readRadar(void);                 ///< nicht blockierend: nachsehen + naechste Runde starten
-    void startRadarRound(void);           ///< stoesst die Messung bei ALLEN Sensoren gleichzeitig an
-    void takeRadarResult(uint8_t idx);    ///< fertiges Ergebnis in RadarVo/Li/Hi/Re uebernehmen
-    void radarMeasureFailed(uint8_t idx); ///< Fehlerzaehler, markiert den Sensor ggf. als nicht bereit
-    void retryRadarSetup(uint8_t idx);    ///< gedrosselte Neuinitialisierung eines toten Sensors
-    RadarData* radarSlot(uint8_t idx);    ///< Index -> RadarVo/Li/Hi/Re
-
-    bool setupRadarSens(uint8_t idx);
 
     /* -------------- Motor ----------------- */
     void updateMotors(void);
 
 public:
 
-    RadarData RadarVo;
-    RadarData RadarHi;
-    RadarData RadarRe;
-    RadarData RadarLi;
+    /// Alle Radarsensoren. Zugriff ueber die Einbauposition: Radar[RadarVo].Dist
+    RadarArray Radar;
 
     MotorData MoDataVL;
     MotorData MoDataVR;
@@ -148,7 +124,7 @@ public:
     void writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain);
     void writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16]);
     void calibIR(void);
-    void calibRadar(void);
+    void calibRadar(void); ///< alle Radarsensoren neu konfigurieren + kalibrieren (blockiert)
 
     /* -------------- Aktors -------------- */
     void setMotorData(MotorData Data);
@@ -185,6 +161,8 @@ public:
     bool giveTSSPData(uint8_t sensorNumber) const { return IR_TSSP[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
     float giveHeadingController(void); // BNO has to be setup allready
     void giveButtonStates(uint8_t (&buttonStates)[5]) const {for (uint8_t i = 0; i < 5; i++){buttonStates[i] = fancyBTNstates[i];}}; // currently disabled -> change in readExpanders() to enable it
+    RadarData giveRadar(uint8_t pos) const { return Radar[pos]; };       // Radar-Messwerte, pos = RadarVo/Li/Hi/Re
+    bool giveRadarCon(uint8_t pos) const { return Radar.giveCon(pos); }; // antwortet der Radarsensor?
     bool giveExpander(uint8_t expnum, uint8_t portnum);
     bool giveExpSwitch(uint8_t switchNumber) const { return SWI[switchNumber]; };
     bool giveExpStartSwitch(void) const { return startSwitch; };

@@ -47,10 +47,10 @@ void setup()
   PDS.bind("speed", &speed, 5);
   PDS.bind("bno", &param2, 6);
 
-  PDS.bind("RadarVo1", &sys.RadarVo.Dist, 7, "mm");
-  PDS.bind("RadarVo2", &sys.RadarLi.Dist, 8, "mm");
-  PDS.bind("RadarVo3", &sys.RadarHi.Dist, 9, "mm");
-  PDS.bind("RadarVo4", &sys.RadarRe.Dist, 10, "mm");
+  PDS.bind("RadarVo1", &sys.Radar[RadarVo].Dist, 7, "mm");
+  PDS.bind("RadarVo2", &sys.Radar[RadarLi].Dist, 8, "mm");
+  PDS.bind("RadarVo3", &sys.Radar[RadarHi].Dist, 9, "mm");
+  PDS.bind("RadarVo4", &sys.Radar[RadarRe].Dist, 10, "mm");
   PDS.bind("Feld_X_Valid", &feld_x_Valid, 11);
   PDS.bind("Feld_Y_Valid", &feld_y_Valid, 12);
   PDS.bind("Feld_X_Pos", &feld_x_pos, 103, "*2 cm");
@@ -71,14 +71,14 @@ void loop()
     delay(1000);
   }
 
-  /*feld_x_Valid = abs(sys.RadarLi.Dist + sys.RadarRe.Dist - (1830 - 60));
-  feld_y_Valid = abs(sys.RadarHi.Dist + sys.RadarVo.Dist - (2430 - 60));
+  /*feld_x_Valid = abs(sys.Radar[RadarLi].Dist + sys.Radar[RadarRe].Dist - (1830 - 60));
+  feld_y_Valid = abs(sys.Radar[RadarHi].Dist + sys.Radar[RadarVo].Dist - (2430 - 60));
 
-  pos_x_1 = sys.RadarLi.Dist / 10;
-  pos_y_1 = sys.RadarHi.Dist / 10;
+  pos_x_1 = sys.Radar[RadarLi].Dist / 10;
+  pos_y_1 = sys.Radar[RadarHi].Dist / 10;
 
-  pos_x_2 = (1830 - sys.RadarRe.Dist) / 10;
-  pos_y_2 = (2430 - sys.RadarVo.Dist) / 10;
+  pos_x_2 = (1830 - sys.Radar[RadarRe].Dist) / 10;
+  pos_y_2 = (2430 - sys.Radar[RadarVo].Dist) / 10;
 
   feld_x_pos = ((pos_x_1 + pos_x_2) / 2) - (183 / 2);
   feld_y_pos = ((pos_y_1 + pos_y_2) / 2) - (243 / 2);*/
