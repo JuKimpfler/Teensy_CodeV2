@@ -884,7 +884,9 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andreh
     float distanzCm = sqrtf(dx * dx + dy * dy);
     Speed = Speed*constrain(distanzCm / 40.0f, 0.0f, 1.0f); // 0 = am Ziel, 1 = 40cm oder mehr entfernt
 
-
+    if(abs(distanzCm)<5){
+        Speed=0;
+    }
 
     setHeading(Andrehwinkel*DEG_TO_RAD);
     setOmniWheelDir(Util.AMap(atan2f(dy, dx) * (180.0f / PI)),Speed,giveHeadingController()*100);

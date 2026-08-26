@@ -70,7 +70,7 @@ void loop()
 
   if (PDS.getFastParam(2)>20)
   {
-    sys.moveToPoint(50,50,speed,0);
+    sys.moveToPoint(50,50,50,0);
   }
   else{
     sys.moveDir(angle,speed,0);
