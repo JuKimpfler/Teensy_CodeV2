@@ -41,5 +41,5 @@ static constexpr uint32_t RADAR_MEASURE_TIMEOUT_MS    = 3000;  ///< PROFILE5 + h
 static constexpr uint8_t RADAR_PEAKS_TO_FETCH = 1; ///< ausgewertet wird nur Peak 0
 // Ein nicht erreichbarer Sensor wird neu initialisiert -- das blockiert
 // (Kalibrierung dauert bis ~2 s), darf also nicht in jedem Zyklus passieren:
-static constexpr uint32_t RADAR_REINIT_INTERVAL_MS = 2000;
+static constexpr uint32_t RADAR_REINIT_INTERVAL_MS = 500;
 

@@ -9,5 +9,5 @@ bool Utilslib::Range(float Value , float min , float max){
 
 float Utilslib::AMap( float Angle ){
     //switch to 0, 360 for modulo operation, then back to +- 180
-    return fmod(Angle + 180.0f, 360.0f) - 180.0f;
+    return 180.0f - fmodf(fmodf(180.0f - Angle, 360.0f) + 360.0f, 360.0f);
 }

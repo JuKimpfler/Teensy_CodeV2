@@ -105,12 +105,12 @@ void systemlib::initialize()
     SW_EXP.setup(true);
     Button_EXP.setup(true);
 
-    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
-    {
-        RADAR_sensorReady[i] = setupRadarSens(i);
-        RADAR_lastSetupMs[i] = millis();
-    }
-    startRadarRound(); // erste Messung laeuft schon, waehrend der Rest hochfaehrt
+    //for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
+    //{
+    //    RADAR_sensorReady[i] = setupRadarSens(i);
+    //    RADAR_lastSetupMs[i] = millis();
+    //}
+    //startRadarRound(); // erste Messung laeuft schon, waehrend der Rest hochfaehrt
 
     ir_ring.read_gains(IR_Gains);
     ir_ring.read_offsets(IR_Offsets);
@@ -119,19 +119,13 @@ void systemlib::initialize()
 
     ADC_Motor.init();
 
-    setupHeadingController(true);
+    setupHeadingController();
 
-    for (int i = 0; i < RADAR_NUM_SENSORS; i++)
+    /*for (int i = 0; i < RADAR_NUM_SENSORS; i++)
     {
         XM125Distance &radar = RADAR_sensors[i];
         radar.resetModule();
-    }
-
-    PDS.bind("Akku_V", &Akku_V, 1, "V");
-    PDS.bind("Akku_I", &Akku_I, 2, "A");
-    PDS.bind("Motor_V", &Motor_V, 3, "V");
-    PDS.bind("Motor_I", &Motor_I, 4, "A");
-    PDS.bind("Zykluszeit", &cycleTime_us, 9, "us");
+    }*/
 }
 
 void systemlib::readSensors(void)
@@ -145,7 +139,7 @@ void systemlib::readSensors(void)
 
     readBNO();
     measuretimer = 0;
-    readRadar();
+    //readRadar();
     Serial.println(measuretimer);
     // readIR();
 
@@ -203,6 +197,10 @@ void systemlib::readRadar(void)
 
     for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
     {
+        RadarData *slot = radarSlot(i);
+        if (slot->isCon==false)
+            continue;
+
         if (!RADAR_measurePending[i])
             continue;
 
@@ -230,6 +228,10 @@ void systemlib::startRadarRound(void)
     // faellt einmal fuer alle an statt einmal pro Sensor.
     for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
     {
+        RadarData *slot = radarSlot(i);
+        if (slot->isCon==false)
+            continue;
+
         if (!RADAR_sensorReady[i])
         {
             retryRadarSetup(i);
@@ -257,7 +259,6 @@ void systemlib::takeRadarResult(uint8_t idx)
     slot->Peaks = res.numDistances;
     slot->Dist = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
     slot->Strenght = (res.numDistances > 0) ? res.peakStrength[0] : 0;
-    slot->isCon = true;
 }
 
 void systemlib::retryRadarSetup(uint8_t idx)
@@ -339,7 +340,7 @@ void systemlib::calibBNO(void)
 
 void systemlib::readBNO(void)
 {
-    BNO_eulerZ = Util.AMap(BNO.eulHeading());
+    BNO_eulerZ = BNO.eulHeading();
     BNO_OrbitDir = Util.AMap(BNO_eulerZ - BNO_calibration);
 }
 
@@ -452,28 +453,86 @@ void systemlib::readUS(void)
         US_li = SRF08_li.getDistance(), SRF08_li.startRanging();
 }
 
-/* -------------- Aktors ------------- */
-void systemlib::setMotorData(MotorData Data)
-{
-    if (Data.ID == MoDataVR.ID)
+void systemlib::setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break){
+    if (ID == MoDataVR.ID)
     {
-        MoDataVR = Data;
+        MoDataVR.Break = Break;
+        MoDataVR.Speed = Speed;
+        MoDataVR.Enable = Enable;
+        MoDataVR.Dir = Dir;
     }
-    else if (Data.ID == MoDataHR.ID)
+    else if (ID == MoDataHR.ID)
     {
-        MoDataHR = Data;
+        MoDataHR.Break = Break;
+        MoDataHR.Speed = Speed;
+        MoDataHR.Enable = Enable;
+        MoDataHR.Dir = Dir;
     }
-    else if (Data.ID == MoDataVL.ID)
+    else if (ID == MoDataVL.ID)
     {
-        MoDataVL = Data;
+        MoDataVL.Break = Break;
+        MoDataVL.Speed = Speed;
+        MoDataVL.Enable = Enable;
+        MoDataVL.Dir = Dir;
     }
-    else if (Data.ID == MoDataHL.ID)
+    else if (ID == MoDataHL.ID)
     {
-        MoDataHL = Data;
+        MoDataHL.Break = Break;
+        MoDataHL.Speed = Speed;
+        MoDataHL.Enable = Enable;
+        MoDataHL.Dir = Dir;
     }
-    else if (Data.ID == MoDataDR.ID)
+    else if (ID == MoDataDR.ID)
     {
-        MoDataDR = Data;
+        MoDataDR.Break = Break;
+        MoDataDR.Speed = Speed;
+        MoDataDR.Enable = Enable;
+        MoDataDR.Dir = Dir;
+    }
+}
+
+void systemlib::setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break){
+    bool Dir;
+    
+    if (Speed<0){Dir=false;}
+    else{Dir=true;}
+
+    Speed = abs(Speed);
+
+    if (ID == MoDataVR.ID)
+    {
+        MoDataVR.Break = Break;
+        MoDataVR.Speed = Speed;
+        MoDataVR.Enable = Enable;
+        MoDataVR.Dir = Dir;
+    }
+    else if (ID == MoDataHR.ID)
+    {
+        MoDataHR.Break = Break;
+        MoDataHR.Speed = Speed;
+        MoDataHR.Enable = Enable;
+        MoDataHR.Dir = Dir;
+    }
+    else if (ID == MoDataVL.ID)
+    {
+        MoDataVL.Break = Break;
+        MoDataVL.Speed = Speed;
+        MoDataVL.Enable = Enable;
+        MoDataVL.Dir = Dir;
+    }
+    else if (ID == MoDataHL.ID)
+    {
+        MoDataHL.Break = Break;
+        MoDataHL.Speed = Speed;
+        MoDataHL.Enable = Enable;
+        MoDataHL.Dir = Dir;
+    }
+    else if (ID == MoDataDR.ID)
+    {
+        MoDataDR.Break = Break;
+        MoDataDR.Speed = Speed;
+        MoDataDR.Enable = Enable;
+        MoDataDR.Dir = Dir;
     }
 }
 
@@ -481,30 +540,35 @@ void systemlib::updateMotors(void)
 {
     uint8_t Port_List[8];
     byte out;
-    if (MoDataVL.Speed < 2)
+    if (MoDataVL.Speed < 2 || giveExpander(0,3))
     {
         MoDataVL.Speed = 0;
         MoDataVL.Enable = false;
+        MoDataVL.Break = true;
     }
-    if (MoDataVR.Speed < 2)
+    if (MoDataVR.Speed < 2 || giveExpander(0,3))
     {
         MoDataVR.Speed = 0;
         MoDataVR.Enable = false;
+        MoDataVR.Break = true;
     }
-    if (MoDataHL.Speed < 2)
+    if (MoDataHL.Speed < 2 || giveExpander(0,3))
     {
         MoDataHL.Speed = 0;
         MoDataHL.Enable = false;
+        MoDataHL.Break = true;
     }
-    if (MoDataHR.Speed < 2)
+    if (MoDataHR.Speed < 2 || giveExpander(0,3))
     {
         MoDataHR.Speed = 0;
         MoDataHR.Enable = false;
+        MoDataHR.Break = true;
     }
-    if (MoDataDR.Speed < 2)
+    if (MoDataDR.Speed < 2 || giveExpander(0,3))
     {
         MoDataDR.Speed = 0;
         MoDataDR.Enable = false;
+        MoDataDR.Break = true;
     }
 
     analogWrite(MotorVL_PWM, abs(MoDataVL.Speed) * 2.55);
@@ -709,9 +773,9 @@ void systemlib::setupHeadingController(bool useADRC)
         cfgP.dtMax = 0.03f;   // 30 ms -- deckelt Ausreisser, falls das
                               // Hauptprogramm mal laenger braucht
 
-        cfgP.Kp = 2.0f; // Start: nur P, dann I/D schrittweise zuschalten
-        cfgP.Ki = 0.5f;
-        cfgP.Kd = 0.05f;
+        cfgP.Kp = 0.6; // Start: nur P, dann I/D schrittweise zuschalten
+        cfgP.Ki = 0;
+        cfgP.Kd = 0.016f;
 
         cfgP.uMin = -1.0f;
         cfgP.uMax = 1.0f;
@@ -767,11 +831,11 @@ void systemlib::updateHeadingController()
 
     if (_useADRC)
     {
-        ADRC_Out = headingControllerA->update(_OrbitHeading, DEG_TO_RAD * BNO_OrbitDir, dt);
+        ADRC_Out = headingControllerA->update(_OrbitHeading, DEG_TO_RAD * giveOrbitDir(), dt);
     }
     else
     {
-        PID_Out = headingControllerP->update(_OrbitHeading, DEG_TO_RAD * BNO_OrbitDir, dt);
+        PID_Out = headingControllerP->update(_OrbitHeading, DEG_TO_RAD * giveOrbitDir(), dt);
     }
 }
 
@@ -785,4 +849,61 @@ bool systemlib::giveStart(void)
     {
         return startSwitch;
     }
+}
+
+void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andrehwinkel){
+
+}
+
+void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel){
+
+}
+
+void systemlib::setOmniWheelVek(float vx, float vy, float omega) {
+    float w[4];
+    static const float wheelAngles[4] = {45,315,135,225};
+    for (int i = 0; i < 4; ++i) {
+        w[i] = -sinf(wheelAngles[i]*DEG_TO_RAD) * -vx
+                  +  cosf(wheelAngles[i]*DEG_TO_RAD) * vy
+                  + omega;
+        w[i] = constrain(w[i], -100, 100);
+        
+    }
+    setMotorData(MoDataVL.ID,w[0],true,false);
+    setMotorData(MoDataVR.ID,w[1],true,false);
+    setMotorData(MoDataHL.ID,w[2],true,false);
+    setMotorData(MoDataHR.ID,w[3],true,false);
+}
+
+void systemlib::setOmniWheelDir(float directionDeg, uint8_t speedPercent, float omega) {
+    directionDeg = directionDeg-giveOrbitDir();
+
+    directionDeg = Util.AMap(directionDeg);
+
+    float w[4];
+    static const float wheelAngles[4] = {45,315,135,225};
+    Serial.println("omega : "+String(omega));
+ 
+    float directionRad = directionDeg * DEG_TO_RAD;
+    float speedNorm     = speedPercent / 100.0f; // 0..1
+ 
+    float vx = cosf(directionRad) * speedNorm * 100;
+    float vy = sinf(directionRad) * speedNorm * 100;
+ 
+    for (int i = 0; i < 4; ++i) {
+        w[i] = -sinf(wheelAngles[i]*DEG_TO_RAD) * -vx
+                  +  cosf(wheelAngles[i]*DEG_TO_RAD) * vy
+                  + omega;
+        w[i] = constrain(w[i], -100, 100);
+    }
+
+    setMotorData(MoDataVL.ID,w[0],true,false);
+    setMotorData(MoDataVR.ID,w[1],true,false);
+    setMotorData(MoDataHL.ID,w[2],true,false);
+    setMotorData(MoDataHR.ID,w[3],true,false);
+}
+
+void systemlib::moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel){
+    setHeading(Andrehwinkel*DEG_TO_RAD);
+    setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
 }
