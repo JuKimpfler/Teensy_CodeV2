@@ -7,7 +7,6 @@ BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
 
 elapsedMillis cycleTimer;
 elapsedMicros cycleTimer_us;
-elapsedMillis measuretimer;
 
 commlib communication;
 
@@ -18,24 +17,12 @@ IR_ring ir_ring(ir_ring_handle);
 INA219 INA219_Main(0x40);
 INA219 INA219_Motor(0x41);
 
-SRF08Sensor SRF08_vo(SRF08_ADDR(0xE2), SRF08_RANGE_2M, SRF08_GAIN_MID);
-SRF08Sensor SRF08_re(SRF08_ADDR(0xE4), SRF08_RANGE_2M, SRF08_GAIN_MID);
-SRF08Sensor SRF08_hi(SRF08_ADDR(0xE6), SRF08_RANGE_2M, SRF08_GAIN_MID);
-SRF08Sensor SRF08_li(SRF08_ADDR(0xE8), SRF08_RANGE_2M, SRF08_GAIN_MID);
-
 TCA9534DW SW_EXP(&I2C_SW, 0x22);
 TCA9534DW Motor_EXP(&Wire1, 0x20);
 TCA9534DW Button_EXP(&Wire1, 0x23);
 TCA9534DW Rand_EXP(&Wire1, 0x21);
 
 ADC108S102 ADC_Motor(&SPI1, ADC108S102_Motor_CS);
-
-XM125Distance RADAR_sensors[RADAR_NUM_SENSORS] = {
-    XM125Distance(RADAR_SENSOR_ADDRS[0], RADAR_WAKE_PIN, RADAR_INT_PIN),
-    XM125Distance(RADAR_SENSOR_ADDRS[1], RADAR_WAKE_PIN, RADAR_INT_PIN),
-    XM125Distance(RADAR_SENSOR_ADDRS[2], RADAR_WAKE_PIN, RADAR_INT_PIN),
-    XM125Distance(RADAR_SENSOR_ADDRS[3], RADAR_WAKE_PIN, RADAR_INT_PIN),
-};
 
 constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
 PID *headingControllerP;
@@ -88,33 +75,12 @@ void systemlib::initialize()
 
     pinMode(START_SWITCH, INPUT);
 
-    // -- US -----
-    SRF08_vo.setEMAAlpha(0.25f);
-    SRF08_hi.setEMAAlpha(0.25f);
-    SRF08_re.setEMAAlpha(0.25f);
-    SRF08_li.setEMAAlpha(0.25f);
+    Motor_EXP.setup(false);
+    Rand_EXP.setup(false);
+    SW_EXP.setup(true);
+    Button_EXP.setup(true);
 
-    SRF08_vo.setJumpThreshold(50);
-    SRF08_hi.setJumpThreshold(50);
-    SRF08_re.setJumpThreshold(50);
-    SRF08_li.setJumpThreshold(50);
-
-    SRF08_vo.begin(I2C_US);
-    SRF08_hi.begin(I2C_US);
-    SRF08_re.begin(I2C_US);
-    SRF08_li.begin(I2C_US);
-
-    SRF08_vo.startRanging();
-    SRF08_hi.startRanging();
-    SRF08_re.startRanging();
-    SRF08_li.startRanging();
-
-    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
-    {
-        RADAR_sensorReady[i] = setupRadarSens(i);
-        RADAR_lastSetupMs[i] = millis();
-    }
-    startRadarRound(); // erste Messung laeuft schon, waehrend der Rest hochfaehrt
+    Radar.begin(I2C_RADAR); // richtet alle Sensoren ein und startet die erste Messrunde
 
     ir_ring.read_gains(IR_Gains);
     ir_ring.read_offsets(IR_Offsets);
@@ -124,12 +90,6 @@ void systemlib::initialize()
     ADC_Motor.init();
 
     setupHeadingController();
-
-    for (int i = 0; i < RADAR_NUM_SENSORS; i++)
-    {
-        XM125Distance &radar = RADAR_sensors[i];
-        radar.resetModule();
-    }
 }
 
 void systemlib::readSensors(void)
@@ -142,9 +102,7 @@ void systemlib::readSensors(void)
     cycleTimer_us = 0;
 
     readBNO();
-    measuretimer = 0;
-    readRadar();
-    Serial.println(measuretimer);
+    Radar.update();
     // readIR();
 
     readExpanders();
@@ -156,206 +114,9 @@ void systemlib::readSensors(void)
     updateMotors();
 }
 
-RadarData *systemlib::radarSlot(uint8_t idx)
-{
-    switch (idx)
-    {
-    case 0:
-        return &RadarVo;
-    case 1:
-        return &RadarLi;
-    case 2:
-        return &RadarHi;
-    case 3:
-        return &RadarRe;
-    default:
-        return nullptr;
-    }
-}
-
-void systemlib::radarMeasureFailed(uint8_t idx)
-{
-    RADAR_consecFailures[idx]++;
-    if (RADAR_consecFailures[idx] < RADAR_MAX_CONSEC_FAILURES)
-        return;
-
-    // Sensor gilt als tot. Hier NICHT neu initialisieren -- setupRadarSens()
-    // blockier ßbis zu ~2 s. Das uebernimmt retryRadarSetup() gedrosselt beim
-    // naechsten Rundenstart.
-    RADAR_consecFailures[idx] = 0;
-    RADAR_sensorReady[idx] = false;
-
-    RadarData *slot = radarSlot(idx);
-    if (slot != nullptr)
-        slot->isCon = false;
-}
-
-void systemlib::readRadar(void)
-{
-    bool roundRunning = false;
-
-    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
-    {
-        //RadarData *slot = radarSlot(i);
-        //if (slot->isCon==false)
-        //    continue;
-
-        if (!RADAR_measurePending[i])
-            continue;
-
-        if (RADAR_sensors[i].isMeasuring())
-        {
-            roundRunning = true;
-            continue;
-        }
-
-        RADAR_measurePending[i] = false;
-        if (RADAR_sensors[i].hasResult())
-            takeRadarResult(i);
-        else
-            radarMeasureFailed(i);
-    }
-
-    if (!roundRunning)
-        startRadarRound();
-
-    pos_x_1 = RadarLi.Dist / 10;
-    pos_y_1 = RadarHi.Dist / 10;
-
-    pos_x_2 = ((feld_x*10) - RadarRe.Dist) / 10;
-    pos_y_2 = ((feld_y*10) - RadarVo.Dist) / 10;
-
-    if(RadarHi.Dist>feld_y-30){
-        feld_y_pos = pos_y_1;
-    }
-    else if(RadarVo.Dist>feld_y-30){
-        feld_y_pos = pos_y_2;
-    }
-    else{
-        feld_y_pos = ((pos_y_1 + pos_y_2) / 2);
-    }
-
-    if(RadarLi.Dist>feld_x-30){
-        feld_x_pos = pos_x_1;
-    }
-    else if(RadarRe.Dist>feld_x-30){
-        feld_x_pos = pos_x_2;
-    }
-    else{
-        feld_x_pos = ((pos_x_1 + pos_x_2) / 2);
-    }
-}
-
-void systemlib::startRadarRound(void)
-{
-    // Alle Sensoren zusammen anstossen: startMeasurement() schreibt nur das
-    // Kommando (< 1 ms), sie messen also praktisch zeitgleich und die Messdauer
-    // faellt einmal fuer alle an statt einmal pro Sensor.
-    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
-    {
-        //RadarData *slot = radarSlot(i);
-        //if (slot->isCon==false)
-        //    continue;
-
-        if (!RADAR_sensorReady[i])
-        {
-            retryRadarSetup(i);
-            continue;
-        }
-
-        RADAR_measurePending[i] = RADAR_sensors[i].startMeasurement();
-        if (!RADAR_measurePending[i])
-            radarMeasureFailed(i);
-    }
-}
-
-void systemlib::takeRadarResult(uint8_t idx)
-{
-    RADAR_consecFailures[idx] = 0;
-
-    RadarData *slot = radarSlot(idx);
-    if (slot == nullptr)
-        return;
-
-    // Peak 0: bei peakSorting = CLOSEST das naechstgelegene Objekt.
-    // Peaks == 0 (keine Wand erkannt) liefert Dist/Strenght = 0, damit kein
-    // alter Wert stehen bleibt und "reagiert nicht" sichtbar wird.
-    const XM125DistanceResult &res = RADAR_sensors[idx].getLastResult();
-    slot->Peaks = res.numDistances;
-    slot->Dist = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
-    slot->Strenght = (res.numDistances > 0) ? res.peakStrength[0] : 0;
-}
-
-void systemlib::retryRadarSetup(uint8_t idx)
-{
-    // setupRadarSens() blockiert (wakeUp-Timeout + Kalibrierung, bis ~2 s).
-    // Ein abgezogener Sensor wuerde damit jeden Zyklus ausbremsen, deshalb
-    // hoechstens alle RADAR_REINIT_INTERVAL_MS ein Versuch.
-    if ((millis() - RADAR_lastSetupMs[idx]) < RADAR_REINIT_INTERVAL_MS)
-        return;
-
-    RADAR_lastSetupMs[idx] = millis();
-    RADAR_sensorReady[idx] = setupRadarSens(idx);
-}
-
-bool systemlib::setupRadarSens(uint8_t idx)
-{
-    if (idx >= RADAR_NUM_SENSORS)
-        return false;
-
-    XM125Distance &radar = RADAR_sensors[idx];
-    RadarData *slot = radarSlot(idx);
-
-    if (!radar.begin(I2C_RADAR))
-    {
-        if (slot != nullptr)
-            slot->isCon = false;
-        return false;
-    }
-
-    // Messbetrieb: nie auf ein Ergebnis warten, und pro Messung nur die Peaks
-    // holen, die auch ausgewertet werden (jeder Peak = zwei Registerlesezugriffe).
-    radar.setMeasureTimeout(RADAR_MEASURE_TIMEOUT_MS);
-    radar.setMaxPeaksToFetch(RADAR_PEAKS_TO_FETCH);
-
-    // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h
-    radar.config.startMm = RADAR_START_MM;
-    radar.config.endMm = RADAR_END_MM;                    // > 2500, damit die Wand nicht auf der Bereichskante liegt
-    radar.config.maxProfile = XM125D_PROFILE5;            // laengste Pulse = groesste Reichweite
-    radar.config.thresholdMethod = XM125D_THRESHOLD_CFAR; // adaptiv, unabhaengig von der Umgebung
-    radar.config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
-    // radar.config.fixedStrengthThreshold = RADAR_THRESHOLD_STRENGHT;
-    radar.config.signalQuality = RADAR_SIGNAL_QUALITY;
-    radar.config.peakSorting = XM125D_SORT_STRONGEST;
-    // PLANAR: bei einer flaechigen Wand faellt die Echo-Amplitude langsamer mit der
-    // Distanz als bei einem punktfoermigen Reflektor. Ohne diese Angabe setzt der
-    // Detektor die Schwelle am Bereichsende zu hoch an und die Wand faellt raus.
-    radar.config.reflectorShape = XM125D_REFLECTOR_PLANAR;
-    radar.config.closeRangeLeakageCancellation = false; // sauberer Nahbereich ab startMm
-
-    if (!radar.applyConfigAndCalibrate())
-    {
-        uint16_t failedReg = radar.getLastFailedConfigRegister();
-        if (failedReg != 0xFFFF)
-        { /*-> I2C-Schreibfehler bei Register 0xfailedReg*/
-        }
-        if (slot != nullptr)
-            slot->isCon = false;
-        return false;
-    }
-
-    return true;
-}
-
 void systemlib::calibRadar()
 {
-    for (int i = 0; i < RADAR_NUM_SENSORS; i++)
-    {
-        XM125Distance &radar = RADAR_sensors[i];
-        radar.applyConfigAndCalibrate();
-    }
-    delay(1000);
-
+    Radar.calib();
 }
 
 /* -------------- BNO -------------- */
@@ -460,23 +221,6 @@ float systemlib::giveMotorCurrent(void)
     }
     Summe = Summe / 6;
     return Summe;
-}
-
-/* -------------- US -------------- */
-
-void systemlib::readUS(void)
-{
-    if (SRF08_vo.update())
-        US_vo = SRF08_vo.getDistance(), SRF08_vo.startRanging();
-
-    if (SRF08_hi.update())
-        US_hi = SRF08_hi.getDistance(), SRF08_hi.startRanging();
-
-    if (SRF08_re.update())
-        US_re = SRF08_re.getDistance(), SRF08_re.startRanging();
-
-    if (SRF08_li.update())
-        US_li = SRF08_li.getDistance(), SRF08_li.startRanging();
 }
 
 void systemlib::setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break){
@@ -733,7 +477,8 @@ void systemlib::readExpanders(void)
     SWI[4] = SW_EXP.readPin(0);
 
     startSwitch = SW_EXP.readPin(5);
-    RCJ = SW_EXP.readPin(6);
+    RCJ = Button_EXP.readPin(5);
+    RCJ_Disable = SW_EXP.readPin(6);
     RCJ_present = SW_EXP.readPin(7);
 
     BTN1.update(Button_EXP.readPin(0));
@@ -868,7 +613,7 @@ bool systemlib::giveStart(void)
 {
     if (RCJ_present)
     {
-        return RCJ;
+        return RCJ && !RCJ_Disable;
     }
     else
     {

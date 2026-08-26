@@ -140,7 +140,7 @@ void loop() {
 
 1. Zykluszeit erfassen (`cycleTime`, `cycleTime_us`)
 2. `delay(debugTimeout)` – **blockierende Pause**, Default 5 ms
-3. `readBNO()`, `readRadar()` (`readIR()`/`readUS()` sind auskommentiert)
+3. `readBNO()`, `Radar.update()` (`readIR()`/`readUS()` sind auskommentiert)
 4. `readExpanders()` (Schalter + Taster)
 5. `PDS.update()` (Telemetrie senden/empfangen)
 6. `updateHeadingController()`
@@ -150,35 +150,38 @@ void loop() {
 
 ## Radar (XM125)
 
-Die [XM125](../XM125/XM125.md)-Sensoren (`RADAR_NUM_SENSORS`, Adressen aus
-[params.h](../include/include.md)) messen **alle gleichzeitig**, und
-`readRadar()` **wartet nie auf ein Messergebnis**:
+Die Radarsensoren stecken komplett in [RadarArray](../RadarArray/RadarArray.md).
+Die `systemlib` hält davon genau ein Objekt und ruft es an zwei Stellen auf:
+`initialize()` → `Radar.begin()`, `readSensors()` → `Radar.update()`.
 
-| Funktion | Aufgabe | Zeit im Zyklus |
+```cpp
+uint16_t d = sys.Radar[RadarVo].Dist;   // Rohwert Peak 0 ("Counts", NICHT mm)
+if (sys.Radar[RadarLi].isCon) { ... }   // antwortet der Sensor?
+
+sys.Radar.config.endMm = 4000;          // Abstimmung aendern ...
+sys.calibRadar();                       // ... und uebernehmen (blockiert)
+```
+
+| Position | Index | Einbau |
 |---|---|---|
-| `startRadarRound()` | `startMeasurement()` bei allen Sensoren — sie messen dadurch zeitgleich | 1 Registerschreibzugriff je Sensor |
-| `readRadar()` | je Zyklus einmal `isMeasuring()` je laufendem Sensor; fertige Ergebnisse übernehmen; ist die Runde komplett, sofort die nächste starten | höchstens 1 Registerlesezugriff je Sensor |
-| `takeRadarResult(idx)` | `getLastResult()` → `RadarVo` / `RadarLi` / `RadarHi` / `RadarRe` | 0 |
-| `radarMeasureFailed(idx)` | Fehlschläge zählen, nach `RADAR_MAX_CONSEC_FAILURES` (5) den Sensor als nicht bereit markieren | 0 |
-| `retryRadarSetup(idx)` | Wiederanlauf eines toten Sensors — **blockiert** bis ~2 s, deshalb höchstens alle `RADAR_REINIT_INTERVAL_MS` | selten |
-
-Damit kostet das Radar rund 1 ms pro Zyklus statt der vollen Messdauer
-(20–200 ms). Die Messrate ändert sich dadurch nicht — nur wartet die
-Hauptschleife nicht mehr darauf.
+| `RadarVo` | 0 | vorne |
+| `RadarLi` | 1 | links |
+| `RadarHi` | 2 | hinten |
+| `RadarRe` | 3 | rechts |
 
 ```cpp
 struct RadarData
 {
-    uint8_t Dist;      // Rohwert von Peak 0 ("Counts", NICHT mm — siehe XM125-Doku)
-    int32_t Strenght;  // Signalstärke von Peak 0
-    uint8_t Peaks;     // Anzahl erkannter Peaks (0 = nichts gesehen)
-    bool    isCon;     // false, wenn der Sensor als tot gilt
+    uint16_t Dist;      // Rohwert von Peak 0 ("Counts", NICHT mm — siehe XM125-Doku)
+    int32_t  Strenght;  // Signalstärke von Peak 0
+    uint8_t  Peaks;     // Anzahl erkannter Peaks (0 = nichts gesehen)
+    bool     isCon;     // false, wenn der Sensor als tot gilt
 };
 ```
 
-`Peaks == 0` liefert `Dist`/`Strenght` als `0`, damit kein alter Wert stehen
-bleibt. Ausgewertet wird nur Peak 0, deshalb holt die Library auch nur diesen
-einen aus dem Sensor (`RADAR_PEAKS_TO_FETCH`).
+Alle Sensoren messen **gleichzeitig**, `Radar.update()` **wartet nie** auf ein
+Messergebnis — Details und Zeitbedarf siehe
+[RadarArray.md](../RadarArray/RadarArray.md).
 
 ---
 
@@ -227,6 +230,8 @@ Antriebsmotoren vom `ADC_Motor`.
 | Funktion | Rückgabe |
 |---|---|
 | `giveOrbitDir()` | Ausrichtung relativ zur kalibrierten Nullrichtung, ±180° |
+| `Radar[RadarVo/Li/Hi/Re]` | `RadarData` des Radarsensors (Direktzugriff, auch `giveRadar(pos)`) |
+| `giveRadarCon(pos)` | antwortet der Radarsensor? |
 | `giveBallAngle()` / `giveBallDistance()` | Ball im Roboter-KS |
 | `giveRawBallAngle()` / `giveRawBallDistance()` | Ball roh vom IR-Ring |
 | `giveRawSensorData(...)` / `giveTSSPData(...)` | Rohdaten des IR-Rings – **derzeit deaktiviert**, siehe `#if false` in `readIR()` |
@@ -241,6 +246,7 @@ Antriebsmotoren vom `ADC_Motor`.
 | Funktion | Beschreibung |
 |---|---|
 | `void calibBNO()` | Aktuelle Richtung als Nullrichtung übernehmen |
+| `void calibRadar()` | `Radar.config` in alle Radarsensoren schreiben und neu kalibrieren – **blockiert** ~1 s je Sensor |
 | `void calibIR()` | Min/Max je IR-Sensor mitschreiben und als Offset/Gain in den Ring schreiben – während der Kalibrierfahrt zyklisch aufrufen |
 | `void writeIRCalibration(uint8_t nr, int16_t offset, int16_t gain)` | Einzelner Sensor |
 | `void writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16])` | Alle 16 Sensoren |
