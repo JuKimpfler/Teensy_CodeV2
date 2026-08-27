@@ -123,9 +123,6 @@ public:
     ADRCConfig cfgA;
     PIDConfig cfgP;
 
-    float feld_x_pos = 0; ///< = Position.X, bleibt fuer moveToPoint() und den PDS erhalten
-    float feld_y_pos = 0; ///< = Position.Y, bleibt fuer moveToPoint() und den PDS erhalten
-
     /// Letztes Ergebnis von calculatePosition(), wird in readSensors() aktualisiert.
     PositionData Position;
 

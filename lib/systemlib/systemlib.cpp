@@ -7,6 +7,7 @@ BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
 
 elapsedMillis cycleTimer;
 elapsedMicros cycleTimer_us;
+elapsedMillis lastvaliddata_Radar;
 
 commlib communication;
 
@@ -265,6 +266,9 @@ PositionData systemlib::calculatePosition(void)
     float certainty_x = 0.0f;
     float certainty_y = 0.0f;
 
+    float lastX = Position.X;
+    float lastY = Position.Y;
+
     // X: links misst gegen x = 0, rechts gegen x = feld_x.
     Position.X = calcAxisPosition(RadarLi, RadarRe, feld_x, Position.X, certainty_x);
     // Y: hinten misst gegen y = 0 (eigenes Tor), vorne gegen y = feld_y.
@@ -272,9 +276,18 @@ PositionData systemlib::calculatePosition(void)
 
     Position.Certainty = min(certainty_x, certainty_y);
 
-    // moveToPoint() und der PDS lesen weiterhin diese beiden.
-    feld_x_pos = Position.X;
-    feld_y_pos = Position.Y;
+    if(Position.Certainty<0.1 && lastvaliddata_Radar < 2000){
+        Position.X = lastX;
+        Position.Y = lastY;
+    }
+    else if (Position.Certainty<0.1 && lastvaliddata_Radar >= 2000){
+        Position.X = -1;
+        Position.Y = -1;
+    }
+
+    if (Position.Certainty>=0.1){
+        lastvaliddata_Radar = 0;
+    }
 
     return Position;
 }
@@ -788,10 +801,10 @@ bool systemlib::giveStart(void)
 
 void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andrehwinkel){
 
-    float dy = X - feld_x_pos;
-    float dx = Y - feld_y_pos;
+    float dx = X - Position.X;
+    float dy = Y - Position.Y;
 
-    float distanzCm = sqrtf(dx * dx + dy * dy);
+    float distanzCm = sqrtf(dy * dy + dx * dx);
     Speed = Speed*constrain(distanzCm / 40.0f, 0.0f, 1.0f); // 0 = am Ziel, 1 = 40cm oder mehr entfernt
 
     if(abs(distanzCm)<5){
@@ -799,7 +812,7 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andreh
     }
 
     setHeading(Andrehwinkel*DEG_TO_RAD);
-    setOmniWheelDir(Util.AMap(atan2f(dy, dx) * (180.0f / PI)),Speed,giveHeadingController()*100);
+    setOmniWheelDir(Util.AMap(atan2f(dx, dy) * (180.0f / PI)),Speed,giveHeadingController()*100);
 }
 
 void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel){

@@ -35,16 +35,17 @@ void setup()
   PDS.bind("Timer", &timer, 0, "s");
   PDS.bind("Akku_V", &Akku_V, 1, "V");
   PDS.bind("Akku_I", &Akku_I, 2, "A");
-  PDS.bind("angle", &angle, 4);
-  PDS.bind("speed", &speed, 5);
-  PDS.bind("bno", &param2, 6);
+  PDS.bind("angle", &angle, 4, "A");
+  PDS.bind("speed", &speed, 5, "A");
+  PDS.bind("bno", &param2, 6, "A");
 
   PDS.bind("RadarVo", &sys.Radar[RadarVo].Dist, 7, "mm");
   PDS.bind("RadarLi", &sys.Radar[RadarLi].Dist, 8, "mm");
   PDS.bind("RadarHi", &sys.Radar[RadarHi].Dist, 9, "mm");
   PDS.bind("RadarRe", &sys.Radar[RadarRe].Dist, 10, "mm");
-  PDS.bind("Feld_X_Pos", &sys.feld_x_pos, 103, "*2 cm");
-  PDS.bind("Feld_Y_Pos", &sys.feld_y_pos, 104, "*2 cm");
+  PDS.bind("Position", &sys.Position.Certainty, 11, "%");
+  PDS.bind("Feld_X_Pos", &sys.Position.X, 103, " cm");
+  PDS.bind("Feld_Y_Pos", &sys.Position.Y, 104, " cm");
 
   sys.calibBNO();
 }
