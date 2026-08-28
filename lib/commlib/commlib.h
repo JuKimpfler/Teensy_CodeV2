@@ -18,9 +18,12 @@ struct RobotDataCom
 class commlib
 {
 public:
-    RobotDataCom getOtherFlush() const;
-    void setOwnFlush(float x, float y, float ballAngle, float ballDistance, float goalAngle, float goalDistance);
-    void sendOwnFlush();
+    RobotDataCom getOther() const { return otherFlush_; };
+    RobotDataCom getOwn() const { return ownFlush_; };
+    void set(RobotDataCom data);
+    void set(float x, float y, float ballAngle, float ballDistance, float goalAngle, float goalDistance);
+    void send();
+    void read();
 
 private:
     RobotDataCom otherFlush_;
