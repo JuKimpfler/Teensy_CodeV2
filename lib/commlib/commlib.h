@@ -24,6 +24,7 @@ public:
     void set(float x, float y, float ballAngle, float ballDistance, float goalAngle, float goalDistance);
     void send();
     void read();
+    bool init();
 
 private:
     RobotDataCom otherFlush_;
