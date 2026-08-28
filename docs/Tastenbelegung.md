@@ -16,7 +16,7 @@
 | Button Nr | Single Click | Double Click | long Click|
 |---|---|---|---|
 | 1 | Autoposition | StartIRCalibration | StartLineCalibration |
-| 2 | - | - | - |
+| 2 | CamCalibration | - | - |
 | 3 | CycleConfig | Increase | Decrease |
 | 4 | - | - | - |
 | 5 | - | - | - |
