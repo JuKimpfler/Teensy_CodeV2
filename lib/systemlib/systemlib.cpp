@@ -359,13 +359,13 @@ void systemlib::calibIR(void)
 
 void systemlib::communicationSend(void)
 {
-    communication.sendOwnFlush();
+    communication.send();
 }
 
 void systemlib::communicationSend(float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance)
 {
-    communication.setOwnFlush(positionX, positionY, ballAngle, ballDistance, goalAngle, goalDistance);
-    communication.sendOwnFlush();
+    communication.set(positionX, positionY, ballAngle, ballDistance, goalAngle, goalDistance);
+    communication.send();
 }
 
 float systemlib::giveMainVoltage(void)
