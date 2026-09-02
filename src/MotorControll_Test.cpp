@@ -44,8 +44,8 @@ void setup()
   PDS.bind("RadarHi", &sys.Radar[RadarHi].Dist, 9, "mm");
   PDS.bind("RadarRe", &sys.Radar[RadarRe].Dist, 10, "mm");
   PDS.bind("Position", &sys.Position.Certainty, 11, "%");
-  PDS.bind("Feld_X_Pos", &sys.Position.X, 103, " cm");
-  PDS.bind("Feld_Y_Pos", &sys.Position.Y, 104, " cm");
+  PDS.bind("Feld_Y_Pos", &sys.Position.Y, 103, " cm");
+  PDS.bind("Feld_X_Pos", &sys.Position.X, 104, " cm");
 
   sys.calibBNO();
 }

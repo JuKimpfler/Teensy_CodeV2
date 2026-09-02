@@ -48,7 +48,7 @@ static constexpr uint32_t RADAR_REINIT_INTERVAL_MS = 500;
 // Weg zur einen Wand + Weg zur anderen Wand = Feldgroesse. Passt das Paar
 // zusammen, ist die Position sicher; passt es nicht, hat mindestens einer der
 // beiden etwas anderes als die Wand gesehen.
-static constexpr float POS_RADAR_OFFSET_CM = 0.0f;  ///< Abstand Roboter-Mittelpunkt -> Sensorflaeche (Koordinaten zaehlen ab Mittelpunkt)
+static constexpr float POS_RADAR_OFFSET_CM = 2.0f;  ///< Abstand Roboter-Mittelpunkt -> Sensorflaeche (Koordinaten zaehlen ab Mittelpunkt)
 static constexpr float POS_PAIR_TOL_CM     = 10.0f; ///< so weit darf die Summe des Paares von der Feldgroesse abweichen
 static constexpr float POS_BLIND_CM        = 30.0f; ///< misst ein Sensor mehr als Feldgroesse - POS_BLIND_CM, steht der gegenueberliegende im Blindbereich (RADAR_START_MM) und wird verworfen
 static constexpr uint32_t POS_AGE_MAX_MS   = 1000;  ///< ab diesem Alter zaehlt ein Messwert gar nicht mehr (Certainty 0)

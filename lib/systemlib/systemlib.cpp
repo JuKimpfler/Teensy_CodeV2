@@ -270,17 +270,17 @@ PositionData systemlib::calculatePosition(void)
     float lastY = Position.Y;
 
     // X: links misst gegen x = 0, rechts gegen x = feld_x.
-    Position.X = calcAxisPosition(RadarLi, RadarRe, feld_x, Position.X, certainty_x);
+    Position.X = calcAxisPosition(RadarRe, RadarLi, feld_x, Position.X, certainty_x);
     // Y: hinten misst gegen y = 0 (eigenes Tor), vorne gegen y = feld_y.
     Position.Y = calcAxisPosition(RadarHi, RadarVo, feld_y, Position.Y, certainty_y);
 
     Position.Certainty = min(certainty_x, certainty_y);
 
-    if(Position.Certainty<0.1 && lastvaliddata_Radar < 2000){
+    if(Position.Certainty<0.1 && lastvaliddata_Radar < 1000){
         Position.X = lastX;
         Position.Y = lastY;
     }
-    else if (Position.Certainty<0.1 && lastvaliddata_Radar >= 2000){
+    else if (Position.Certainty<0.1 && lastvaliddata_Radar >= 1000){
         Position.X = -1;
         Position.Y = -1;
     }
@@ -721,7 +721,7 @@ void systemlib::setupHeadingController(bool useADRC)
         cfgP.dtMax = 0.03f;   // 30 ms -- deckelt Ausreisser, falls das
                               // Hauptprogramm mal laenger braucht
 
-        cfgP.Kp = 0.4; // Start: nur P, dann I/D schrittweise zuschalten
+        cfgP.Kp = 0.3; // Start: nur P, dann I/D schrittweise zuschalten
         cfgP.Ki = 0;
         cfgP.Kd = 0.016f;
 
@@ -801,13 +801,15 @@ bool systemlib::giveStart(void)
 
 void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andrehwinkel){
 
-    float dx = X - Position.X;
+    X = feld_x-X;
+
+    float dx = X - (feld_x-Position.X);
     float dy = Y - Position.Y;
 
     float distanzCm = sqrtf(dy * dy + dx * dx);
-    Speed = Speed*constrain(distanzCm / 40.0f, 0.0f, 1.0f); // 0 = am Ziel, 1 = 40cm oder mehr entfernt
-
-    if(abs(distanzCm)<5){
+    Speed = Speed*constrain(distanzCm / 60.0f, 0.0f, 1.0f); // 0 = am Ziel, 1 = 40cm oder mehr entfernt
+ 
+    if(abs(distanzCm)<3){
         Speed=0;
     }
 
