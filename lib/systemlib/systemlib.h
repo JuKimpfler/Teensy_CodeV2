@@ -48,6 +48,7 @@ struct PositionData
     float X = 0;         ///< cm, 0 = linke Feldwand
     float Y = 0;         ///< cm, 0 = Wand hinter dem eigenen Tor
     float Certainty = 0; ///< 0 = unbrauchbar (unplausibel oder uralt) ... 1 = plausibles Paar, brandaktuell
+    bool AtGoal = false; ///< Tor-Korrektur greift: Roboter steht vor einer Toroeffnung, Y-Achse ist dort um die Tortiefe kuerzer
 };
 
 class systemlib
@@ -89,8 +90,8 @@ private:
     float ADRC_Out = 0;
     float PID_Out = 0;
 
-    float feld_y = 243;
-    float feld_x = 182; 
+    float feld_x = POS_FIELD_X_CM; ///< Feldbreite [cm], siehe params.h
+    float feld_y = POS_FIELD_Y_CM; ///< Feldlaenge [cm], siehe params.h
 
     uint8_t fancyBTNstates[5] = {0};
     /* -------------- System -------------- */
@@ -107,7 +108,10 @@ private:
     void updateMotors(void);
 
     /* -------------- Position -------------- */
-    float calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSize, float lastPos, float &certainty);
+    float calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSize,
+                           float offsetLow, float offsetHigh,
+                           float lastPos, float &certainty);
+    float goalOffset(float x_cm, float &sureness) const;
 
 public:
 

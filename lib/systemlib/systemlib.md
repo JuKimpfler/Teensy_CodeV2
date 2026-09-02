@@ -189,8 +189,8 @@ Messergebnis — Details und Zeitbedarf siehe
 ## Position aus den Radarwerten
 
 `calculatePosition()` läuft in `readSensors()` direkt nach `Radar.update()` und
-schreibt das Ergebnis nach `Position` (sowie weiterhin nach `feld_x_pos` /
-`feld_y_pos`, die `moveToPoint()` und der PDS lesen).
+schreibt das Ergebnis nach `Position` — dort lesen es `moveToPoint()` und der
+PDS.
 
 ```cpp
 struct PositionData
@@ -198,6 +198,7 @@ struct PositionData
     float X;          // cm, 0 = linke Feldwand
     float Y;          // cm, 0 = Wand hinter dem eigenen Tor
     float Certainty;  // 0 = unbrauchbar ... 1 = plausibles Paar, brandaktuell
+    bool  AtGoal;     // Roboter steht vor einer Toröffnung (Y-Achse verkürzt)
 };
 
 PositionData p = sys.givePosition();
@@ -206,17 +207,18 @@ if (p.Certainty > 0.5f) { /* Position ist belastbar */ }
 
 Je Achse arbeiten zwei **gegenüberliegende** Sensoren zusammen — X aus
 `RadarLi`/`RadarRe`, Y aus `RadarHi`/`RadarVo`. Beide messen dieselbe Strecke
-aus, also muss gelten: *Weg zur einen Wand + Weg zur anderen Wand =
-Feldgröße*. Daran wird das Paar geprüft:
+aus, also muss gelten: *Weg zur einen Fläche + Weg zur anderen Fläche =
+Strecke dazwischen* (`span`, siehe [Tore](#tore) — ohne Tor ist das die volle
+Feldgröße). Daran wird das Paar geprüft:
 
 1. **Einzelprüfung** — der Sensor muss antworten (`isCon`), einen Peak haben
    (`Peaks > 0`) und eine Distanz liefern, die überhaupt ins Feld passt.
-2. **Blindbereich** — misst ein Sensor mehr als `Feldgröße - POS_BLIND_CM`,
+2. **Blindbereich** — misst ein Sensor mehr als `span - POS_BLIND_CM`,
    steht der Roboter dicht an der gegenüberliegenden Wand. Der Sensor dort ist
    näher dran als der Radar-Blindbereich (`RADAR_START_MM` = 20 cm) und kann die
    Wand gar nicht mehr erkennen — sein Wert fliegt raus. Melden **beide** so
    weit, widersprechen sie sich und beide fliegen raus.
-3. **Paarprüfung** — passt die Summe zur Feldgröße, wird gemittelt. Passt sie
+3. **Paarprüfung** — passt die Summe zur Strecke, wird gemittelt. Passt sie
    nicht, verrät die Fehlerrichtung den Schuldigen: Summe zu **klein** → einer
    hat ein Hindernis vor der Wand gesehen (Gegner, Ball), der **längere** Weg
    gewinnt. Summe zu **groß** → einer hat die Wand verpasst (Mehrwegecho), der
@@ -224,6 +226,40 @@ Feldgröße*. Daran wird das Paar geprüft:
 
 Bleibt nichts Brauchbares übrig, bleibt die letzte Position stehen und
 `Certainty` wird `0`.
+
+### Tore
+
+Das Feld ist `POS_FIELD_X_CM` × `POS_FIELD_Y_CM` (182 × 243 cm, Wand zu Wand).
+An **beiden** Enden steht aber mittig ein Tor `POS_GOAL_DEPTH_CM` weit im Feld.
+Steht der Roboter davor, sieht der vordere bzw. hintere Sensor die
+**Torrückwand statt der Feldwand** — die Y-Achse ist dort um die Tortiefe
+kürzer, an beiden Enden zusammen also um `2 × POS_GOAL_DEPTH_CM`:
+
+```
+y = 243  ┌───────┬───────────┬───────┐
+         │       │  Tor 10   │       │   vor dem Tor:  span = 243 - 2*10 = 223
+y = 233  │       └───────────┘       │   sonst:        span = 243
+         │        ← 60 cm →          │
+         │                           │
+y =  10  │       ┌───────────┐       │
+         │       │  Tor 10   │       │
+y =   0  └───────┴───────────┴───────┘
+```
+
+Ob der Sensor Tor oder Wand trifft, sagt allein **X** — deshalb rechnet
+`calculatePosition()` erst die X-Achse (die Seitenwände laufen durch, dort gibt
+es nichts zu korrigieren) und daraus den Tor-Offset für Y.
+
+Die Torkante ist für den Radar kein scharfer Sprung: die Keule ist breiter als
+ein Punkt. Im Band `POS_GOAL_EDGE_CM` (± 12 cm) um die Kante wird deshalb
+linear zwischen beiden Fällen geblendet — der Fehler bleibt damit unter der
+**halben** Tortiefe (max. 5 cm statt 10 cm) — und `Certainty` der Y-Achse fällt
+auf `POS_PLAUS_GOAL_EDGE` (0.5), weil eben nicht feststeht, was der Sensor
+gesehen hat. `PositionData.AtGoal` zeigt, ob die Korrektur greift.
+
+> Ist ein Tor bei euch eine **Nische in der Wand** (Feld dort länger statt
+> kürzer), einfach `POS_GOAL_DEPTH_CM` negativ eintragen — die Rechnung stimmt
+> genauso. `POS_GOAL_DEPTH_CM = 0` schaltet die Torkorrektur komplett ab.
 
 ### Certainty
 
@@ -233,10 +269,13 @@ andere als Position wertlos.
 
 | Plausibilität | Fall |
 |---|---|
-| `POS_PLAUS_PAIR` (1.00) | Summe des Paares trifft die Feldgröße genau; bis `POS_PAIR_TOL_CM` Abweichung linear auf `POS_PLAUS_SINGLE` fallend |
+| `POS_PLAUS_PAIR` (1.00) | Summe des Paares trifft die Strecke genau; bis `POS_PAIR_TOL_CM` Abweichung linear auf `POS_PLAUS_SINGLE` fallend |
 | `POS_PLAUS_SINGLE` (0.60) | nur ein Sensor nutzbar — keine Gegenprobe möglich |
 | `POS_PLAUS_CONFLICT` (0.30) | Paar widerspricht sich, ein Wert wurde geraten |
 | `0` | kein brauchbarer Wert |
+
+Die Y-Achse wird zusätzlich mit `POS_PLAUS_GOAL_EDGE` (0.50) gewichtet, solange
+der Roboter auf der Torkante steht (siehe [Tore](#tore)).
 
 Der Altersfaktor kommt aus `Radar.giveAge(pos)` (Zeitstempel `RadarData.Time`)
 und fällt linear von `1` bei 0 ms auf `0` bei `POS_AGE_MAX_MS` (1000 ms). Bei
@@ -244,7 +283,7 @@ einem Paar zählt der **ältere** der beiden Werte. Ein Sensor, der noch nie
 gemessen hat, liefert ein Alter von `millis()` und damit `Certainty` `0`.
 
 Alle Stellschrauben stehen in `params.h` unter *Positionsbestimmung aus den
-Radarwerten*. Dort sitzt auch `POS_RADAR_OFFSET_CM`: der Abstand vom
+Radarwerten*, *Feldgeometrie* und *Tore*. Dort sitzt auch `POS_RADAR_OFFSET_CM`: der Abstand vom
 Roboter-Mittelpunkt zur Sensorfläche, der auf jede Messung addiert wird, weil
 die Koordinaten ab Mittelpunkt zählen. **Noch nicht ausgemessen (0.0)** —
 solange dort `0` steht, ist die Position um genau diesen Betrag zur Wand hin
