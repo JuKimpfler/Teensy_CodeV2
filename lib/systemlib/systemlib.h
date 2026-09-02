@@ -98,11 +98,17 @@ private:
     uint16_t cycleTime = 0;
     uint16_t cycleTime_us = 0;
     uint16_t debugTimeout = 0;
+    float uptime_s = 0.0f; ///< Laufzeit seit dem Start [s], PDS-Kanal 0
 
     /* -------------- Sensor Funktion -------------- */
     void readBNO(void);
     void readIR(void);
     void readExpanders(void);
+
+    /* -------------- Debug -------------- */
+    /// Bindet die Systemwerte an die festen PDS-Kanaele 0..25.
+    /// Wird von initialize() aufgerufen, siehe docs/PDS_Belegung.md.
+    void setupPDS(void);
 
     /* -------------- Motor ----------------- */
     void updateMotors(void);

@@ -9,9 +9,6 @@ Servo RadarServo;
 
 float param1 = 0;
 float param2 = 0;
-float timer = 0;
-float Akku_V = 0;
-float Akku_I = 0;
 float Dist = 0;
 float angle ;
 float speed ;
@@ -25,35 +22,36 @@ void setup()
   delay(1000);
   RadarServo.write(90);
   Serial.begin(115200);
-  UART_DBG.begin(UART_DBG_BAUD);
 
   Serial.println("------------------------------- Hallo -------------------------------");
+
+  // sys.initialize() startet auch PDS (PDS.init()) und bindet die Systemwerte
+  // auf die festen Kanaele 0..25 -- Akku, Radar, Feldposition, Motoren und
+  // Zykluszeit sind damit ohne weiteres Zutun in der GUI. Siehe
+  // lib/systemlib/systemlib.cpp (setupPDS()) und docs/PDS_Belegung.md.
   sys.initialize();
 
-  PDS.init();
+  // Nur noch die Werte, die es allein in diesem Sketch gibt. track() vergibt
+  // die Kanalnummer selbst -- ab 32, siehe PDS_AUTO_CHANNEL_BASE in
+  // platformio.ini -- und der Name geht automatisch an die GUI.
+  PDS.track("Fahrt_Winkel", &angle,  "°");
+  PDS.track("Fahrt_Speed",  &speed,  "%");
+  PDS.track("Orbit",        &param2, "°");
 
-  PDS.bind("Timer", &timer, 0, "s");
-  PDS.bind("Akku_V", &Akku_V, 1, "V");
-  PDS.bind("Akku_I", &Akku_I, 2, "A");
-  PDS.bind("angle", &angle, 4, "A");
-  PDS.bind("speed", &speed, 5, "A");
-  PDS.bind("bno", &param2, 6, "A");
-
-  PDS.bind("RadarVo", &sys.Radar[RadarVo].Dist, 7, "mm");
-  PDS.bind("RadarLi", &sys.Radar[RadarLi].Dist, 8, "mm");
-  PDS.bind("RadarHi", &sys.Radar[RadarHi].Dist, 9, "mm");
-  PDS.bind("RadarRe", &sys.Radar[RadarRe].Dist, 10, "mm");
-  PDS.bind("Position", &sys.Position.Certainty, 11, "%");
-  PDS.bind("Feld_X_Pos", &sys.Position.X, 103, " cm");
-  PDS.bind("Feld_Y_Pos", &sys.Position.Y, 104, " cm");
+  PDS.log("Setup abgeschlossen");
 
   sys.calibBNO();
 }
 
 void loop()
 {
-  if (PDS.getFastParam(3)>20)
+  // Taster aus dem Parameter-Tab der GUI (channel_config.h -> PARAM_SLOW_BOOLS).
+  // Frueher lagen die beiden auf Fast-Param 2/3; die 5 Fast-Kanaele sind aber
+  // fuer den 100-Hz-Joystick da, und die GUI kann einen Taster ohnehin nur auf
+  // einen Slow-Bool legen (siehe qml/ParamsView.qml).
+  if (PDS.paramBool(1))       // "BNO_kalibrieren"
   {
+    PDS.event("BNO kalibriert");
     sys.calibBNO();
     delay(1000);
   }
@@ -64,12 +62,12 @@ void loop()
 
   param2 = sys.giveOrbitDir();
 
-  x = PDS.getFastParam(1);
-  y = PDS.getFastParam(0);
+  x = PDS.fastParam(1);       // "Fahrt_X"  (Pad-Achse, 100 Hz)
+  y = PDS.fastParam(0);       // "Fahrt_Y"
   angle = atan2(y, x) * RAD_TO_DEG;
   speed = min(100.0f, hypot(x, y))/2;
 
-  if (PDS.getFastParam(2)>20)
+  if (PDS.paramBool(0))       // "Zielpunkt_anfahren"
   {
     sys.moveToPoint(50,50,50,0);
   }
@@ -108,9 +106,7 @@ void loop()
   sys.MoDataHR.Dir = false;
   sys.MoDataHR.Enable = false;*/
 
-  Akku_I = sys.giveMainCurrent();
-  Akku_V = sys.giveMainVoltage();
-
-  timer = millis() / 1000;
-  PDS.update();
+  // PDS.update() steckt in sys.readSensors() und laeuft damit genau einmal
+  // pro Durchlauf -- hier ist nichts mehr zu tun. Akku, Timer und Position
+  // holt sich die Bibliothek selbst von den gebundenen Zeigern.
 }

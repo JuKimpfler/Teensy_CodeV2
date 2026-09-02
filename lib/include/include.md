@@ -19,7 +19,7 @@ Dateien: `enum.h` (Pinbelegung), `params.h` (Bus-/Protokollparameter)
 | Define | Wert | Bedeutung |
 |---|---|---|
 | `USBC_UART` | `Serial` | USB-Serial für Konsolenausgaben |
-| `UART_DBG` | `Serial3` | Debug-UART für das [Power Debug System](../Debugger/PDS.md) |
+| `UART_DBG` | `Serial3` | Debug-UART für das [Power Debug System](../PDS/PDS.md) |
 | `LED_LENGTH` | `19` | Anzahl LEDs im RGB-Ring |
 
 ### Motor-IDs
@@ -187,7 +187,7 @@ Pakettypen gleich.
 großzügiger als 2 Zyklen (150 ms statt 20 ms), weil bei 100 Hz über WLAN sonst
 dauernd Fehlalarm ausgelöst würde – **am Feld ggf. nachjustieren**.
 
-Details zum Protokoll: [PDS.md](../Debugger/PDS.md)
+Details zum Protokoll: [PDS.md](../PDS/README.md)
 
 ---
 

@@ -12,19 +12,6 @@
  * ============================================================
  */
 
-#ifndef BUILD_DATE
-#define BUILD_DATE "??.??.????"
-#endif
-
-#ifndef BUILD_TIME
-#define BUILD_TIME "??:??:??"
-#endif
-
-#ifndef BUILD_VERSION
-#define BUILD_VERSION "?.?.?"
-#endif
-
-
 #include <Arduino.h>
 #include "PDS.h"
 

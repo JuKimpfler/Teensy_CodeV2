@@ -88,8 +88,9 @@ uint8_t states[5];
 sys.giveButtonStates(states);
 ```
 
-Debug-Kanäle 31–35 sind für Schalter/Taster reserviert
-(siehe [`Channel.md`](../Debugger/Channel.md)).
+Auf einem PDS-Kanal liegt bisher nur der Startschalter (Kanal 25, siehe
+[`docs/PDS_Belegung.md`](../../docs/PDS_Belegung.md)). Für die fünf Taster sind 26–31 frei; sie lassen sich im Sketch auch
+ohne feste Nummer mit `PDS.plot("Taster_1", buttons[0])` anzeigen.
 
 ---
 
