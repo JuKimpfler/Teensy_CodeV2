@@ -24,6 +24,11 @@ TCA9534DW Button_EXP(&Wire1, 0x23);
 TCA9534DW Rand_EXP(&Wire1, 0x21);
 
 ADC108S102 ADC_Motor(&SPI1, ADC108S102_Motor_CS);
+ADC108S102 ADC_Line1(&SPI, ADC108S102_Motor_CS);
+ADC108S102 ADC_Line2(&SPI, ADC108S102_Motor_CS);
+ADC108S102 ADC_Line3(&SPI1, ADC108S102_Motor_CS);
+ADC108S102 ADC_Line4(&SPI1, ADC108S102_Motor_CS);
+ADC108S102 ADC_Line5(&SPI1, ADC108S102_Motor_CS);
 
 constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
 PID *headingControllerP;

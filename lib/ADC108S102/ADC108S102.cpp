@@ -7,8 +7,33 @@
  */
 void ADC108S102::init()
 {
-    pinMode(csPin, OUTPUT);
-    digitalWrite(csPin, HIGH);
+    if(!useBinExp){
+        pinMode(csPin, OUTPUT);
+        digitalWrite(csPin, HIGH);
+    }
+    else{
+        pinMode(csPinBin1, OUTPUT);
+        pinMode(csPinBin2, OUTPUT);
+        pinMode(csPinBin3, OUTPUT);
+        digitalWrite(csPinBin1, getAddressForLowPin(7).A0);
+        digitalWrite(csPinBin2, getAddressForLowPin(7).A1);
+        digitalWrite(csPinBin3, getAddressForLowPin(7).A2);
+    }
+}
+
+DecoderAddress ADC108S102::getAddressForLowPin(uint8_t pin) {
+
+    DecoderAddress addr;
+
+    if (pin > 7) {
+        return addr;
+    }
+
+    addr.A2 = (pin & 0b100) != 0; // Bit 2 -> A2 (MSB)
+    addr.A1 = (pin & 0b010) != 0; // Bit 1 -> A1
+    addr.A0 = (pin & 0b001) != 0; // Bit 0 -> A0 (LSB)
+
+    return addr;
 }
 
 /**
@@ -24,9 +49,22 @@ uint16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 
     _spi->beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
 
-    digitalWrite(csPin, LOW);
-    uint16_t result = _spi->transfer16(comandlist[channel]);
-    digitalWrite(csPin, HIGH);
+    uint16_t result = 0;
+
+    if(!useBinExp){
+        digitalWrite(csPin, LOW);
+        result = _spi->transfer16(comandlist[channel]);
+        digitalWrite(csPin, HIGH);
+    }
+    else{
+        digitalWrite(csPinBin1, getAddressForLowPin(csPort).A0);
+        digitalWrite(csPinBin2, getAddressForLowPin(csPort).A1);
+        digitalWrite(csPinBin3, getAddressForLowPin(csPort).A2);
+        result = _spi->transfer16(comandlist[channel]);
+        digitalWrite(csPinBin1, getAddressForLowPin(7).A0);
+        digitalWrite(csPinBin2, getAddressForLowPin(7).A1);
+        digitalWrite(csPinBin3, getAddressForLowPin(7).A2);
+    }
 
     _spi->endTransaction();
 
@@ -57,12 +95,26 @@ uint16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 void ADC108S102::read(uint16_t (&values)[8])
 {
     _spi->beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
-    digitalWriteFast(csPin, LOW);
+    if(!useBinExp){
+        digitalWriteFast(csPin, LOW);
+    }
+    else{
+        digitalWrite(csPinBin1, getAddressForLowPin(csPort).A0);
+        digitalWrite(csPinBin2, getAddressForLowPin(csPort).A1);
+        digitalWrite(csPinBin3, getAddressForLowPin(csPort).A2);
+    }
     for (int i = 0; i < 8; i++)
     {
         values[i] = _spi->transfer16(comandlist[i]);
     }
-    digitalWriteFast(csPin, HIGH);
+    if(!useBinExp){
+        digitalWriteFast(csPin, HIGH);
+    }
+    else{
+        digitalWrite(csPinBin1, getAddressForLowPin(7).A0);
+        digitalWrite(csPinBin2, getAddressForLowPin(7).A1);
+        digitalWrite(csPinBin3, getAddressForLowPin(7).A2);
+    }
     for (int i = 0; i < 8; i++)
         lastValue[i] = values[i];
 
