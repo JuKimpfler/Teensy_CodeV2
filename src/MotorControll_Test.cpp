@@ -47,6 +47,8 @@ void setup()
   PDS.bind("Feld_Y_Pos", &sys.Position.Y, 103, " cm");
   PDS.bind("Feld_X_Pos", &sys.Position.X, 104, " cm");
 
+  PDS.Channel(99,LineSensorSchwelle[0]);
+
   sys.calibBNO();
 }
 
@@ -58,7 +60,14 @@ void loop()
     delay(1000);
   }
 
-  
+  PDS.Channel(12,sys.giveLineAngle(),"LineAngle");
+  PDS.Channel(13,sys.giveLineDepth(),"LineDepth");
+  PDS.Channel(14,sys.giveLinePresent(),"LinePresent");
+  for ( int i = 47 ; i>=0; i--){
+    PDS.Channel((50+i),sys.line_array[i]);
+  }
+
+
 
   sys.readSensors();
 

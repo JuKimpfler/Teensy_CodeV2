@@ -24,11 +24,12 @@ TCA9534DW Button_EXP(&Wire1, 0x23);
 TCA9534DW Rand_EXP(&Wire1, 0x21);
 
 ADC108S102 ADC_Motor(&SPI1, ADC108S102_Motor_CS);
-ADC108S102 ADC_Line1(&SPI, ADC108S102_Motor_CS);
-ADC108S102 ADC_Line2(&SPI, ADC108S102_Motor_CS);
-ADC108S102 ADC_Line3(&SPI1, ADC108S102_Motor_CS);
-ADC108S102 ADC_Line4(&SPI1, ADC108S102_Motor_CS);
-ADC108S102 ADC_Line5(&SPI1, ADC108S102_Motor_CS);
+ADC108S102 ADC_Line1(&SPI,25,22,0,0);
+ADC108S102 ADC_Line2(&SPI,25,22,0,1);
+ADC108S102 ADC_Line3(&SPI,25,22,0,2);
+ADC108S102 ADC_Line4(&SPI,25,22,0,3);
+ADC108S102 ADC_Line5(&SPI,25,22,0,4);
+ADC108S102 ADC_Line6(&SPI,25,22,0,5);
 
 constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
 PID *headingControllerP;
@@ -94,6 +95,12 @@ void systemlib::initialize()
     setDebugTimeout(0);
 
     ADC_Motor.init();
+    ADC_Line1.init();
+    ADC_Line2.init();
+    ADC_Line3.init();
+    ADC_Line4.init();
+    ADC_Line5.init();
+    ADC_Line6.init();
 
     setupHeadingController();
 }
@@ -111,6 +118,7 @@ void systemlib::readSensors(void)
     Radar.update();
     calculatePosition();
     // readIR();
+    updateLine();
 
     readExpanders();
 
@@ -180,6 +188,93 @@ float systemlib::goalOffset(float x_cm, float &sureness) const
 
     return POS_GOAL_DEPTH_CM * t;
 }
+
+uint16_t systemlib::giveADC(uint8_t Port, uint8_t Pin){
+    if(Port == 0){return ADC_Line1.read(Pin);}
+    else if(Port == 1){return ADC_Line2.read(Pin);}
+    else if(Port == 2){return ADC_Line3.read(Pin);}
+    else if(Port == 3){return ADC_Line4.read(Pin);}
+    else if(Port == 4){return ADC_Line5.read(Pin);}
+    else if(Port == 5){return ADC_Line6.read(Pin);}
+    else{return 0;}
+}
+
+void systemlib::updateLine(){
+    uint8_t line_summe=0;
+    int8_t line_depth=0;
+    int8_t line_Angle = 0;
+    bool line_touching;
+
+    for(int i = 0; i<6 ; i++){
+        for (int j = 0; j<8 ; j++){
+            if(i == 0){line_array[j]= ADC_Line1.read(j);}
+            else if(i == 1){line_array[8+j]= ADC_Line2.read(j);}
+            else if(i == 2){line_array[16+j]= ADC_Line3.read(j);}
+            else if(i == 3){line_array[24+j]= ADC_Line4.read(j);}
+            else if(i == 4){line_array[32+j]= ADC_Line5.read(j);}
+            else if(i == 5){line_array[40+j]= ADC_Line6.read(j);}
+        }
+    }
+
+    for( int i = 0 ; i<48 ; i++){
+        line_bool_array[i] = line_array[i]>LineSensorSchwelle[i];
+        if(line_bool_array[i]){line_summe++;}
+    }
+    
+    if(line_summe > 1){
+        // 2) zwei Sensoren mit maximaler Winkel-Distanz finden (kreisförmig korrekt)
+        float maxDistanz = -1.0f;
+        float sensorA = 0.0f, sensorB = 0.0f;
+
+        int aktiveSensoren[line_summe];
+        int count = 0;
+        for(int i = 0;i<48; i++){
+            if(line_bool_array[i]==true){
+            aktiveSensoren[count] = Util.AMap((i * 7.5));
+            count++;
+            }
+        }
+
+        for (int i = 0; i < line_summe; i++) {
+            for (int j = i + 1; j < line_summe; j++) {
+            float dist = fabsf(Util.AMap(aktiveSensoren[i] - aktiveSensoren[j]));
+            if (dist > maxDistanz) {
+                maxDistanz = dist;
+                sensorA = aktiveSensoren[i];
+                sensorB = aktiveSensoren[j];
+            }
+            }
+        }
+
+        // 3) Mittelwinkel zwischen A und B bestimmen (2 Möglichkeiten)
+        float delta  = Util.AMap(sensorB - sensorA);
+        line_depth = 1-abs(sin((abs(delta)/2)*DEG_TO_RAD));
+        float mitte1 = Util.AMap(sensorA + (delta * 0.5f));
+        float mitte2 = Util.AMap(mitte1 + 180.0f);
+
+        // 4) Mitte wählen, die näher liegt
+        line_Angle = (fabsf(Util.AMap(mitte1 - mitte2))) < (fabsf(Util.AMap(mitte2 - sensorA))) ? mitte1 : mitte2;
+        line_touching=true;
+    }
+    else if(line_summe == 1){
+        line_depth=1;
+        line_touching=true;
+        for(int i = 0 ; i<32 ; i++){
+            if(line_bool_array[i]==true){
+                line_Angle=(i*11.25)-90;
+            }
+        }
+    }
+    else{
+        line_depth=1;
+        line_touching=false;
+    }
+
+    LineDepth = line_summe;
+    LineWinkel = line_Angle;
+    LinePresent = line_touching;
+}
+
 
 /**
  * Eine Achse aus dem gegenueberliegenden Radar-Paar bestimmen.

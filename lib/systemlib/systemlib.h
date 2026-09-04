@@ -79,6 +79,10 @@ private:
     int16_t IR_Offsets[16] = {9999};
     float INA_filter[6] = {0, 0, 0, 0, 0, 0};
 
+    int8_t LineWinkel = 0;
+    int8_t LineDepth = 0;
+    bool LinePresent = 0;
+
     bool SWI[5] = {false};
     bool RCJ = false;
     bool RCJ_Disable = false;
@@ -127,6 +131,9 @@ public:
     ADRCConfig cfgA;
     PIDConfig cfgP;
 
+    uint16_t line_array[48];
+    bool line_bool_array[48];
+
     /// Letztes Ergebnis von calculatePosition(), wird in readSensors() aktualisiert.
     PositionData Position;
 
@@ -159,6 +166,7 @@ public:
     void setOmniWheelDir(float directionDeg, uint8_t speedPercent, float omega);
 
     /* -------------- Calculate -------------- */
+    void updateLine();
     void updateHeadingController(void);
     PositionData calculatePosition(void); ///< Feldposition + Certainty aus den Radarwerten
 
@@ -192,6 +200,10 @@ public:
     bool giveRCJ(void) const { return RCJ; };
     bool giveRCJpresent(void) const { return RCJ_present; };
     bool giveStart(void);
+    uint16_t giveADC(uint8_t Port, uint8_t Pin);
+    int8_t giveLineAngle() { return LineWinkel; }
+    int8_t giveLineDepth() { return LineDepth; }
+    bool giveLinePresent() { return LinePresent; }
 
     /* -------------- set -------------- */
     void setDebugTimeout(uint16_t timeout_ms) { debugTimeout = timeout_ms; }
