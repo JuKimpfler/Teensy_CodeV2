@@ -23,14 +23,18 @@ Import("env")
 
 PROJECT_DIR = env["PROJECT_DIR"]
 
-# Der Pfad zeigte auf "../pc_setup/pc_flash_tool/" -- ein Verzeichnis, das es
-# in diesem Repository nicht (mehr) gibt; das Tool liegt unter
-# "../pc_flash_tool/". Beide Varianten werden der Reihe nach probiert, damit
-# ein aelteres, lokal noch anders strukturiertes Arbeitsverzeichnis weiter
-# funktioniert.
-_CANDIDATES = (
-    os.path.join(PROJECT_DIR, "..", "pc_flash_tool", "bt_flash_sender.py"),
-    os.path.join(PROJECT_DIR, "..", "pc_setup", "pc_flash_tool", "bt_flash_sender.py"),
+# bt_flash_sender.py gehoert zum PDS-Repository (Robotic_PDS/pc_flash_tool).
+# Je nachdem, wie die Arbeitskopien nebeneinander liegen, steht es an einer
+# anderen Stelle -- die Kandidaten werden der Reihe nach probiert. Ein eigener
+# Pfad geht ueber die Umgebungsvariable PDS_FLASH_TOOL.
+_CANDIDATES = tuple(
+    p for p in (
+        os.environ.get("PDS_FLASH_TOOL"),
+        os.path.join(PROJECT_DIR, "..", "Robotic_PDS", "pc_flash_tool", "bt_flash_sender.py"),
+        os.path.join(PROJECT_DIR, "..", "pc_flash_tool", "bt_flash_sender.py"),
+        os.path.join(PROJECT_DIR, "..", "pc_setup", "pc_flash_tool", "bt_flash_sender.py"),
+    )
+    if p
 )
 
 SENDER_SCRIPT = next(

@@ -6,6 +6,7 @@ BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
 // PowerDebugger PDS;
 
 elapsedMillis cycleTimer;
+elapsedMillis powerTimer;   // drosselt die INA219-Abfrage fuer die PDS-Kanaele
 elapsedMicros cycleTimer_us;
 elapsedMillis lastvaliddata_Radar;
 
@@ -73,6 +74,7 @@ void systemlib::initialize()
     calibBNO();
 
     PDS.init();
+    setupPDS();
 
     MoDataVL.ID = MotorVL_ID;
     MoDataVR.ID = MotorVR_ID;
@@ -122,11 +124,109 @@ void systemlib::readSensors(void)
 
     readExpanders();
 
-    if (PDS.linkOk())
-        PDS.update();
+    // Werte fuer die PDS-Kanaele nachfuehren. Die INA219 haengen am I2C und
+    // kosten je Abfrage spuerbar Zeit -- Akkuspannung aendert sich nicht im
+    // 100-Hz-Takt, 10 Hz reichen voellig.
+    uptime_s = millis() / 1000.0f;
+    if (powerTimer >= 100)
+    {
+        powerTimer = 0;
+        Akku_V = giveMainVoltage();
+        Akku_I = giveMainCurrent();
+        Motor_V = giveMotorVoltage();
+        Motor_I = giveMotorCurrent();
+    }
+
+    // PDS.update() MUSS in JEDEM Zyklus laufen, auch ohne GUI: erst darin
+    // wertet die Bibliothek die RX-Leitung aus (pollParamUart()). Haengt der
+    // Aufruf an linkOk(), kann die Verbindung nach dem ersten Aussetzer nie
+    // wieder zustande kommen -- linkOk() bleibt dann fuer immer false.
+    // update() blockiert nie, siehe lib/PDS/README.md (Blockierfreiheit).
+    PDS.update();
 
     updateHeadingController();
     updateMotors();
+}
+
+/* -------------- PDS (Power Debug System) -------------- */
+
+/**
+ * Bindet die Systemwerte an FESTE PDS-Kanaele.
+ *
+ * "Fest" ist Absicht: die Overlays in lib/PDS/channel_config.h (Feldansicht,
+ * Akkuanzeige, Wertetabelle) zeigen auf Kanalnummern, nicht auf Namen. Wer
+ * hier etwas verschiebt, muss channel_config.h und docs/PDS_Belegung.md
+ * nachziehen.
+ *
+ * Kanal 0..31 gehoeren systemlib, ab 32 vergibt PDS.plot()/PDS.track() im
+ * Sketch automatisch -- dafuer sorgt -DPDS_AUTO_CHANNEL_BASE=32 in
+ * platformio.ini. Ohne dieses Flag wuerde der Sketch in diesen Block
+ * hineinschreiben.
+ *
+ * bind() merkt sich nur den Zeiger; die Bibliothek holt die Werte danach
+ * selbstaendig 100x/s ab. Im loop() ist dafuer nichts mehr zu tun.
+ */
+void systemlib::setupPDS(void)
+{
+    // Firmware-Stand, damit in der GUI sichtbar ist, welcher Code auf welchem
+    // Roboter laeuft. Die Makros kommen aus den build_flags in platformio.ini.
+#if defined(BUILD_VERSION) && defined(BUILD_DATE) && defined(BUILD_TIME)
+    // setFirmwareVersion() kopiert in einen eigenen Puffer -- der String hier
+    // darf danach wieder verschwinden.
+    const String version = "v" + String(BUILD_VERSION) +
+                                  " (Build " + String(BUILD_DATE) +
+                                  " " + String(BUILD_TIME) + ")";
+    PDS.setFirmwareVersion(version.c_str());
+#endif
+
+    /* ---- Versorgung ---------------------------------------------------- */
+    PDS.bind("Timer",         &uptime_s,     0,  "s");
+    PDS.bind("Akku_V",        &Akku_V,       1,  "V");
+    PDS.bind("Akku_I",        &Akku_I,       2,  "mA");
+    PDS.bind("Motor_V",       &Motor_V,      3,  "V");
+    PDS.bind("Motor_I",       &Motor_I,      4,  "mA");
+
+    /* ---- Lage ---------------------------------------------------------- */
+    PDS.bind("Heading",       &BNO_eulerZ,       5, "°");
+    PDS.bind("Orbit_Dir",     &BNO_OrbitDir,     6, "°");
+    PDS.bind("BNO_Nullpunkt", &BNO_calibration,  7, "°");
+
+    /* ---- Ball (IR) ----------------------------------------------------- */
+    // readIR() ist in readSensors() derzeit auskommentiert -- die Kanaele
+    // stehen aber schon bereit und zeigen bis dahin 0.
+    PDS.bind("Ball_Winkel",   &IR_Angle,     8,  "°");
+    PDS.bind("Ball_Dist",     &IR_Distance,  11);
+
+    /* ---- Zykluszeit ---------------------------------------------------- */
+    PDS.bind("Zykluszeit",    &cycleTime,    9,  "ms");
+    PDS.bind("Zykluszeit_us", &cycleTime_us, 10, "us");
+
+    /* ---- Radar --------------------------------------------------------- */
+    // Dist ist ein Rohwert ("Counts"), NICHT Millimeter -- siehe RadarArray.h.
+    PDS.bind("Radar_Vo",      &Radar[RadarVo].Dist, 12, "Counts");
+    PDS.bind("Radar_Li",      &Radar[RadarLi].Dist, 13, "Counts");
+    PDS.bind("Radar_Hi",      &Radar[RadarHi].Dist, 14, "Counts");
+    PDS.bind("Radar_Re",      &Radar[RadarRe].Dist, 15, "Counts");
+
+    /* ---- Feldposition -------------------------------------------------- */
+    // Kanal 16/17 sind die Koordinaten, auf die das "bodies"-Overlay der GUI
+    // zeigt (Feld-Draufsicht in channel_config.h).
+    PDS.bind("Pos_X",         &Position.X,         16, "cm");
+    PDS.bind("Pos_Y",         &Position.Y,         17, "cm");
+    PDS.bind("Pos_Guete",     &Position.Certainty, 18);
+    PDS.bind("Pos_AmTor",     &Position.AtGoal,    19);
+
+    /* ---- Motoren ------------------------------------------------------- */
+    PDS.bind("Motor_VL",      &MoDataVL.Speed, 20, "%");
+    PDS.bind("Motor_VR",      &MoDataVR.Speed, 21, "%");
+    PDS.bind("Motor_HL",      &MoDataHL.Speed, 22, "%");
+    PDS.bind("Motor_HR",      &MoDataHR.Speed, 23, "%");
+    PDS.bind("Motor_DR",      &MoDataDR.Speed, 24, "%");
+
+    /* ---- Schalter ------------------------------------------------------ */
+    PDS.bind("Start",         &startSwitch,    25);
+
+    // 26..31 bleiben frei fuer weitere Systemwerte.
 }
 
 /* -------------- Position -------------- */

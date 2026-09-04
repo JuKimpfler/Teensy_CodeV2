@@ -45,7 +45,7 @@ zwei Dateien und `give`/`set`-Funktionen.
 | `Motor_EXP` / `Rand_EXP` / `Button_EXP` | TCA9534DW | `Wire1`, `0x20` / `0x21` / `0x23` |
 | `ADC_Motor` | [ADC108S102](../ADC108S102/ADC108S102.md) | `SPI1`, CS 32 |
 | `BTN1`…`BTN5` | [fancyBTN](../fancyBTN/fancyBTN.md) | – |
-| `PDS` | [PowerDebugger](../Debugger/PDS.md) | `UART_DBG` (`Serial3`) |
+| `PDS` | [PowerDebugger](../PDS/PDS.md) | `UART_DBG` (`Serial3`) |
 | `communication` | [commlib](../commlib/commlib.md) | – |
 | `headingControllerA/P` | [ADRC](../Regler/ADRC/README.md) / [PID](../Regler/PID/README.md) | – |
 
@@ -142,7 +142,8 @@ void loop() {
 2. `delay(debugTimeout)` – **blockierende Pause**, Default 5 ms
 3. `readBNO()`, `Radar.update()`, `calculatePosition()` (`readIR()`/`readUS()` sind auskommentiert)
 4. `readExpanders()` (Schalter + Taster)
-5. `PDS.update()` (Telemetrie senden/empfangen)
+5. Akku-/Motorwerte nachführen (gedrosselt auf 10 Hz) und `PDS.update()`
+   (Telemetrie senden/empfangen) – **bedingungslos**, siehe unten
 6. `updateHeadingController()`
 7. `updateMotors()`
 
@@ -373,15 +374,30 @@ Antriebsmotoren vom `ADC_Motor`.
 | `PositionData calculatePosition()` | Feldposition + Certainty aus den Radarwerten, wird von `readSensors()` aufgerufen |
 | `float giveHeadingController()` | Stellgröße −1…+1 |
 
-### Debug
+### Debug (PDS)
 
 | Funktion | Beschreibung |
 |---|---|
-| `void setDBGSys()` | Systemkanäle 21–40 füllen |
-| `void setDBGChannel(uint8_t ch, float v)` | Freie Kanäle **0–20** (`Util.Range` prüft das) |
+| `void setupPDS()` | *privat*, aus `initialize()`. Bindet die Systemwerte an die **festen** Kanäle 0–25 und setzt die Firmware-Version. |
 | `void setDebugTimeout(uint16_t ms)` | Länge des `delay()` in `readSensors()` |
 
-Kanalbelegung: [Channel.md](../Debugger/Channel.md)
+`setupPDS()` benutzt `PDS.bind()`, merkt sich also nur Zeiger – die Werte holt
+die Bibliothek danach selbst mit 100 Hz ab. Im Sketch ist dafür nichts zu tun;
+eigene Werte kommen mit `PDS.plot()` / `PDS.track()` dazu und bekommen
+automatisch Kanäle ab 32 (`PDS_AUTO_CHANNEL_BASE`).
+
+Zwei Dinge sind Absicht und sollten so bleiben:
+
+* **`PDS.update()` läuft in jedem Zyklus**, nicht nur wenn `PDS.linkOk()`.
+  Erst `update()` wertet die RX-Leitung aus. Hinge der Aufruf an `linkOk()`,
+  bliebe die Verbindung nach dem ersten Aussetzer für immer tot. `update()`
+  blockiert nie – die Bibliothek hat dafür ein Zeitbudget je Aufruf.
+* **Akku- und Motorwerte werden auf 10 Hz gedrosselt.** Die INA219 hängen am
+  I2C; vier Abfragen im 100-Hz-Takt würden die Zykluszeit spürbar verlängern,
+  und schneller ändert sich eine Akkuspannung ohnehin nicht.
+
+Kanalbelegung: [docs/PDS_Belegung.md](../../docs/PDS_Belegung.md)
+Einbau der Bibliothek: [lib/PDS/PDS.md](../PDS/PDS.md)
 
 ### Kommunikation
 
