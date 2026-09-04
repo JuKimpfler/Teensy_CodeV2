@@ -137,11 +137,6 @@ void systemlib::readSensors(void)
         Motor_I = giveMotorCurrent();
     }
 
-    // PDS.update() MUSS in JEDEM Zyklus laufen, auch ohne GUI: erst darin
-    // wertet die Bibliothek die RX-Leitung aus (pollParamUart()). Haengt der
-    // Aufruf an linkOk(), kann die Verbindung nach dem ersten Aussetzer nie
-    // wieder zustande kommen -- linkOk() bleibt dann fuer immer false.
-    // update() blockiert nie, siehe lib/PDS/README.md (Blockierfreiheit).
     PDS.update();
 
     updateHeadingController();
