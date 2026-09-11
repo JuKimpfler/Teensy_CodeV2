@@ -10,10 +10,12 @@ Servo RadarServo;
 float param1 = 0;
 float param2 = 0;
 float Dist = 0;
-float angle ;
-float speed ;
-float x ;
-float y ;
+float angle;
+float speed;
+float x;
+float y;
+
+uint8_t buttons[5] = {0, 0, 0, 0, 0};
 
 void setup()
 {
@@ -34,9 +36,9 @@ void setup()
   // Nur noch die Werte, die es allein in diesem Sketch gibt. track() vergibt
   // die Kanalnummer selbst -- ab 32, siehe PDS_AUTO_CHANNEL_BASE in
   // platformio.ini -- und der Name geht automatisch an die GUI.
-  PDS.track("Fahrt_Winkel", &angle,  "°");
-  PDS.track("Fahrt_Speed",  &speed,  "%");
-  PDS.track("Orbit",        &param2, "°");
+  PDS.track("Fahrt_Winkel", &angle, "°");
+  PDS.track("Fahrt_Speed", &speed, "%");
+  PDS.track("Orbit", &param2, "°");
 
   PDS.log("Setup abgeschlossen");
 
@@ -49,53 +51,61 @@ void loop()
   // Frueher lagen die beiden auf Fast-Param 2/3; die 5 Fast-Kanaele sind aber
   // fuer den 100-Hz-Joystick da, und die GUI kann einen Taster ohnehin nur auf
   // einen Slow-Bool legen (siehe qml/ParamsView.qml).
-  if (PDS.paramBool(1))       // "BNO_kalibrieren"
+  if (PDS.paramBool(1)) // "BNO_kalibrieren"
   {
     PDS.event("BNO kalibriert");
     sys.calibBNO();
     delay(1000);
   }
 
-  PDS.Channel(12,sys.giveLineAngle(),"LineAngle");
-  PDS.Channel(13,sys.giveLineDepth(),"LineDepth");
-  PDS.Channel(14,sys.giveLinePresent(),"LinePresent");
-  for ( int i = 47 ; i>=0; i--){
-    PDS.Channel((50+i),sys.line_array[i]);
+  PDS.Channel(12, sys.giveLineAngle(), "LineAngle");
+  PDS.Channel(13, sys.giveLineDepth(), "LineDepth");
+  PDS.Channel(14, sys.giveLinePresent(), "LinePresent");
+  for (int i = 47; i >= 0; i--)
+  {
+    PDS.Channel((50 + i), sys.line_array[i]);
   }
-
-
 
   sys.readSensors();
 
   param2 = sys.giveOrbitDir();
 
-  x = PDS.fastParam(1);       // "Fahrt_X"  (Pad-Achse, 100 Hz)
-  y = PDS.fastParam(0);       // "Fahrt_Y"
+  x = PDS.fastParam(1); // "Fahrt_X"  (Pad-Achse, 100 Hz)
+  y = PDS.fastParam(0); // "Fahrt_Y"
   angle = atan2(y, x) * RAD_TO_DEG;
-  speed = min(100.0f, hypot(x, y))/2;
+  speed = min(100.0f, hypot(x, y)) / 2;
 
-  if (PDS.paramBool(0))       // "Zielpunkt_anfahren"
+  if (PDS.paramBool(0)) // "Zielpunkt_anfahren"
   {
-    sys.moveToPoint(50,50,50,0);
+    sys.moveToPoint(50, 50, 50, 0);
   }
-  else{
-    sys.moveDir(angle,speed,0);
+  else
+  {
+    sys.moveDir(angle, speed, 0);
   }
 
-  //sys.moveDir(angle,speed,0);
-  
-  //sys.setOmniWheelVek(x,y,0);
-  //sys.setHeading();
-  //param1 = sys.giveOrbitDir()*-0.9;
+  sys.giveButtonStates(buttons);
+
+  if (buttons[0] == fancy_CLICKED)
+  {
+    PDS.event("Kompass Calib");
+    sys.calibBNO();
+  }
+
+  // sys.moveDir(angle,speed,0);
+
+  // sys.setOmniWheelVek(x,y,0);
+  // sys.setHeading();
+  // param1 = sys.giveOrbitDir()*-0.9;
 
   /*sys.setMotorData(sys.MoDataVL.ID,param1,true,false);
   sys.setMotorData(sys.MoDataVR.ID,param1,true,false);
   sys.setMotorData(sys.MoDataHL.ID,param1,true,false);
   sys.setMotorData(sys.MoDataHR.ID,param1,true,false);*/
 
-  //sys.MoDataVR.Speed= 90;
-  //sys.MoDataVR.Dir= true;
-  //sys.MoDataVR.Enable = true;
+  // sys.MoDataVR.Speed= 90;
+  // sys.MoDataVR.Dir= true;
+  // sys.MoDataVR.Enable = true;
 
   /*sys.MoDataVL.Speed = 3;
   sys.MoDataVL.Dir = true;

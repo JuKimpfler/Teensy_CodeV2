@@ -13,7 +13,7 @@ RadarArray::RadarArray()
     config.thresholdMethod     = XM125D_THRESHOLD_CFAR;      // adaptiv, unabhaengig von der Umgebung
     config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
     config.signalQuality       = RADAR_SIGNAL_QUALITY;
-    config.peakSorting         = XM125D_SORT_STRONGEST;
+    config.peakSorting         = XM125D_SORT_FARTHEST;
     // PLANAR: bei einer flaechigen Wand faellt die Echo-Amplitude langsamer mit der
     // Distanz als bei einem punktfoermigen Reflektor. Ohne diese Angabe setzt der
     // Detektor die Schwelle am Bereichsende zu hoch an und die Wand faellt raus.
@@ -143,7 +143,7 @@ void RadarArray::_takeResult(uint8_t idx)
 {
     _fails[idx] = 0;
 
-    // Peak 0: bei peakSorting = CLOSEST das naechstgelegene Objekt.
+    // Peak 0: bei peakSorting = FARTHEST das am weitesten entfernte Objekt.
     // Peaks == 0 (keine Wand erkannt) liefert Dist/Strenght = 0, damit kein
     // alter Wert stehen bleibt und "reagiert nicht" sichtbar wird.
     const XM125DistanceResult &res = _sensors[idx].getLastResult();

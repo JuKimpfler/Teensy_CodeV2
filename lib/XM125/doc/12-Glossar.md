@@ -108,9 +108,13 @@ reflektiert. `thresholdSensitivity` (0–1000) stellt ein, wie empfindlich
 das Verfahren arbeitet.
 
 **Peak Sorting** — `peakSorting`
-Reihenfolge der zurückgegebenen Peaks: `CLOSEST` (nächster zuerst) oder
-`STRONGEST` (stärkster zuerst). Bestimmt, was `getPeakDistanceRaw(0)`
-bedeutet — für die Wanderkennung im Projekt ist `CLOSEST` sinnvoll.
+Reihenfolge der zurückgegebenen Peaks: `CLOSEST` (nächster zuerst),
+`STRONGEST` (stärkster zuerst), sowie deren jeweilige Umkehrung `FARTHEST`
+(am weitesten entfernter zuerst) und `WEAKEST` (schwächster zuerst).
+`FARTHEST`/`WEAKEST` sind eine Erweiterung der Sensor-Firmware — die
+Acconeer-RSS-Bibliothek im Modul kennt intern nur `CLOSEST`/`STRONGEST`,
+die Firmware dreht die Peak-Liste dafür bei Bedarf um. Bestimmt, was
+`getPeakDistanceRaw(0)` bedeutet. `RadarArray` nutzt `FARTHEST`.
 
 **Reflector Shape** — `reflectorShape`
 Erwartete Form des Reflektors: `PLANAR` für große flache Flächen (Wand,

@@ -934,11 +934,15 @@ void systemlib::readExpanders(void)
     RCJ_Disable = SW_EXP.readPin(6);
     RCJ_present = SW_EXP.readPin(7);
 
-    BTN1.update(Button_EXP.readPin(0));
+    /* BTN1.update(Button_EXP.readPin(0));
     BTN2.update(Button_EXP.readPin(1));
     BTN3.update(Button_EXP.readPin(2));
     BTN4.update(Button_EXP.readPin(3));
-    BTN5.update(Button_EXP.readPin(4));
+    BTN5.update(Button_EXP.readPin(4));*/
+
+    BTN1.update(SW_EXP.readPin(0));
+    BTN2.update(SW_EXP.readPin(6));
+    BTN3.update(SW_EXP.readPin(7));
 
     fancyBTNstates[0] = BTN1.getStatusCode();
     fancyBTNstates[1] = BTN2.getStatusCode();
