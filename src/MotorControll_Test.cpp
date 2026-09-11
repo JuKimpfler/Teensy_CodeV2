@@ -92,6 +92,24 @@ void loop()
     sys.calibBNO();
   }
 
+  Serial.print("X: ");
+  Serial.print(sys.Position.X);
+  Serial.print(" Y: ");
+  Serial.print(sys.Position.Y);
+  Serial.print(" Cert: ");
+  Serial.print(sys.Position.Certainty);
+  Serial.print (" V: ");
+  Serial.print(sys.Radar[RadarVo].Dist);
+  Serial.print (" L: ");
+  Serial.print(sys.Radar[RadarLi].Dist);
+  Serial.print (" R: ");
+  Serial.print(sys.Radar[RadarRe].Dist);
+  Serial.print (" H: ");
+  Serial.print(sys.Radar[RadarHi].Dist);
+  Serial.println();
+
+
+
   // sys.moveDir(angle,speed,0);
 
   // sys.setOmniWheelVek(x,y,0);

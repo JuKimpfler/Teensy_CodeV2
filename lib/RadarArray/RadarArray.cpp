@@ -9,7 +9,7 @@ RadarArray::RadarArray()
     // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h.
     config.startMm             = RADAR_START_MM;
     config.endMm               = RADAR_END_MM;   // > 2500, damit die Wand nicht auf der Bereichskante liegt
-    config.maxProfile          = XM125D_PROFILE5;            // laengste Pulse = groesste Reichweite
+    config.maxProfile          = XM125D_PROFILE3;            // laengste Pulse = groesste Reichweite
     config.thresholdMethod     = XM125D_THRESHOLD_CFAR;      // adaptiv, unabhaengig von der Umgebung
     config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
     config.signalQuality       = RADAR_SIGNAL_QUALITY;
