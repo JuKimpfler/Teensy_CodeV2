@@ -73,7 +73,7 @@ void loop()
   x = PDS.fastParam(1); // "Fahrt_X"  (Pad-Achse, 100 Hz)
   y = PDS.fastParam(0); // "Fahrt_Y"
   angle = atan2(y, x) * RAD_TO_DEG;
-  speed = min(100.0f, hypot(x, y)) / 2;
+  speed = min(100.0f, hypot(x, y)) /2;
 
   if (PDS.paramBool(0)) // "Zielpunkt_anfahren"
   {
@@ -106,6 +106,14 @@ void loop()
   Serial.print(sys.Radar[RadarRe].Dist);
   Serial.print (" H: ");
   Serial.print(sys.Radar[RadarHi].Dist);
+  Serial.print (" VA: ");
+  Serial.print(sys.Radar.giveAge(RadarVo));
+  Serial.print (" LA: ");
+  Serial.print(sys.Radar.giveAge(RadarLi));
+  Serial.print (" RA: ");
+  Serial.print(sys.Radar.giveAge(RadarRe));
+  Serial.print (" HA: ");
+  Serial.print(sys.Radar.giveAge(RadarHi));
   Serial.println();
 
 

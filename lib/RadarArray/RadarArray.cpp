@@ -21,6 +21,69 @@ RadarArray::RadarArray()
     config.closeRangeLeakageCancellation = false; // sauberer Nahbereich ab startMm
 }
 
+float RadarArray::filterRadar(int sensorIndex, float rawValue, unsigned long nowMs) {
+  static float pos[4] = {0, 0, 0, 0};
+  static float vel[4] = {0, 0, 0, 0};
+  static unsigned long lastTime[4] = {0, 0, 0, 0};
+  static bool initialized[4] = {false, false, false, false};
+  static int rejectCount[4] = {0, 0, 0, 0};
+
+  if (!initialized[sensorIndex]) {
+    pos[sensorIndex] = rawValue;
+    lastTime[sensorIndex] = nowMs;
+    initialized[sensorIndex] = true;
+    return rawValue;
+  }
+
+  float dt = (nowMs - lastTime[sensorIndex]) / 1000.0f;
+  if (dt <= 0.0f || dt > 0.5f) {
+    lastTime[sensorIndex] = nowMs;
+    return pos[sensorIndex];
+  }
+  lastTime[sensorIndex] = nowMs;
+
+  const float maxSpeedMM = 1265.625f; // ~1.266 m/s in mm/s
+
+  // 1. Vorhersage
+  float predictedPos = pos[sensorIndex] + vel[sensorIndex] * dt;
+
+  // 2. Erlaubte Änderung: Physikalische Strecke + 10mm Puffer für 4mm Rauschen
+  float maxAllowedChange = (maxSpeedMM * dt * 1.15f) + 10.0f;
+
+  // 3. Ausreißer-Prüfung
+  float diff = rawValue - predictedPos;
+  
+  if (fabs(diff) > maxAllowedChange) {
+    rejectCount[sensorIndex]++;
+    
+    if (rejectCount[sensorIndex] < 10) { 
+      // Ausreißer verworfen -> Vorhersage beibehalten
+      rawValue = predictedPos;
+    } else {
+      // Bei anhaltender Abweichung kontrolliert annähern (kein Sprung)
+      rawValue = predictedPos + (diff > 0 ? maxAllowedChange : -maxAllowedChange);
+      vel[sensorIndex] = 0.0f;
+    }
+  } else {
+    rejectCount[sensorIndex] = 0;
+  }
+
+  // 4. Alpha-Beta Glättung
+  // Wegen des geringen Rauschens vertrauen wir dem Messwert stark (Alpha = 0.8)
+  const float alpha = 0.8f;
+  const float beta = 0.1f;
+
+  float residual = rawValue - predictedPos;
+  pos[sensorIndex] = predictedPos + alpha * residual;
+  vel[sensorIndex] = vel[sensorIndex] + (beta / dt) * residual;
+
+  // Geschwindigkeitsbegrenzung gegen Aufschaukeln
+  if (vel[sensorIndex] > maxSpeedMM)  vel[sensorIndex] = maxSpeedMM;
+  if (vel[sensorIndex] < -maxSpeedMM) vel[sensorIndex] = -maxSpeedMM;
+
+  return pos[sensorIndex];
+}
+
 /* -------------- System Worker -------------- */
 
 uint8_t RadarArray::begin(TwoWire &wire)
@@ -149,6 +212,7 @@ void RadarArray::_takeResult(uint8_t idx)
     const XM125DistanceResult &res = _sensors[idx].getLastResult();
     _data[idx].Peaks    = res.numDistances;
     _data[idx].Dist     = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
+    _data[idx].Dist     = filterRadar(idx,_data[idx].Dist,millis());
     _data[idx].Strenght = (res.numDistances > 0) ? res.peakStrength[0] : 0;
     _data[idx].isCon    = true;
     _data[idx].Time     = millis(); // Zeitstempel fuer die Altersbewertung, siehe giveAge()

@@ -78,7 +78,7 @@ public:
      * (hoechstens ein Registerzugriff je Sensor).
      */
     void update(void);
-
+    float filterRadar(int sensorIndex, float rawValue, unsigned long nowMs);
     /**
      * Alle Sensoren mit dem aktuellen Inhalt von `config` neu konfigurieren
      * und kalibrieren. BLOCKIERT (~1 s je Sensor), nicht im Roboterzyklus.
