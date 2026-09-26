@@ -47,20 +47,17 @@
 //           "toggle" | "button"      (Bools; button + momentary = Taster)
 
 static const ParamDef PARAM_SLOW_FLOATS[] = {
-    // {  0, "Kp_Heading",  "slider",   0.0f,  10.0f, 0.05f,  2.5f, "Regler" },
-    // {  1, "Ki_Heading",  "slider",   0.0f,   5.0f, 0.01f,  0.2f, "Regler" },
-    // {  2, "Kd_Heading",  "slider",   0.0f,   5.0f, 0.01f,  0.8f, "Regler" },
-    // {  3, "Max_Speed",   "number",   0.0f, 100.0f, 1.0f,  60.0f, "Fahren" },
+     {  0, "PID_P",  "slider",   0.0f,  10.0f, 0.05f,  2.5f, "Regler" },
+     {  1, "PID_D",  "slider",   0.0f,   5.0f, 0.01f,  0.2f, "Regler" },
+     {  2, "Multi",  "slider",   0.0f,   5.0f, 0.01f,  0.8f, "Regler" },
 };
 static constexpr size_t PARAM_SLOW_FLOATS_COUNT =
     sizeof(PARAM_SLOW_FLOATS) / sizeof(PARAM_SLOW_FLOATS[0]);
 
 static const ParamDef PARAM_SLOW_BOOLS[] = {
-    // Taster (momentary = nur gedrueckt true). Abgefragt in
-    // src/MotorControll_Test.cpp mit PDS.paramBool(...).
     {  0, "Zielpunkt_anfahren", "button", 0, 1, 1, 0, "Fahren", true },
     {  1, "BNO_kalibrieren",    "button", 0, 1, 1, 0, "Kalibrierung", true },
-    // {  2, "Motoren_frei",    "toggle", 0, 1, 1, 0, "Schalter" },
+    {  2, "Radar_setzen",       "button", 0, 1, 1, 0, "Kalibrierung", true },
 };
 static constexpr size_t PARAM_SLOW_BOOLS_COUNT =
     sizeof(PARAM_SLOW_BOOLS) / sizeof(PARAM_SLOW_BOOLS[0]);
@@ -73,9 +70,6 @@ static const ParamDef PARAM_FAST_FLOATS[] = {
     // Standardbelegung siehe rpi5_monitor/.../bridge/controller_bridge.py.
     {  0, "Fahrt_Y", "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
     {  1, "Fahrt_X", "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
-    // {  2, "Rotation",   "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
-    // {  3, "Speed",      "slider",    0.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
-    // {  4, "Dribbler",   "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
 };
 static constexpr size_t PARAM_FAST_FLOATS_COUNT =
     sizeof(PARAM_FAST_FLOATS) / sizeof(PARAM_FAST_FLOATS[0]);
@@ -165,10 +159,9 @@ static constexpr size_t CHANNEL_NAMES_COUNT = sizeof(CHANNEL_NAMES) / sizeof(CHA
 //  Wer dort etwas verschiebt, muss es hier nachziehen.
 static const OverlayDef CHANNEL_OVERLAYS[] = {
     // Alle Systemwerte auf einen Blick (Kanal 0..25).
-    { 1, "textgrid", "System",   -1, -1,  0.0f,   0.0f,  4.0f, 6.0f,
-        "channels=0-25;cols=2;dx=24;dy=5" },
+    { 1, "text", "SW1",   50, 30,  40 },
     { 1, "gauge",    "Akku",       1, -1, 10.0f,  16.8f },
-    { 1, "rotation", "Heading",    5, -1,  0.0f, 360.0f },
+    { 1, "rotation", "Motor1",    21, -1,  0.0f, 100.0f },
 
     // Feld-Draufsicht: der Roboter an seiner berechneten Position.
     // Feldmasse wie POS_FIELD_X_CM / POS_FIELD_Y_CM in lib/include/params.h.

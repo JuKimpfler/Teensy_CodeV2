@@ -160,19 +160,19 @@ static constexpr uint32_t XM125D_RESULT_TEMPERATURE_SHIFT    = 16; ///< Bit 16-3
 // ── Werksvorgaben der Konfigurationsregister (lt. Acconeer-Datenblatt) ──────
 // An genau einer Stelle definiert, damit XM125DistanceConfig und die
 // Parameterliste von hardCalibration() nicht auseinanderlaufen koennen.
-static constexpr uint32_t XM125D_DEFAULT_START_MM                      = 250;
+static constexpr uint32_t XM125D_DEFAULT_START_MM                      = 150;
 static constexpr uint32_t XM125D_DEFAULT_END_MM                        = 3000;
 static constexpr uint32_t XM125D_DEFAULT_MAX_STEP_LENGTH               = 0;      ///< 0 = automatisch
-static constexpr bool     XM125D_DEFAULT_CLOSE_RANGE_LEAKAGE_CANCEL    = true;
-static constexpr uint32_t XM125D_DEFAULT_SIGNAL_QUALITY                = 15000;
-static constexpr uint32_t XM125D_DEFAULT_MAX_PROFILE                   = XM125D_PROFILE5;
+static constexpr bool     XM125D_DEFAULT_CLOSE_RANGE_LEAKAGE_CANCEL    = false;
+static constexpr uint32_t XM125D_DEFAULT_SIGNAL_QUALITY                = 35000;
+static constexpr uint32_t XM125D_DEFAULT_MAX_PROFILE                   = XM125D_PROFILE3;
 static constexpr uint32_t XM125D_DEFAULT_THRESHOLD_METHOD              = XM125D_THRESHOLD_CFAR;
-static constexpr uint32_t XM125D_DEFAULT_PEAK_SORTING                  = XM125D_SORT_STRONGEST;
+static constexpr uint32_t XM125D_DEFAULT_PEAK_SORTING                  = XM125D_SORT_FARTHEST;
 static constexpr uint32_t XM125D_DEFAULT_NUM_FRAMES_RECORDED_THRESHOLD = 100;
 static constexpr uint32_t XM125D_DEFAULT_FIXED_AMPLITUDE_THRESHOLD     = 100000;
 static constexpr uint32_t XM125D_DEFAULT_THRESHOLD_SENSITIVITY         = 500;
-static constexpr uint32_t XM125D_DEFAULT_REFLECTOR_SHAPE               = XM125D_REFLECTOR_GENERIC;
-static constexpr uint32_t XM125D_DEFAULT_FIXED_STRENGTH_THRESHOLD      = 0;
+static constexpr uint32_t XM125D_DEFAULT_REFLECTOR_SHAPE               = XM125D_REFLECTOR_PLANAR;
+static constexpr uint32_t XM125D_DEFAULT_FIXED_STRENGTH_THRESHOLD      = -25;
 static constexpr bool     XM125D_DEFAULT_MEASURE_ON_WAKEUP             = false;
 
 // ═════════════════════════════════════════════════════════════════════════════
