@@ -52,6 +52,11 @@ struct PositionData {
     bool  AtGoal;
 };
 
+struct RobotVelocity {
+    float vx_field; // cm/s
+    float vy_field; // cm/s
+};
+
 class systemlib
 {
 private:
@@ -175,7 +180,14 @@ public:
     /* -------------- Calculate -------------- */
     void updateLine();
     void updateHeadingController(void);
-    PositionData calculatePosition(void); ///< Feldposition + Certainty aus den Radarwerten
+    PositionData calculatePosition(uint32_t current_time_ms, 
+                                           float vx_field, 
+                                           float vy_field, 
+                                           bool use_radar = true, 
+                                           bool use_odometry = true);
+    void getOmniWheelVek(float wVL, float wVR, float wHL, float wHR, float &vx, float &vy, float &omega);
+    float convertMotorRpmToWheelSpeedCmS(float motor_rpm, bool dirBit);
+    RobotVelocity calculateFieldVelocityFromMotorRpm(const float motor_rpm[4], const bool dirs[4], float heading_deg);
 
     /* -------------- give -------------- */
     float giveOrbitDir(void) const { return BNO_OrbitDir; };            // Orbital Ausrichtung

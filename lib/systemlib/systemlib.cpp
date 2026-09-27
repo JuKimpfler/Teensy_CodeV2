@@ -25,7 +25,7 @@ TCA9534DW Motor_EXP(&Wire1, 0x20);
 TCA9534DW Button_EXP(&Wire1, 0x23);
 TCA9534DW Rand_EXP(&Wire1, 0x21);
 
-ADC108S102 ADC_Motor(&SPI1, ADC108S102_Motor_CS);
+ADC108S102 ADC_Motor(&SPI1, 32);
 ADC108S102 ADC_Line1(&SPI,25,22,0,0);
 ADC108S102 ADC_Line2(&SPI,25,22,0,1);
 ADC108S102 ADC_Line3(&SPI,25,22,0,2);
@@ -94,8 +94,8 @@ void systemlib::initialize()
 
     Radar.begin(I2C_RADAR); // richtet alle Sensoren ein und startet die erste Messrunde
 
-    ir_ring.read_gains(IR_Gains);
-    ir_ring.read_offsets(IR_Offsets);
+    //ir_ring.read_gains(IR_Gains);
+    //ir_ring.read_offsets(IR_Offsets);
 
     setDebugTimeout(0);
 
@@ -108,6 +108,9 @@ void systemlib::initialize()
     ADC_Line6.init();
 
     setupHeadingController();
+
+    Position.X = 90;
+    Position.Y = 120;
 }
 
 void systemlib::readSensors(void)
@@ -121,7 +124,12 @@ void systemlib::readSensors(void)
 
     readBNO();
     Radar.update();
-    calculatePosition();
+
+
+    float adcValues[4] = { MoDataVL.Speed_real, MoDataVR.Speed_real, MoDataHL.Speed_real, MoDataHR.Speed_real };
+    bool dirBits[4]       = { MoDataVL.Dir_real, MoDataVR.Dir_real, MoDataHL.Dir_real, MoDataHR.Dir_real };
+    RobotVelocity vel = calculateFieldVelocityFromMotorRpm(adcValues, dirBits, giveOrbitDir());
+    calculatePosition(millis(), vel.vx_field, vel.vy_field, false);
     // readIR();
     updateLine();
 
@@ -219,14 +227,18 @@ void systemlib::setupPDS(void)
     PDS.bind("Pos_certanty_y",     &Position.YValid, 19);
 
     /* ---- Motoren ------------------------------------------------------- */
-    PDS.bind("Motor_VL",      &MoDataVL.Speed, 20, "%");
-    PDS.bind("Motor_VR",      &MoDataVR.Speed, 21, "%");
-    PDS.bind("Motor_HL",      &MoDataHL.Speed, 22, "%");
-    PDS.bind("Motor_HR",      &MoDataHR.Speed, 23, "%");
-    PDS.bind("Motor_DR",      &MoDataDR.Speed, 24, "%");
+    PDS.bind("Motor_VL",      &MoDataVL.Speed_real, 20, "%");
+    PDS.bind("Motor_VR",      &MoDataVR.Speed_real, 21, "%");
+    PDS.bind("Motor_HL",      &MoDataHL.Speed_real, 22, "%");
+    PDS.bind("Motor_HR",      &MoDataHR.Speed_real, 23, "%");
+
+    PDS.bind("Motor_VL",      &MoDataVL.Dir_real, 24, "%");
+    PDS.bind("Motor_VR",      &MoDataVR.Dir_real, 25, "%");
+    PDS.bind("Motor_HL",      &MoDataHL.Dir_real, 26, "%");
+    PDS.bind("Motor_HR",      &MoDataHR.Dir_real, 27, "%");
 
     /* ---- Schalter ------------------------------------------------------ */
-    PDS.bind("Start",         &startSwitch,    25);
+    PDS.bind("Start",         &startSwitch,    28);
 
     // 26..31 bleiben frei fuer weitere Systemwerte.
 
@@ -292,8 +304,74 @@ float systemlib::goalOffset(float x_cm, float &sureness) const
 
     return POS_GOAL_DEPTH_CM * t;
 }
-#include <Arduino.h>
-#include <math.h>
+
+/**
+ * Rechnet Motordrehzahl + Richtungs-Bool in Radgeschwindigkeit (cm/s) um.
+ */
+float systemlib::convertMotorRpmToWheelSpeedCmS(float motor_rpm, bool dirBit)
+{
+    float wheel_rpm = motor_rpm / GEAR_RATIO;
+    float v_cms = (wheel_rpm * 2.0f * M_PI * WHEEL_RADIUS_CM) / 60.0f;
+    return dirBit ? v_cms : -v_cms;
+}
+
+void systemlib::getOmniWheelVek(float wVL, float wVR, float wHL, float wHR,
+                                 float &vx, float &vy, float &omega)
+{
+    static constexpr float s = 0.70710678f;  // √2/2
+
+    // vx  = (1/2) · [sin(VL)·wVL + sin(VR)·wVR + sin(HL)·wHL + sin(HR)·wHR]
+    vx    = 0.5f * s * ( wVL - wVR + wHL - wHR);
+
+    // vy  = (1/2) · [cos(VL)·wVL + cos(VR)·wVR + cos(HL)·wHL + cos(HR)·wHR]
+    vy    = 0.5f * s * ( wVL + wVR - wHL - wHR);
+
+    // ω   = (1/4) · (wVL + wVR + wHL + wHR)
+    omega = 0.25f   * ( wVL + wVR + wHL + wHR);
+}
+
+/**
+ * Berechnet aus den 4 Motordrehzahlen [VL, VR, HL, HR], 4 Richtungs-Bools 
+ * und dem IMU-Winkel die Feld-Geschwindigkeiten vx_field und vy_field.
+ *
+ * Index-Zuordnung (Passend zu setOmniWheelDir):
+ * [0] = Vorne Links  (VL) -> 45°
+ * [1] = Vorne Rechts (VR) -> 315° (-45°)
+ * [2] = Hinten Links (HL) -> 135°
+ * [3] = Hinten Rechts(HR) -> 225° (-135°)
+ */
+RobotVelocity systemlib::calculateFieldVelocityFromMotorRpm(const float motor_rpm[4], const bool dirs[4], float heading_deg)
+{
+    // 1. Rad-Geschwindigkeiten berechnen (cm/s)
+    float v_VL = convertMotorRpmToWheelSpeedCmS(motor_rpm[0], dirs[0]); // [0] VL ( 45°)
+    float v_VR = convertMotorRpmToWheelSpeedCmS(motor_rpm[1], dirs[1]); // [1] VR (315°)
+    float v_HL = convertMotorRpmToWheelSpeedCmS(motor_rpm[2], dirs[2]); // [2] HL (135°)
+    float v_HR = convertMotorRpmToWheelSpeedCmS(motor_rpm[3], dirs[3]); // [3] HR (225°)
+
+    static constexpr float s = 0.70710678f;  // √2/2
+
+    int vx_rob    = 0.5f * s * ( v_VL - v_VR + v_HL - v_HR);
+
+    // vy  = (1/2) · [cos(VL)·wVL + cos(VR)·wVR + cos(HL)·wHL + cos(HR)·wHR]
+    int vy_rob    = 0.5f * s * ( v_VL + v_VR - v_HL - v_HR);
+
+    // ω   = (1/4) · (wVL + wVR + wHL + wHR)
+    float omega =  0.25f   * ( v_VL + v_VR + v_HL + v_HR);
+
+    // 3. Transformation: Roboter-Koordinaten -> Feld-Koordinaten
+    float heading_rad = heading_deg * (M_PI / 180.0f);
+    float cos_h = cosf(heading_rad);
+    float sin_h = sinf(heading_rad);
+
+    RobotVelocity vel;
+    vel.vx_field = vx_rob * cos_h - vy_rob * sin_h;
+    vel.vy_field = vx_rob * sin_h + vy_rob * cos_h;
+
+    PDS.Channel(190,vel.vx_field);
+    PDS.Channel(191,vel.vy_field);
+
+    return vel;
+}
 
 /**
  * Hilfsfunktion: Berechnet die minimal erforderliche Signalstärke in mdB (milli-dB)
@@ -423,20 +501,63 @@ float systemlib::calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSiz
 }
 
 /**
- * Feldposition aus den vier Radarwerten.
+ * Feldposition berechnen mit Schaltern für Test-Modi.
+ *
+ * @param current_time_ms Aktueller Zeitstempel (direkt millis() übergeben)
+ * @param vx_field Geschwindigkeit Feld-X (in cm/s)
+ * @param vy_field Geschwindigkeit Feld-Y (in cm/s)
+ * @param use_radar Radar-Sensoren zur Positionsberechnung nutzen
+ * @param use_odometry Motoren/Koppelnavigation (Dead Reckoning) nutzen
  */
-PositionData systemlib::calculatePosition(void)
+PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_field, float vy_field, bool use_radar , bool use_odometry )
 {
+    // 1. Delta-Zeit in Sekunden aus millis() berechnen
+    static uint32_t last_time_ms = 0;
+    float dt_s = 0.0f;
+
+    if (last_time_ms > 0 && current_time_ms > last_time_ms)
+    {
+        dt_s = (float)(current_time_ms - last_time_ms) / 1000.0f;
+    }
+    last_time_ms = current_time_ms;
+
     float certainty_x = 0.0f;
     float certainty_y = 0.0f;
 
-    float lastX = Position.X;
-    float lastY = Position.Y;
+    const float lastX = Position.X;
+    const float lastY = Position.Y;
 
-    // 1. X-Achse berechnen
-    Position.X = calcAxisPosition(RadarLi, RadarRe, feld_x, 0.0f, 0.0f, lastX, certainty_x);
+    // 2. X-Achse berechnen
+    if (use_radar)
+    {
+        Position.X = calcAxisPosition(RadarLi, RadarRe, feld_x, 0.0f, 0.0f, lastX, certainty_x);
+    }
+    else
+    {
+        certainty_x = 0.0f; // Radar bewusst überspringen
+    }
 
-    // 2. Tor-Offset
+    // X-Fallback & Dead Reckoning (Odometrie)
+    if (certainty_x < POS_MIN_THRESHOLD)
+    {
+        // Timeout (>=2000ms ohne Radar) wird NUR geprüft, wenn Radar aktiv genutzt wird
+        bool radarTimeout = use_radar && (lastvaliddata_Radar_X >= 2000);
+
+        if (use_odometry && !radarTimeout)
+        {
+            Position.X = (lastX >= 0.0f) ? (lastX + (vx_field * dt_s)) : -1.0f;
+        }
+        else
+        {
+            Position.X = -1.0f;
+        }
+    }
+    else
+    {
+        lastvaliddata_Radar_X = 0;
+    }
+
+    // 3. Tor-Offset
     float xForGoal;
     bool xFallback = false;
 
@@ -444,9 +565,9 @@ PositionData systemlib::calculatePosition(void)
     {
         xForGoal = Position.X;
     }
-    else if (lastX >= 0.0f)
+    else if (Position.X >= 0.0f)
     {
-        xForGoal = lastX;
+        xForGoal = Position.X;
     }
     else
     {
@@ -462,42 +583,32 @@ PositionData systemlib::calculatePosition(void)
         goalSure = min(goalSure, 0.5f);
     }
 
-    // 3. Y-Achse berechnen
-    Position.Y = calcAxisPosition(RadarHi, RadarVo, feld_y, goalOff, goalOff, lastY, certainty_y);
-
-    // Torkanten-Unsicherheit einrechnen
-    certainty_y *= POS_PLAUS_GOAL_EDGE + (1.0f - POS_PLAUS_GOAL_EDGE) * goalSure;
-
-    Position.AtGoal = (goalOff > 0.5f);
-
-    // 4. Achsgetrennte Fallbacks und Timeouts
-    if (certainty_x < POS_MIN_THRESHOLD)
+    // 4. Y-Achse berechnen
+    if (use_radar)
     {
-        if (lastvaliddata_Radar_X >= 2000)
-        {
-            Position.X = -1.0f;
-            certainty_x = 0.0f;
-        }
-        else
-        {
-            Position.X = lastX;
-        }
+        Position.Y = calcAxisPosition(RadarHi, RadarVo, feld_y, goalOff, goalOff, lastY, certainty_y);
     }
     else
     {
-        lastvaliddata_Radar_X = 0;
+        certainty_y = 0.0f; // Radar bewusst überspringen
     }
 
+    certainty_y *= POS_PLAUS_GOAL_EDGE + (1.0f - POS_PLAUS_GOAL_EDGE) * goalSure;
+    Position.AtGoal = (goalOff > 0.5f);
+
+    // Y-Fallback & Dead Reckoning (Odometrie)
     if (certainty_y < POS_MIN_THRESHOLD)
     {
-        if (lastvaliddata_Radar_Y >= 2000)
+        // Timeout (>=2000ms ohne Radar) wird NUR geprüft, wenn Radar aktiv genutzt wird
+        bool radarTimeout = use_radar && (lastvaliddata_Radar_Y >= 2000);
+
+        if (use_odometry && !radarTimeout)
         {
-            Position.Y = -1.0f;
-            certainty_y = 0.0f;
+            Position.Y = (lastY >= 0.0f) ? (lastY + (vy_field * dt_s)) : -1.0f;
         }
         else
         {
-            Position.Y = lastY;
+            Position.Y = -1.0f;
         }
     }
     else
@@ -505,11 +616,10 @@ PositionData systemlib::calculatePosition(void)
         lastvaliddata_Radar_Y = 0;
     }
 
-    // 5. Validitäts-Flags (konsistent mit POS_TRUST_THRESHOLD) & Strikt 2D-Certainty Semantik
-    Position.XValid = (Position.X >= 0.0f && certainty_x >= POS_TRUST_THRESHOLD);
-    Position.YValid = (Position.Y >= 0.0f && certainty_y >= POS_TRUST_THRESHOLD);
+    // 5. Validitäts-Flags & Certainty
+    Position.XValid = (certainty_x >= POS_TRUST_THRESHOLD);
+    Position.YValid = (certainty_y >= POS_TRUST_THRESHOLD);
 
-    // Certainty > 0 signalisiert ausschließlich vertrauenswürdige 2D-Koordinaten
     Position.Certainty = (Position.XValid && Position.YValid) 
                          ? min(certainty_x, certainty_y) 
                          : 0.0f;
@@ -536,7 +646,7 @@ uint16_t systemlib::giveADC(uint8_t Port, uint8_t Pin){
 
 void systemlib::updateLine(){
     uint8_t line_summe=0;
-    int8_t line_depth=0;
+    uint16_t line_depth=0;
     int8_t line_Angle = 0;
     bool line_touching;
 
@@ -914,14 +1024,14 @@ void systemlib::updateMotors(void)
 
     Motor_EXP.write(out);
 
-    MoDataVL.Speed_real = ADC_Motor.read(MotorVL_AP1, true, true);
-    MoDataVL.Current = ADC_Motor.read(MotorVL_AP2, true, false);
-    MoDataVR.Speed_real = ADC_Motor.read(MotorVR_AP1, true, true);
-    MoDataVR.Current = ADC_Motor.read(MotorVR_AP2, true, false);
-    MoDataHL.Speed_real = ADC_Motor.read(MotorHL_AP1, true, true);
-    MoDataHL.Current = ADC_Motor.read(MotorHL_AP2, true, false);
-    MoDataHR.Speed_real = ADC_Motor.read(MotorHR_AP1, true, true);
-    MoDataHR.Current = ADC_Motor.read(MotorHR_AP2, true, false);
+    MoDataVL.Speed_real = ADC_Motor.read(MotorVL_AP1,true,true);
+    MoDataVL.Current = ADC_Motor.read(MotorVL_AP2,true,false);
+    MoDataVR.Speed_real = ADC_Motor.read(MotorVR_AP1,true,true);
+    MoDataVR.Current = ADC_Motor.read(MotorVR_AP2,true,false);
+    MoDataHL.Speed_real = ADC_Motor.read(MotorHL_AP1,true,true);
+    MoDataHL.Current = ADC_Motor.read(MotorHL_AP2,true,false);
+    MoDataHR.Speed_real = ADC_Motor.read(MotorHR_AP1,true,true);
+    MoDataHR.Current = ADC_Motor.read(MotorHR_AP2,true,false);
 }
 
 MotorData systemlib::giveMotorData(uint8_t ID)

@@ -93,8 +93,13 @@ static constexpr float POS_PLAUS_GOAL_EDGE = 0.30f; ///< Certainty-Faktor der Y-
 
 static constexpr uint8_t POS_MAX_OVERSHOOT_CM = 10;
 // Schwellenwerte für Positionsvalidierung und Vertrauen
-static constexpr float POS_TRUST_THRESHOLD = 0.3f; // Schwelle für echtes Vertrauen & Goal-Offset
-static constexpr float POS_MIN_THRESHOLD   = 0.1f; // Schwelle für Fallback-Erhaltung
+static constexpr float POS_TRUST_THRESHOLD = 0.3f; // Schwelle für echtes Radar-Vertrauen
+static constexpr float POS_MIN_THRESHOLD   = 0.1f; // Schwelle für Fallback/Odometrie-Überbrückung
+
+// --- Systemparameter ---
+static constexpr float WHEEL_RADIUS_CM = 5.0f;     // Radradius in cm
+static constexpr float GEAR_RATIO       = 16.0f;    // Getriebeuntersetzung (z. B. 14:1)
+static constexpr float SQRT2_OVER_4     = 0.35355339f; // sqrt(2) / 4
 
 
 #define D_Mode_Test 0

@@ -16,7 +16,7 @@ class ADC108S102 {
         uint8_t csPinBin2;
         uint8_t csPinBin3;
         bool useBinExp = false;
-        uint16_t lastValue[8]; // Store the last read value for each channel
+        int16_t lastValue[8]; // Store the last read value for each channel
         int comandlist[8] = {2048,4096,6144,8192,10240,12288,14336,16384};
         DecoderAddress getAddressForLowPin(uint8_t pin);
     public:
@@ -24,6 +24,6 @@ class ADC108S102 {
         ADC108S102(SPIClass *spi_port, uint8_t chipSelectPinBin1, uint8_t chipSelectPinBin2, uint8_t chipSelectPinBin3,uint8_t chipSelectPort, bool useBinExpander = true) : _spi(spi_port), csPort(chipSelectPort), csPinBin1(chipSelectPinBin1), csPinBin2(chipSelectPinBin2), csPinBin3(chipSelectPinBin3), useBinExp(useBinExpander) {}
         void init();
         void read(uint16_t (&values)[8]);
-        uint16_t read(uint8_t channel,bool MOT_ADC = false,bool ADC_Mode = false); // Mot_ADC -> Enable if Motor ADC is used / ADC_Mode -> I = false - RPM = true
-        uint16_t getLastValue(uint8_t channel) const { return lastValue[channel]; }
+        int16_t read(uint8_t channel,bool MOT_ADC = false,bool ADC_Mode = false); // Mot_ADC -> Enable if Motor ADC is used / ADC_Mode -> I = false - RPM = true
+        int16_t getLastValue(uint8_t channel) const { return lastValue[channel]; }
 };

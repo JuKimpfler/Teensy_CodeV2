@@ -41,20 +41,22 @@ DecoderAddress ADC108S102::getAddressForLowPin(uint8_t pin) {
  *
  * @param channel The channel number to read (0-7).
  */
-uint16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
+int16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 {
     int result_raw=0;
     if (channel > 7)
         return 0; // Invalid channel
 
-    _spi->beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
+    _spi->beginTransaction(SPISettings(16000000, MSBFIRST, SPI_MODE3));
 
-    uint16_t result = 0;
+    int16_t result = 0;
 
     if(!useBinExp){
-        digitalWrite(csPin, LOW);
+        digitalWriteFast(csPin, LOW);
+        delayMicroseconds(100);
         result = _spi->transfer16(comandlist[channel]);
-        digitalWrite(csPin, HIGH);
+        delayMicroseconds(100);
+        digitalWriteFast(csPin, HIGH);
     }
     else{
         digitalWrite(csPinBin1, getAddressForLowPin(csPort).A0);
@@ -68,23 +70,39 @@ uint16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 
     _spi->endTransaction();
 
-    result_raw = map(result,70,3970,0,3300);
+    result_raw = map(result,0,4060,0,3300);
 
     if(MOT_ADC && ADC_Mode){
-        result_raw = abs(map(result_raw,0,3300,-100,100));
+        Serial.print("inV ");
+        Serial.println(result_raw);
+        if(result_raw > 1700){
+            result = (result_raw - 1650) * (6000 - 0) / (3300 - 1650) + 0;
+        }
+        else if(result_raw < 1600){
+            result = ((result_raw - 1650) * (6000 - 0) / (0 - 1650) + 0)*-1;
+        }
+        else{
+            result = 0;
+        }
     }
     else if(MOT_ADC && !ADC_Mode){
-        result_raw = abs(map(result_raw,0,3300,-6000,6000));
-    }
-    if(result_raw<0){
-        result=0;
-    }
-    else if (result_raw>65535){
-        result=65535;
+        if(result_raw > 1650){
+            result = map(result_raw,1650,3300,0,6000);
+        }
+        else if(result_raw <= 1650){
+            result = map(result_raw,1650,0,0,6000);
+        }
+        else{
+            result = 0;
+        }
     }
     else{
         result = result_raw;
     }
+
+    Serial.print("outRPM ");
+    Serial.println(result);
+
     lastValue[channel] = result;
     return result;
 }

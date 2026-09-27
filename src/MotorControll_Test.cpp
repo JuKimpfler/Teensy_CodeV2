@@ -33,13 +33,6 @@ void setup()
   // lib/systemlib/systemlib.cpp (setupPDS()) und docs/PDS_Belegung.md.
   sys.initialize();
 
-  // Nur noch die Werte, die es allein in diesem Sketch gibt. track() vergibt
-  // die Kanalnummer selbst -- ab 32, siehe PDS_AUTO_CHANNEL_BASE in
-  // platformio.ini -- und der Name geht automatisch an die GUI.
-  PDS.track("Fahrt_Winkel", &angle, "°");
-  PDS.track("Fahrt_Speed", &speed, "%");
-  PDS.track("Orbit", &param2, "°");
-
   PDS.log("Setup abgeschlossen");
 
   sys.calibBNO();
@@ -58,9 +51,6 @@ void loop()
     delay(1000);
   }
 
-  PDS.Channel(12, sys.giveLineAngle(), "LineAngle");
-  PDS.Channel(13, sys.giveLineDepth(), "LineDepth");
-  PDS.Channel(14, sys.giveLinePresent(), "LinePresent");
   for (int i = 47; i >= 0; i--)
   {
     PDS.Channel((50 + i), sys.line_array[i]);
