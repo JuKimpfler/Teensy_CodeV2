@@ -8,7 +8,8 @@ BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
 elapsedMillis cycleTimer;
 elapsedMillis powerTimer;   // drosselt die INA219-Abfrage fuer die PDS-Kanaele
 elapsedMicros cycleTimer_us;
-elapsedMillis lastvaliddata_Radar;
+elapsedMillis lastvaliddata_Radar_X;
+elapsedMillis lastvaliddata_Radar_Y;
 
 commlib communication;
 
@@ -73,8 +74,10 @@ void systemlib::initialize()
     BNO.init();
     calibBNO();
 
+    #if DPDS_Game == D_Mode_Test
     PDS.init();
     setupPDS();
+    #endif
 
     MoDataVL.ID = MotorVL_ID;
     MoDataVR.ID = MotorVR_ID;
@@ -137,7 +140,9 @@ void systemlib::readSensors(void)
         Motor_I = giveMotorCurrent();
     }
 
+    #if DPDS_Game == D_Mode_Test
     PDS.update();
+    #endif
 
     updateHeadingController();
     updateMotors();
@@ -163,6 +168,8 @@ void systemlib::readSensors(void)
  */
 void systemlib::setupPDS(void)
 {
+    #if DPDS_Mode == D_Mode_Test
+
     // Firmware-Stand, damit in der GUI sichtbar ist, welcher Code auf welchem
     // Roboter laeuft. Die Makros kommen aus den build_flags in platformio.ini.
 #if defined(BUILD_VERSION) && defined(BUILD_DATE) && defined(BUILD_TIME)
@@ -208,8 +215,8 @@ void systemlib::setupPDS(void)
     // zeigt (Feld-Draufsicht in channel_config.h).
     PDS.bind("Pos_X",         &Position.X,         16, "cm");
     PDS.bind("Pos_Y",         &Position.Y,         17, "cm");
-    PDS.bind("Pos_Guete",     &Position.Certainty, 18);
-    PDS.bind("Pos_AmTor",     &Position.AtGoal,    19);
+    PDS.bind("Pos_certanty_x",     &Position.XValid, 18);
+    PDS.bind("Pos_certanty_y",     &Position.YValid, 19);
 
     /* ---- Motoren ------------------------------------------------------- */
     PDS.bind("Motor_VL",      &MoDataVL.Speed, 20, "%");
@@ -222,9 +229,11 @@ void systemlib::setupPDS(void)
     PDS.bind("Start",         &startSwitch,    25);
 
     // 26..31 bleiben frei fuer weitere Systemwerte.
+
+    #endif // Game_mode
 }
 
-/* -------------- Position -------------- */
+/* -------------- Position/Radar -------------- */
 
 /**
  * Alter eines Messwerts -> Gewicht zwischen 1 (brandaktuell) und 0 (uralt).
@@ -283,6 +292,237 @@ float systemlib::goalOffset(float x_cm, float &sureness) const
 
     return POS_GOAL_DEPTH_CM * t;
 }
+#include <Arduino.h>
+#include <math.h>
+
+/**
+ * Hilfsfunktion: Berechnet die minimal erforderliche Signalstärke in mdB (milli-dB)
+ * basierend auf der gemessenen Distanz (in cm).
+ */
+static inline int32_t getMinStrengthMdb(float distCm)
+{
+    float distM = distCm / 100.0f;
+    float minDb = -11000.0f - (distM * 2500.0f);
+    return (int32_t)max(minDb, -17000.0f);
+}
+
+/**
+ * Eine Achse aus dem gegenüberliegenden Radar-Paar bestimmen.
+ */
+float systemlib::calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSize, float offsetLow, float offsetHigh, float lastPos, float &certainty)
+{
+    const RadarData &low  = Radar[posLow];
+    const RadarData &high = Radar[posHigh];
+
+    const float span = feldSize - offsetLow - offsetHigh;
+
+    const float distLow  = (low.Dist  / 10.0f) + POS_RADAR_OFFSET_CM;
+    const float distHigh = (high.Dist / 10.0f) + POS_RADAR_OFFSET_CM;
+
+    const float minDist = (RADAR_START_MM / 10.0f) + POS_RADAR_OFFSET_CM;
+    const float blindDistThreshold = max(POS_BLIND_CM, minDist + 2.0f);
+
+    // 1. Grundprüfung je Sensor
+    bool lowOk  = low.isCon  && (low.Peaks  > 0) 
+                  && (low.Strenght >= getMinStrengthMdb(distLow))
+                  && (distLow  >= minDist) 
+                  && (distLow  <= span + POS_MAX_OVERSHOOT_CM);
+
+    bool highOk = high.isCon && (high.Peaks > 0) 
+                  && (high.Strenght >= getMinStrengthMdb(distHigh))
+                  && (distHigh >= minDist) 
+                  && (distHigh <= span + POS_MAX_OVERSHOOT_CM);
+
+    // 2. Blindbereich des Gegenübers
+    const bool lowFar  = lowOk  && (distLow  > span - blindDistThreshold);
+    const bool highFar = highOk && (distHigh > span - blindDistThreshold);
+
+    if (lowFar && highFar)
+    {
+        lowOk  = false;
+        highOk = false;
+    }
+    else if (lowFar)
+        highOk = false;
+    else if (highFar)
+        lowOk = false;
+
+    // 3. Position und Plausibilität
+    float pos;
+    float plaus = 0.0f;
+    uint32_t age = 0;
+    int32_t usedStrength = -20000;
+
+    if (lowOk && highOk)
+    {
+        const float err = fabsf((distLow + distHigh) - span);
+
+        if (err <= POS_PAIR_TOL_CM)
+        {
+            pos   = (distLow + (span - distHigh)) / 2.0f;
+            plaus = POS_PLAUS_PAIR - (err / POS_PAIR_TOL_CM) * (POS_PLAUS_PAIR - POS_PLAUS_SINGLE);
+            age   = max(Radar.giveAge(posLow), Radar.giveAge(posHigh));
+            usedStrength = min(low.Strenght, high.Strenght);
+        }
+        else
+        {
+            int32_t diffMdb = low.Strenght - high.Strenght;
+            bool useLow;
+
+            if (diffMdb > 3000 || diffMdb < -3000)
+            {
+                useLow = (diffMdb > 0);
+            }
+            else
+            {
+                const bool sumTooSmall = ((distLow + distHigh) < span);
+                useLow = sumTooSmall ? (distLow >= distHigh) : (distLow <= distHigh);
+            }
+
+            pos   = useLow ? distLow : (span - distHigh);
+            plaus = POS_PLAUS_CONFLICT;
+            age   = Radar.giveAge(useLow ? posLow : posHigh);
+            usedStrength = useLow ? low.Strenght : high.Strenght;
+        }
+    }
+    else if (lowOk)
+    {
+        pos   = distLow;
+        plaus = POS_PLAUS_SINGLE;
+        age   = Radar.giveAge(posLow);
+        usedStrength = low.Strenght;
+    }
+    else if (highOk)
+    {
+        pos   = span - distHigh;
+        plaus = POS_PLAUS_SINGLE;
+        age   = Radar.giveAge(posHigh);
+        usedStrength = high.Strenght;
+    }
+    else
+    {
+        certainty = 0.0f;
+        return lastPos;
+    }
+
+    // 4. Alter und Signalstärke-Gewichtung
+    float strengthFactor = constrain(1.0f + (usedStrength + 10000.0f) / 15000.0f, 0.7f, 1.0f);
+    certainty = constrain(plaus * posAgeFactor(age) * strengthFactor, 0.0f, 1.0f);
+
+    float calculatedPos = offsetLow + constrain(pos, 0.0f, span);
+
+    // 5. Sprungbegrenzung
+    const float MAX_JUMP_CM = 20.0f;
+    if (lastPos >= 0.0f && certainty > POS_MIN_THRESHOLD && fabsf(calculatedPos - lastPos) > MAX_JUMP_CM)
+    {
+        certainty *= 0.2f;
+        calculatedPos = lastPos;
+    }
+
+    return calculatedPos;
+}
+
+/**
+ * Feldposition aus den vier Radarwerten.
+ */
+PositionData systemlib::calculatePosition(void)
+{
+    float certainty_x = 0.0f;
+    float certainty_y = 0.0f;
+
+    float lastX = Position.X;
+    float lastY = Position.Y;
+
+    // 1. X-Achse berechnen
+    Position.X = calcAxisPosition(RadarLi, RadarRe, feld_x, 0.0f, 0.0f, lastX, certainty_x);
+
+    // 2. Tor-Offset
+    float xForGoal;
+    bool xFallback = false;
+
+    if (certainty_x >= POS_TRUST_THRESHOLD)
+    {
+        xForGoal = Position.X;
+    }
+    else if (lastX >= 0.0f)
+    {
+        xForGoal = lastX;
+    }
+    else
+    {
+        xForGoal = feld_x / 2.0f;
+        xFallback = true;
+    }
+
+    float goalSure = 1.0f;
+    const float goalOff = goalOffset(xForGoal, goalSure);
+
+    if (xFallback)
+    {
+        goalSure = min(goalSure, 0.5f);
+    }
+
+    // 3. Y-Achse berechnen
+    Position.Y = calcAxisPosition(RadarHi, RadarVo, feld_y, goalOff, goalOff, lastY, certainty_y);
+
+    // Torkanten-Unsicherheit einrechnen
+    certainty_y *= POS_PLAUS_GOAL_EDGE + (1.0f - POS_PLAUS_GOAL_EDGE) * goalSure;
+
+    Position.AtGoal = (goalOff > 0.5f);
+
+    // 4. Achsgetrennte Fallbacks und Timeouts
+    if (certainty_x < POS_MIN_THRESHOLD)
+    {
+        if (lastvaliddata_Radar_X >= 2000)
+        {
+            Position.X = -1.0f;
+            certainty_x = 0.0f;
+        }
+        else
+        {
+            Position.X = lastX;
+        }
+    }
+    else
+    {
+        lastvaliddata_Radar_X = 0;
+    }
+
+    if (certainty_y < POS_MIN_THRESHOLD)
+    {
+        if (lastvaliddata_Radar_Y >= 2000)
+        {
+            Position.Y = -1.0f;
+            certainty_y = 0.0f;
+        }
+        else
+        {
+            Position.Y = lastY;
+        }
+    }
+    else
+    {
+        lastvaliddata_Radar_Y = 0;
+    }
+
+    // 5. Validitäts-Flags (konsistent mit POS_TRUST_THRESHOLD) & Strikt 2D-Certainty Semantik
+    Position.XValid = (Position.X >= 0.0f && certainty_x >= POS_TRUST_THRESHOLD);
+    Position.YValid = (Position.Y >= 0.0f && certainty_y >= POS_TRUST_THRESHOLD);
+
+    // Certainty > 0 signalisiert ausschließlich vertrauenswürdige 2D-Koordinaten
+    Position.Certainty = (Position.XValid && Position.YValid) 
+                         ? min(certainty_x, certainty_y) 
+                         : 0.0f;
+
+    return Position;
+}
+
+void systemlib::calibRadar()
+{
+    Radar.calib();
+}
+
+/* -------------- ADC/Line -------------- */
 
 uint16_t systemlib::giveADC(uint8_t Port, uint8_t Pin){
     if(Port == 0){return ADC_Line1.read(Pin);}
@@ -368,206 +608,6 @@ void systemlib::updateLine(){
     LineDepth = line_summe;
     LineWinkel = line_Angle;
     LinePresent = line_touching;
-}
-
-/**
- * Hilfsfunktion: Berechnet die minimal erforderliche Signalstärke in mdB (milli-dB)
- * basierend auf der gemessenen Distanz (in cm).
- * 0 mdB = perfekte Reflektion, Werte liegen im Bereich ca. -9000 mdB bis -20000 mdB.
- */
-static inline int32_t getMinStrenghtMdb(float distCm)
-{
-    float distM = distCm / 100.0f;
-    
-    // Linearer Abfall: Nahe der Wand (0 m) erwarten wir mind. -11 dB (-11000 mdB),
-    // bei 2 m Distanz erlauben wir bis zu -16 dB (-16000 mdB).
-    float minDb = -11000.0f - (distM * 2500.0f);
-    
-    // Untergrenze bei -17 dB (-17000 mdB) deckeln
-    return (int32_t)max(minDb, -17000.0f);
-}
-
-float systemlib::calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSize, float offsetLow, float offsetHigh, float lastPos, float &certainty)
-{
-    const RadarData &low  = Radar[posLow];
-    const RadarData &high = Radar[posHigh];
-
-    const float span = feldSize - offsetLow - offsetHigh;
-
-    const float distLow  = (low.Dist  / 10.0f) + POS_RADAR_OFFSET_CM;
-    const float distHigh = (high.Dist / 10.0f) + POS_RADAR_OFFSET_CM;
-
-    const float minDist = (RADAR_START_MM / 10.0f) + POS_RADAR_OFFSET_CM;
-    
-    // POS_BLIND_CM ist dynamisch mindestens so groß wie minDist (+2cm Sicherheitsabstand)
-    const float blindDistThreshold = max(POS_BLIND_CM, minDist + 2.0f);
-
-    // 1. Grundprüfung je Sensor (inkl. entfernungsabhängiger mdB-Signalstärke)
-    bool lowOk  = low.isCon  && (low.Peaks  > 0) 
-                  && (low.Strenght >= getMinStrenghtMdb(distLow))
-                  && (distLow  >= minDist) 
-                  && (distLow  <= span + POS_PAIR_TOL_CM);
-
-    bool highOk = high.isCon && (high.Peaks > 0) 
-                  && (high.Strenght >= getMinStrenghtMdb(distHigh))
-                  && (distHigh >= minDist) 
-                  && (distHigh <= span + POS_PAIR_TOL_CM);
-
-    // 2. Blindbereich des Gegenübers
-    const bool lowFar  = lowOk  && (distLow  > span - blindDistThreshold);
-    const bool highFar = highOk && (distHigh > span - blindDistThreshold);
-
-    if (lowFar && highFar)
-    {
-        lowOk  = false;
-        highOk = false;
-    }
-    else if (lowFar)
-        highOk = false;
-    else if (highFar)
-        lowOk = false;
-
-    // 3. Position und Plausibilität
-    float pos;
-    float plaus = 0.0f;
-    uint32_t age = 0;
-    int32_t usedStrenght = -20000;
-
-    if (lowOk && highOk)
-    {
-        const float err = fabsf((distLow + distHigh) - span);
-
-        if (err <= POS_PAIR_TOL_CM)
-        {
-            pos   = (distLow + (span - distHigh)) / 2.0f;
-            plaus = POS_PLAUS_PAIR - (err / POS_PAIR_TOL_CM) * (POS_PLAUS_PAIR - POS_PLAUS_SINGLE);
-            age   = max(Radar.giveAge(posLow), Radar.giveAge(posHigh));
-            usedStrenght = min(low.Strenght, high.Strenght);
-        }
-        else
-        {
-            int32_t diffMdb = low.Strenght - high.Strenght;
-            bool useLow;
-
-            if (abs(diffMdb) > 3000)
-            {
-                useLow = (diffMdb > 0);
-            }
-            else
-            {
-                const bool sumTooSmall = ((distLow + distHigh) < span);
-                useLow = sumTooSmall ? (distLow >= distHigh) : (distLow <= distHigh);
-            }
-
-            pos   = useLow ? distLow : (span - distHigh);
-            plaus = POS_PLAUS_CONFLICT;
-            age   = Radar.giveAge(useLow ? posLow : posHigh);
-            usedStrenght = useLow ? low.Strenght : high.Strenght;
-        }
-    }
-    else if (lowOk)
-    {
-        pos   = distLow;
-        plaus = POS_PLAUS_SINGLE;
-        age   = Radar.giveAge(posLow);
-        usedStrenght = low.Strenght;
-    }
-    else if (highOk)
-    {
-        pos   = span - distHigh;
-        plaus = POS_PLAUS_SINGLE;
-        age   = Radar.giveAge(posHigh);
-        usedStrenght = high.Strenght;
-    }
-    else
-    {
-        certainty = 0.0f;
-        return lastPos;
-    }
-
-    // 4. Alter und Signalstärke-Gewichtung
-    float StrenghtFactor = constrain(1.0f + (usedStrenght + 10000.0f) / 15000.0f, 0.7f, 1.0f);
-    certainty = constrain(plaus * posAgeFactor(age) * StrenghtFactor, 0.0f, 1.0f);
-
-    float calculatedPos = offsetLow + constrain(pos, 0.0f, span);
-
-    // 5. Sprungbegrenzung (Outlier-Rejection)
-    // Bei einem physikalisch unnmöglichen Sprung (>20cm in einem Zyklus) Certainty stark dämpfen
-    const float MAX_JUMP_CM = 20.0f;
-    if (certainty > 0.3f && fabsf(calculatedPos - lastPos) > MAX_JUMP_CM)
-    {
-        certainty *= 0.2f; // Dämpfen statt hart verwerfen
-    }
-
-    return calculatedPos;
-}
-
-/**
- * Feldposition aus den vier Radarwerten. Einmal je Zyklus aus readSensors(),
- * direkt nach Radar.update().
- *
- * Setzt voraus, dass der Roboter zum Feld ausgerichtet ist (Heading-Regler) --
- * jeder Sensor schaut dann senkrecht auf "seine" Wand.
- *
- * Reihenfolge ist nicht beliebig: die Seitenwaende laufen ohne Unterbrechung
- * durch, an X aendern die Tore also nichts. Die Y-Achse dagegen ist um die
- * Tortiefe kuerzer, sobald der Roboter vor einer Toroeffnung steht -- und ob er
- * das tut, sagt allein X. Also erst X, daraus der Tor-Offset, dann Y.
- *
- * Certainty gilt fuer die Position als Ganzes und ist deshalb die schlechtere
- * der beiden Achsen: eine Achse, die keiner kennt, macht auch die andere als
- * Position wertlos. Damit ist auch der Fall abgedeckt, dass X unbrauchbar ist
- * und die Torentscheidung deshalb auf einem alten X-Wert beruht.
- *
- * @return Position (X/Y in cm) mit Certainty 0 ... 1
- */
-PositionData systemlib::calculatePosition(void)
-{
-    float certainty_x = 0.0f;
-    float certainty_y = 0.0f;
-
-    float lastX = Position.X;
-    float lastY = Position.Y;
-
-    // X: links misst gegen x = 0, rechts gegen x = feld_x
-    Position.X = calcAxisPosition(RadarLi, RadarRe, feld_x, 0.0f, 0.0f, Position.X, certainty_x);
-
-    // Tor-Offset ermitteln
-    float goalSure = 1.0f;
-    const float goalOff = goalOffset(Position.X, goalSure);
-
-    // Y: hinten misst gegen y = 0, vorne gegen y = feld_y
-    Position.Y = calcAxisPosition(RadarHi, RadarVo, feld_y, goalOff, goalOff, Position.Y, certainty_y);
-
-    // Torkanten-Unsicherheit einrechnen
-    certainty_y *= POS_PLAUS_GOAL_EDGE + (1.0f - POS_PLAUS_GOAL_EDGE) * goalSure;
-
-    Position.AtGoal    = (goalOff != 0.0f);
-    Position.Certainty = min(certainty_x, certainty_y);
-
-    // Fallback-Behandlung
-    if (Position.Certainty < 0.1f && lastvaliddata_Radar < 2000)
-    {
-        Position.X = lastX;
-        Position.Y = lastY;
-    }
-    else if (Position.Certainty < 0.1f && lastvaliddata_Radar >= 2000)
-    {
-        Position.X = -1.0f;
-        Position.Y = -1.0f;
-    }
-
-    if (Position.Certainty >= 0.1f)
-    {
-        lastvaliddata_Radar = 0;
-    }
-
-    return Position;
-}
-
-void systemlib::calibRadar()
-{
-    Radar.calib();
 }
 
 /* -------------- BNO -------------- */
@@ -1140,7 +1180,30 @@ void systemlib::setOmniWheelDir(float directionDeg, uint8_t speedPercent, float 
     setMotorData(MoDataHR.ID,w[3],true,false);
 }
 
+int checkWallDistance(float posX, float posY)
+{
+    const float MARGIN_CM = 20.0f;
+    const float FIELD_X_CM = 183.0f;
+    const float FIELD_Y_CM = 243.0f;
+
+    // Ungültige Positionen (z. B. -1 aus der Fallback-Logik) direkt abfangen
+    if (posX < 0.0f || posY < 0.0f)
+    {
+        return -1;
+    }
+
+    // Prüfen, ob eine der 4 Wände unterschritten wird
+    if (posX < MARGIN_CM || posX > (FIELD_X_CM - MARGIN_CM) ||
+        posY < MARGIN_CM || posY > (FIELD_Y_CM - MARGIN_CM))
+    {
+        return 180; // Näher als 10 cm an der Wand
+    }
+
+    return 0; // Sicherer Bereich
+}
+
 void systemlib::moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel){
     setHeading(Andrehwinkel*DEG_TO_RAD);
+    Dir = Util.AMap(checkWallDistance(Position.X, Position.Y)+Dir);
     setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
 }

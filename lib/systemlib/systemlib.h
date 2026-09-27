@@ -43,12 +43,13 @@ struct MotorData
 };
 
 /// Ergebnis von systemlib::calculatePosition() — Feldposition mit Guetemass.
-struct PositionData
-{
-    float X = 0;         ///< cm, 0 = linke Feldwand
-    float Y = 0;         ///< cm, 0 = Wand hinter dem eigenen Tor
-    float Certainty = 0; ///< 0 = unbrauchbar (unplausibel oder uralt) ... 1 = plausibles Paar, brandaktuell
-    bool AtGoal = false; ///< Tor-Korrektur greift: Roboter steht vor einer Toroeffnung, Y-Achse ist dort um die Tortiefe kuerzer
+struct PositionData {
+    float X;
+    float Y;
+    float Certainty;
+    bool  XValid;
+    bool  YValid;
+    bool  AtGoal;
 };
 
 class systemlib

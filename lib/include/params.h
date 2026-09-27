@@ -30,7 +30,7 @@ static constexpr int8_t  RADAR_INT_PIN  = -1;
 // lib/XM125/examples/XM125_Calib_Sensitivity.cpp (Mode 's' = Parameter-Sweep). Sieht der
 // Sensor die Wand ueberhaupt nicht, vorher lib/XM125/examples/XM125_Calib_Alignment.cpp
 // (Ausrichtung) und lib/XM125/examples/XM125_Calib_Module.cpp (Kalibrierung laeuft durch?).
-static constexpr uint32_t RADAR_START_MM = 100;   ///< naeher am Sensor liegt der Roboter selbst
+static constexpr uint32_t RADAR_START_MM = 150;   ///< naeher am Sensor liegt der Roboter selbst
 static constexpr uint32_t RADAR_END_MM   = 2700;  ///< 200 mm Reserve, damit 3000 mm nicht auf der Bereichskante liegt
 static constexpr uint32_t RADAR_SIGNAL_QUALITY        = 30000; ///< 25.0 statt Default 15.0 -> mehr SNR am Bereichsende
 static constexpr uint32_t RADAR_THRESHOLD_SENSITIVITY = 0;   ///< 0.75 statt Default 0.50 -> CFAR laesst schwache Wand-Peaks durch
@@ -58,7 +58,7 @@ static constexpr uint32_t RADAR_REINIT_INTERVAL_MS = 500;
 // beiden etwas anderes als die Wand gesehen.
 static constexpr float POS_RADAR_OFFSET_CM = 2.0f;  ///< Abstand Roboter-Mittelpunkt -> Sensorflaeche (Koordinaten zaehlen ab Mittelpunkt)
 static constexpr float POS_PAIR_TOL_CM     = 10.0f; ///< so weit darf die Summe des Paares von der Feldgroesse abweichen
-static constexpr float POS_BLIND_CM        = 30.0f; ///< misst ein Sensor mehr als Feldgroesse - POS_BLIND_CM, steht der gegenueberliegende im Blindbereich (RADAR_START_MM) und wird verworfen
+static constexpr float POS_BLIND_CM        = 22.0f; ///< misst ein Sensor mehr als Feldgroesse - POS_BLIND_CM, steht der gegenueberliegende im Blindbereich (RADAR_START_MM) und wird verworfen
 static constexpr uint32_t POS_AGE_MAX_MS   = 1000;  ///< ab diesem Alter zaehlt ein Messwert gar nicht mehr (Certainty 0)
 
 // Plausibilitaet vor der Altersbewertung. Bei einem passenden Paar wird
@@ -89,4 +89,15 @@ static constexpr float POS_GOAL_DEPTH_CM = 10.0f; ///< so weit steht das Tor im 
 // diesem Band um die Torkante steht nicht fest, ob der Sensor die Torrueckwand
 // oder die Feldwand getroffen hat.
 static constexpr float POS_GOAL_EDGE_CM    = 12.0f;
-static constexpr float POS_PLAUS_GOAL_EDGE = 0.50f; ///< Certainty-Faktor der Y-Achse, solange die Torkante nicht eindeutig ist
+static constexpr float POS_PLAUS_GOAL_EDGE = 0.30f; ///< Certainty-Faktor der Y-Achse, solange die Torkante nicht eindeutig ist
+
+static constexpr uint8_t POS_MAX_OVERSHOOT_CM = 10;
+// Schwellenwerte für Positionsvalidierung und Vertrauen
+static constexpr float POS_TRUST_THRESHOLD = 0.3f; // Schwelle für echtes Vertrauen & Goal-Offset
+static constexpr float POS_MIN_THRESHOLD   = 0.1f; // Schwelle für Fallback-Erhaltung
+
+
+#define D_Mode_Test 0
+#define D_Mode_Game 1
+
+#define DPDS_Mode D_Mode_Test

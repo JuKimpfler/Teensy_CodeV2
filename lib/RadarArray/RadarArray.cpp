@@ -42,7 +42,7 @@ float RadarArray::filterRadar(int sensorIndex, float rawValue, unsigned long now
   }
   lastTime[sensorIndex] = nowMs;
 
-  const float maxSpeedMM = 1265.625f; // ~1.266 m/s in mm/s
+  const float maxSpeedMM = 3000; // ~1.266 m/s in mm/s
 
   // 1. Vorhersage
   float predictedPos = pos[sensorIndex] + vel[sensorIndex] * dt;
