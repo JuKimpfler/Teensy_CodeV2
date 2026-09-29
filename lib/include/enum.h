@@ -35,14 +35,25 @@ enum PinOut
     MotorHR_P1 = 4,
     MotorHR_P2 = 5,
 
-    MotorVR_AP1 = 7,
-    MotorVR_AP2 = 6,
-    MotorVL_AP1 = 5,
-    MotorVL_AP2 = 4,
-    MotorHL_AP1 = 3,
-    MotorHL_AP2 = 2,
-    MotorHR_AP1 = 1,
-    MotorHR_AP2 = 0,
+    MotorVR_AP1 = 1,
+    MotorVR_AP2 = 0,
+    MotorVL_AP1 = 7,
+    MotorVL_AP2 = 6,
+    MotorHL_AP1 = 5,
+    MotorHL_AP2 = 4,
+    MotorHR_AP1 = 3,
+    MotorHR_AP2 = 2,
+
+    /*
+    1 RPM VR
+    0 Strom VR
+    7 RPM VL
+    6 Strom VL
+    5 RPM HL
+    4 Strom HL
+    3 RPM HR
+    2 Strom HR
+    */
 
     KICKER_PORT = 18,
 

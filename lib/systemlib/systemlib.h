@@ -186,8 +186,8 @@ public:
                                            bool use_radar = true, 
                                            bool use_odometry = true);
     void getOmniWheelVek(float wVL, float wVR, float wHL, float wHR, float &vx, float &vy, float &omega);
-    float convertMotorRpmToWheelSpeedCmS(float motor_rpm, bool dirBit);
-    RobotVelocity calculateFieldVelocityFromMotorRpm(const float motor_rpm[4], const bool dirs[4], float heading_deg);
+    float convertMotorRpmToWheelSpeedCmS(float motor_rpm);
+    RobotVelocity calculateFieldVelocityFromMotorRpm(const float motor_rpm[4], float heading_deg);
 
     /* -------------- give -------------- */
     float giveOrbitDir(void) const { return BNO_OrbitDir; };            // Orbital Ausrichtung

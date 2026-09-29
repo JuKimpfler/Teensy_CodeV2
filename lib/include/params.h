@@ -97,7 +97,7 @@ static constexpr float POS_TRUST_THRESHOLD = 0.3f; // Schwelle für echtes Radar
 static constexpr float POS_MIN_THRESHOLD   = 0.1f; // Schwelle für Fallback/Odometrie-Überbrückung
 
 // --- Systemparameter ---
-static constexpr float WHEEL_RADIUS_CM = 5.0f;     // Radradius in cm
+static constexpr float WHEEL_RADIUS_CM = 2.9f;     // Radradius in cm
 static constexpr float GEAR_RATIO       = 16.0f;    // Getriebeuntersetzung (z. B. 14:1)
 static constexpr float SQRT2_OVER_4     = 0.35355339f; // sqrt(2) / 4
 

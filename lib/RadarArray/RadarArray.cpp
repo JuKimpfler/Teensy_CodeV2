@@ -211,8 +211,12 @@ void RadarArray::_takeResult(uint8_t idx)
     // alter Wert stehen bleibt und "reagiert nicht" sichtbar wird.
     const XM125DistanceResult &res = _sensors[idx].getLastResult();
     _data[idx].Peaks    = res.numDistances;
-    _data[idx].Dist     = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
-    _data[idx].Dist     = filterRadar(idx,_data[idx].Dist,millis());
+    _data[idx].DistRaw  = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
+    _data[idx].Dist     = _data[idx].DistRaw;
+    // Filter nur mit echten Peaks fuettern: Nullen ("keine Wand") wuerden ihn
+    // sonst Richtung 0 ziehen und die Rueckkehr der Wand um ~10 Zyklen verzoegern.
+    if (res.numDistances > 0)
+        _data[idx].Dist = filterRadar(idx, _data[idx].DistRaw, millis());
     _data[idx].Strenght = (res.numDistances > 0) ? res.peakStrength[0] : 0;
     _data[idx].isCon    = true;
     _data[idx].Time     = millis(); // Zeitstempel fuer die Altersbewertung, siehe giveAge()

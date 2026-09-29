@@ -65,13 +65,18 @@ void loop()
   angle = atan2(y, x) * RAD_TO_DEG;
   speed = min(100.0f, hypot(x, y)) /2;
 
-  if (PDS.paramBool(0)) // "Zielpunkt_anfahren"
+  if (PDS.getFastParam(3)>50) // "Zielpunkt_anfahren"
   {
     sys.moveToPoint(50, 50, 50, 0);
   }
   else
   {
-    sys.moveDir(angle, speed, 0);
+    if (PDS.getFastParam(2)>50){
+      sys.moveDir(angle, speed, 45);
+    }
+    else{
+      sys.moveDir(angle, speed, 0);
+    }
   }
 
   sys.giveButtonStates(buttons);
@@ -82,7 +87,12 @@ void loop()
     sys.calibBNO();
   }
 
-  Serial.print("X: ");
+  if (digitalRead(START_SWITCH)){
+    sys.MoDataHL.Speed=100;
+  }
+
+
+  /*Serial.print("X: ");
   Serial.print(sys.Position.X);
   Serial.print(" Y: ");
   Serial.print(sys.Position.Y);
@@ -104,7 +114,7 @@ void loop()
   Serial.print(sys.Radar.giveAge(RadarRe));
   Serial.print (" HA: ");
   Serial.print(sys.Radar.giveAge(RadarHi));
-  Serial.println();
+  Serial.println();*/
 
 
 

@@ -126,10 +126,15 @@ void systemlib::readSensors(void)
     Radar.update();
 
 
-    float adcValues[4] = { MoDataVL.Speed_real, MoDataVR.Speed_real, MoDataHL.Speed_real, MoDataHR.Speed_real };
-    bool dirBits[4]       = { MoDataVL.Dir_real, MoDataVR.Dir_real, MoDataHL.Dir_real, MoDataHR.Dir_real };
-    RobotVelocity vel = calculateFieldVelocityFromMotorRpm(adcValues, dirBits, giveOrbitDir());
-    calculatePosition(millis(), vel.vx_field, vel.vy_field, false);
+    // Motordrehzahlen -> Feldgeschwindigkeit. Heading als Mittel ueber den Zyklus,
+    // damit die Drehung waehrend des Zyklus nicht als Richtungsfehler eingeht.
+    float motorRpm[4] = { MoDataVL.Speed_real, MoDataVR.Speed_real, MoDataHL.Speed_real, MoDataHR.Speed_real };
+    static float lastHeadingOdo = giveOrbitDir();
+    const float hNow = giveOrbitDir();
+    const float hMid = Util.AMap(lastHeadingOdo + 0.5f * Util.AMap(hNow - lastHeadingOdo));
+    lastHeadingOdo = hNow;
+    RobotVelocity vel = calculateFieldVelocityFromMotorRpm(motorRpm, hMid);
+    calculatePosition(millis(), vel.vx_field, vel.vy_field);
     // readIR();
     updateLine();
 
@@ -308,67 +313,66 @@ float systemlib::goalOffset(float x_cm, float &sureness) const
 /**
  * Rechnet Motordrehzahl + Richtungs-Bool in Radgeschwindigkeit (cm/s) um.
  */
-float systemlib::convertMotorRpmToWheelSpeedCmS(float motor_rpm, bool dirBit)
+float systemlib::convertMotorRpmToWheelSpeedCmS(float motor_rpm)
 {
     float wheel_rpm = motor_rpm / GEAR_RATIO;
     float v_cms = (wheel_rpm * 2.0f * M_PI * WHEEL_RADIUS_CM) / 60.0f;
-    return dirBit ? v_cms : -v_cms;
+    return v_cms;
 }
 
-void systemlib::getOmniWheelVek(float wVL, float wVR, float wHL, float wHR,
-                                 float &vx, float &vy, float &omega)
+/* ------------------------------------------------------------------------
+ * Odometrie-Kalibrierung im ROBOTER-Frame (vor der Drehung ins Feld!)
+ *
+ * Deine alten Faktoren 0.83 / 0.857 haben beide vy_rob skaliert, aber
+ * je nach Heading nur in einem Term -> bei diagonalen Headings inkonsistent.
+ * Hier wird die Achse einmal sauber skaliert, danach erst gedreht.
+ * Feintuning: siehe Kalibrierfahrt in der Antwort.
+ * --------------------------------------------------------------------- */
+namespace
 {
-    static constexpr float s = 0.70710678f;  // √2/2
-
-    // vx  = (1/2) · [sin(VL)·wVL + sin(VR)·wVR + sin(HL)·wHL + sin(HR)·wHR]
-    vx    = 0.5f * s * ( wVL - wVR + wHL - wHR);
-
-    // vy  = (1/2) · [cos(VL)·wVL + cos(VR)·wVR + cos(HL)·wHL + cos(HR)·wHR]
-    vy    = 0.5f * s * ( wVL + wVR - wHL - wHR);
-
-    // ω   = (1/4) · (wVL + wVR + wHL + wHR)
-    omega = 0.25f   * ( wVL + wVR + wHL + wHR);
+    constexpr float ODO_SCALE_X = 1.000f; // Roboter quer
+    constexpr float ODO_SCALE_Y = 0.845f; // Roboter laengs (Mittel aus 0.83 / 0.857)
 }
 
 /**
- * Berechnet aus den 4 Motordrehzahlen [VL, VR, HL, HR], 4 Richtungs-Bools 
- * und dem IMU-Winkel die Feld-Geschwindigkeiten vx_field und vy_field.
+ * Berechnet aus den 4 Motordrehzahlen [VL, VR, HL, HR] und dem IMU-Winkel
+ * die Feld-Geschwindigkeiten vx_field und vy_field (cm/s).
  *
- * Index-Zuordnung (Passend zu setOmniWheelDir):
- * [0] = Vorne Links  (VL) -> 45°
- * [1] = Vorne Rechts (VR) -> 315° (-45°)
- * [2] = Hinten Links (HL) -> 135°
- * [3] = Hinten Rechts(HR) -> 225° (-135°)
+ * Index-Zuordnung (passend zu setOmniWheelDir):
+ * [0] = Vorne Links (45°), [1] = Vorne Rechts (315°),
+ * [2] = Hinten Links (135°), [3] = Hinten Rechts (225°)
+ *
+ * Aenderungen gegenueber vorher:
+ *  - vx_rob / vy_rob waren int -> Nachkommastellen gingen verloren (bei
+ *    langsamer Fahrt kam oft exakt 0 raus, bei schneller ein Stufenmuster).
+ *  - Kalibrierfaktoren im Roboter-Frame statt in der Rotation.
+ *  - Die Matrix selbst ist unveraendert.
  */
-RobotVelocity systemlib::calculateFieldVelocityFromMotorRpm(const float motor_rpm[4], const bool dirs[4], float heading_deg)
+RobotVelocity systemlib::calculateFieldVelocityFromMotorRpm(const float motor_rpm[4], float heading_deg)
 {
-    // 1. Rad-Geschwindigkeiten berechnen (cm/s)
-    float v_VL = convertMotorRpmToWheelSpeedCmS(motor_rpm[0], dirs[0]); // [0] VL ( 45°)
-    float v_VR = convertMotorRpmToWheelSpeedCmS(motor_rpm[1], dirs[1]); // [1] VR (315°)
-    float v_HL = convertMotorRpmToWheelSpeedCmS(motor_rpm[2], dirs[2]); // [2] HL (135°)
-    float v_HR = convertMotorRpmToWheelSpeedCmS(motor_rpm[3], dirs[3]); // [3] HR (225°)
+    const float v_VL = convertMotorRpmToWheelSpeedCmS(motor_rpm[0]);
+    const float v_VR = convertMotorRpmToWheelSpeedCmS(motor_rpm[1]);
+    const float v_HL = convertMotorRpmToWheelSpeedCmS(motor_rpm[2]);
+    const float v_HR = convertMotorRpmToWheelSpeedCmS(motor_rpm[3]);
 
-    static constexpr float s = 0.70710678f;  // √2/2
+    static constexpr float s = 0.70710678f; // √2/2
 
-    int vx_rob    = 0.5f * s * ( v_VL - v_VR + v_HL - v_HR);
+    float vy_rob =  0.5f * s * (v_VL - v_VR + v_HL - v_HR);
+    float vx_rob = -0.5f * s * (v_VL - v_VR - v_HL + v_HR);
 
-    // vy  = (1/2) · [cos(VL)·wVL + cos(VR)·wVR + cos(HL)·wHL + cos(HR)·wHR]
-    int vy_rob    = 0.5f * s * ( v_VL + v_VR - v_HL - v_HR);
+    vx_rob *= ODO_SCALE_X;
+    vy_rob *= ODO_SCALE_Y;
 
-    // ω   = (1/4) · (wVL + wVR + wHL + wHR)
-    float omega =  0.25f   * ( v_VL + v_VR + v_HL + v_HR);
-
-    // 3. Transformation: Roboter-Koordinaten -> Feld-Koordinaten
-    float heading_rad = heading_deg * (M_PI / 180.0f);
-    float cos_h = cosf(heading_rad);
-    float sin_h = sinf(heading_rad);
+    const float heading_rad = heading_deg * (M_PI / 180.0f);
+    const float cos_h = cosf(heading_rad);
+    const float sin_h = sinf(heading_rad);
 
     RobotVelocity vel;
     vel.vx_field = vx_rob * cos_h - vy_rob * sin_h;
     vel.vy_field = vx_rob * sin_h + vy_rob * cos_h;
 
-    PDS.Channel(190,vel.vx_field);
-    PDS.Channel(191,vel.vy_field);
+    PDS.Channel(190, vel.vx_field);
+    PDS.Channel(191, vel.vy_field);
 
     return vel;
 }
@@ -500,129 +504,361 @@ float systemlib::calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSiz
     return calculatedPos;
 }
 
-/**
- * Feldposition berechnen mit Schaltern für Test-Modi.
+/* ========================================================================
+ * Positionsfusion: Odometrie (Raeder) + Radar  --  1D-Kalman je Achse
  *
- * @param current_time_ms Aktueller Zeitstempel (direkt millis() übergeben)
- * @param vx_field Geschwindigkeit Feld-X (in cm/s)
- * @param vy_field Geschwindigkeit Feld-Y (in cm/s)
- * @param use_radar Radar-Sensoren zur Positionsberechnung nutzen
- * @param use_odometry Motoren/Koppelnavigation (Dead Reckoning) nutzen
- */
-PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_field, float vy_field, bool use_radar , bool use_odometry )
+ *  Vorhersage (jeder Zyklus):  x += v * dt          Odometrie fuehrt
+ *                              P += Q * dt          Unsicherheit waechst
+ *  Korrektur  (wenn Radar ok): x += K * (z - x)     Radar zieht nur sanft nach
+ *
+ *  Q waechst mit Geschwindigkeit und Drehrate (Schlupf der Omniraeder).
+ *  R (Radar-Rauschen) waechst mit schlechter Certainty und mit Schraeglage.
+ *
+ *  Sprung-/Hinderniserkennung ueber Gate: Ein Radarwert, der weiter als
+ *  FUS_GATE_SIGMA Sigma von der Vorhersage weg liegt, wird ignoriert.
+ *  Bleibt ein abweichender Wert aber stabil ueber FUS_REACQ_MS, war die
+ *  Odometrie wohl weggedriftet (Anschieben, Kollision) -> Position wird
+ *  neu gesetzt. Werte, die wie ein Hindernis aussehen (Sensor sieht
+ *  KUERZER als erwartet), muessen dafuer laenger stabil sein.
+ * ===================================================================== */
+namespace
 {
-    // 1. Delta-Zeit in Sekunden aus millis() berechnen
-    static uint32_t last_time_ms = 0;
-    float dt_s = 0.0f;
+    // ---- Tuning ---------------------------------------------------------
+    constexpr float    FUS_SIGMA_RADAR_CM = 2.5f;   // Radar-Rauschen bei Certainty 1. GROESSER = mehr Vertrauen in Raeder
+    constexpr float    FUS_Q_BASE         = 1.0f;   // cm²/s   Grunddrift (auch im Stand, z.B. Anschieben)
+    constexpr float    FUS_Q_SPEED        = 0.15f;  // relativer Odometriefehler (15 % der Geschwindigkeit)
+    constexpr float    FUS_Q_ROT          = 1.0f;   // cm pro rad/s  Schlupf beim Drehen
+    constexpr float    FUS_GATE_SIGMA     = 3.0f;   // Gate-Breite
+    constexpr uint32_t FUS_REACQ_MS       = 300;    // stabil abweichender Radarwert -> Position neu setzen
+    constexpr uint32_t FUS_REACQ_OBST_MS  = 1500;   // dasselbe, wenn es wie ein Hindernis aussieht
+    constexpr float    FUS_REACQ_TOL_CM   = 4.0f;   // "stabil" = Werte streuen weniger als das
+    constexpr float    FUS_MAX_TILT_DEG   = 25.0f;  // Radar nur nutzen, wenn Roboter so nah an 0° / 180° steht
+    constexpr float    FUS_V_DEADBAND     = 2.0f;   // cm/s  darunter = Stand (Offset der Analogwerte)
+    constexpr float    FUS_ASSUMED_SPEED  = 60.0f;  // cm/s  fuer Q, wenn Odometrie abgeschaltet ist
+    constexpr float    FUS_P_INIT         = 900.0f; // cm²  Startunsicherheit (30 cm)
+    constexpr float    FUS_VALID_SIGMA    = 5.0f;   // cm    darunter gilt die Achse als "Valid"
+    constexpr float    FUS_LOST_SIGMA     = 40.0f;  // cm    darueber -> Position = -1 (verloren)
+    constexpr float    FUS_MIN_CERT       = 0.05f;
 
-    if (last_time_ms > 0 && current_time_ms > last_time_ms)
+    struct AxisMeas
     {
-        dt_s = (float)(current_time_ms - last_time_ms) / 1000.0f;
+        float  z;       // gemessene Position auf der Achse (cm)
+        float  cert;    // 0..1
+        int8_t suspect; // -1: Sensor an der niedrigen Wand, +1: an der hohen, 0: Paar stimmt ueberein
+    };
+
+    struct AxisMeasSet
+    {
+        AxisMeas m[2];
+        uint8_t  n;
+    };
+
+    struct AxisFilter
+    {
+        float    x = 0.0f;
+        float    P = FUS_P_INIT;
+        float    innov = 0.0f;
+        float    cand[3]      = {0, 0, 0};
+        uint32_t candSince[3] = {0, 0, 0};
+        bool     candActive[3] = {false, false, false};
+    };
+
+    AxisFilter filtX;
+    AxisFilter filtY;
+
+    AxisMeas makeMeas(float z, float cert, int8_t suspect)
+    {
+        AxisMeas m;
+        m.z = z;
+        m.cert = cert;
+        m.suspect = suspect;
+        return m;
     }
-    last_time_ms = current_time_ms;
+}
 
-    float certainty_x = 0.0f;
-    float certainty_y = 0.0f;
+/**
+ * Radar-Validierung (unveraendert aus calcAxisPosition uebernommen), liefert
+ * aber KEINE fertige Position mehr, sondern 0..2 Messungen. Ueber Sprung,
+ * Hinderniss und Vertrauen entscheidet der Filter, der die Vorhersage kennt.
+ */
+static AxisMeasSet radarAxisMeasurements(const RadarData &low, const RadarData &high,
+                                         uint32_t ageLow, uint32_t ageHigh,
+                                         float feldSize, float offLow, float offHigh)
+{
+    AxisMeasSet out;
+    out.n = 0;
 
-    const float lastX = Position.X;
-    const float lastY = Position.Y;
+    const float span     = feldSize - offLow - offHigh;
+    const float distLow  = (low.DistRaw  / 10.0f) + POS_RADAR_OFFSET_CM; // ungefilterter Wert
+    const float distHigh = (high.DistRaw / 10.0f) + POS_RADAR_OFFSET_CM;
 
-    // 2. X-Achse berechnen
-    if (use_radar)
+    const float minDist = (RADAR_START_MM / 10.0f) + POS_RADAR_OFFSET_CM;
+    const float blindDistThreshold = max(POS_BLIND_CM, minDist + 2.0f);
+
+    bool lowOk  = low.isCon  && (low.Peaks  > 0)
+                  && (low.Strenght >= getMinStrengthMdb(distLow))
+                  && (distLow  >= minDist)
+                  && (distLow  <= span + POS_MAX_OVERSHOOT_CM);
+
+    bool highOk = high.isCon && (high.Peaks > 0)
+                  && (high.Strenght >= getMinStrengthMdb(distHigh))
+                  && (distHigh >= minDist)
+                  && (distHigh <= span + POS_MAX_OVERSHOOT_CM);
+
+    // Blindbereich des Gegenuebers
+    const bool lowFar  = lowOk  && (distLow  > span - blindDistThreshold);
+    const bool highFar = highOk && (distHigh > span - blindDistThreshold);
+
+    if (lowFar && highFar) { lowOk = false; highOk = false; }
+    else if (lowFar)       { highOk = false; }
+    else if (highFar)      { lowOk = false; }
+
+    auto certOf = [](float plaus, uint32_t age, int32_t strength) -> float
     {
-        Position.X = calcAxisPosition(RadarLi, RadarRe, feld_x, 0.0f, 0.0f, lastX, certainty_x);
-    }
-    else
-    {
-        certainty_x = 0.0f; // Radar bewusst überspringen
-    }
+        const float sf = constrain(1.0f + (strength + 10000.0f) / 15000.0f, 0.7f, 1.0f);
+        return constrain(plaus * posAgeFactor(age) * sf, 0.0f, 1.0f);
+    };
 
-    // X-Fallback & Dead Reckoning (Odometrie)
-    if (certainty_x < POS_MIN_THRESHOLD)
-    {
-        // Timeout (>=2000ms ohne Radar) wird NUR geprüft, wenn Radar aktiv genutzt wird
-        bool radarTimeout = use_radar && (lastvaliddata_Radar_X >= 2000);
+    const float zLow  = offLow + constrain(distLow,        0.0f, span);
+    const float zHigh = offLow + constrain(span - distHigh, 0.0f, span);
 
-        if (use_odometry && !radarTimeout)
+    if (lowOk && highOk)
+    {
+        const float err = fabsf((distLow + distHigh) - span);
+
+        if (err <= POS_PAIR_TOL_CM)
         {
-            Position.X = (lastX >= 0.0f) ? (lastX + (vx_field * dt_s)) : -1.0f;
+            // Beide Waende sehen dasselbe -> sehr belastbar, ein gemittelter Wert
+            const float plaus = POS_PLAUS_PAIR - (err / POS_PAIR_TOL_CM) * (POS_PLAUS_PAIR - POS_PLAUS_SINGLE);
+            out.m[0] = makeMeas(0.5f * (zLow + zHigh),
+                                certOf(plaus, max(ageLow, ageHigh), min(low.Strenght, high.Strenght)), 0);
+            out.n = 1;
         }
         else
         {
-            Position.X = -1.0f;
+            // Widerspruch: ein Sensor sieht ein Hindernis. Beide getrennt an den
+            // Filter geben, die Vorhersage entscheidet, welcher glaubwuerdig ist.
+            out.m[0] = makeMeas(zLow,  certOf(POS_PLAUS_CONFLICT, ageLow,  low.Strenght),  -1);
+            out.m[1] = makeMeas(zHigh, certOf(POS_PLAUS_CONFLICT, ageHigh, high.Strenght), +1);
+            out.n = 2;
         }
     }
+    else if (lowOk)
+    {
+        out.m[0] = makeMeas(zLow, certOf(POS_PLAUS_SINGLE, ageLow, low.Strenght), -1);
+        out.n = 1;
+    }
+    else if (highOk)
+    {
+        out.m[0] = makeMeas(zHigh, certOf(POS_PLAUS_SINGLE, ageHigh, high.Strenght), +1);
+        out.n = 1;
+    }
+    return out;
+}
+
+static void fusionPredict(AxisFilter &f, float dx, float speed, float omega, float dt, float limit)
+{
+    f.x = constrain(f.x + dx, 0.0f, limit);
+    const float q = FUS_Q_BASE
+                    + (FUS_Q_SPEED * speed) * (FUS_Q_SPEED * speed)
+                    + (FUS_Q_ROT * omega) * (FUS_Q_ROT * omega);
+    f.P += q * dt;
+}
+
+/** @return true, wenn die Messung den Zustand veraendert hat */
+static bool fusionUpdate(AxisFilter &f, const AxisMeas &m, float tiltFactor, uint32_t now_ms)
+{
+    const float cert  = max(m.cert, FUS_MIN_CERT);
+    const float sigma = FUS_SIGMA_RADAR_CM / cert;
+    const float R     = sigma * sigma * tiltFactor;
+    const float y     = m.z - f.x;
+    const float S     = f.P + R;
+
+    f.innov = y;
+
+    if (y * y <= FUS_GATE_SIGMA * FUS_GATE_SIGMA * S)
+    {
+        const float K = f.P / S;
+        f.x += K * y;
+        f.P *= (1.0f - K);
+        for (uint8_t i = 0; i < 3; i++) f.candActive[i] = false;
+        return true;
+    }
+
+    // Ausreisser: Hindernis / Sprung. Merken, ob er stabil bleibt.
+    const bool    obstacleLike = (m.suspect != 0) && (y * (float)m.suspect > 0.0f);
+    const uint32_t need        = obstacleLike ? FUS_REACQ_OBST_MS : FUS_REACQ_MS;
+    const uint8_t idx          = (m.suspect < 0) ? 0 : (m.suspect > 0 ? 1 : 2);
+
+    if (!f.candActive[idx] || fabsf(m.z - f.cand[idx]) > FUS_REACQ_TOL_CM)
+    {
+        f.cand[idx]       = m.z;
+        f.candSince[idx]  = now_ms;
+        f.candActive[idx] = true;
+    }
+    else if (now_ms - f.candSince[idx] >= need)
+    {
+        f.x = m.z;
+        f.P = R;
+        for (uint8_t i = 0; i < 3; i++) f.candActive[i] = false;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Feldposition berechnen (Odometrie-gefuehrt, Radar korrigiert).
+ *
+ * Signatur unveraendert. current_time_ms wird nur noch fuer die Zeitfenster
+ * (Reacquire) genutzt; dt kommt aus micros(), weil millis() bei 100-200 Hz
+ * Zyklus bis zu 20 % Fehler in dt bedeutet.
+ */
+PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_field, float vy_field, bool use_radar, bool use_odometry)
+{
+    static bool     first       = true;
+    static uint32_t lastUs      = 0;
+    static float    lastHeading = 0.0f;
+    static float    vxPrev      = 0.0f;
+    static float    vyPrev      = 0.0f;
+    static uint32_t radarUsed[4] = {0, 0, 0, 0}; // Time des zuletzt verrechneten Radarwerts je Sensor
+
+    // ---- Zeit & Drehrate ------------------------------------------------
+    const uint32_t nowUs   = micros();
+    const float    heading = giveOrbitDir(); // Grad, +-180
+    float dt    = 0.0f;
+    float omega = 0.0f; // rad/s
+
+    if (first)
+    {
+        filtX.x = Position.X;
+        filtY.x = Position.Y;
+        vxPrev = vx_field;
+        vyPrev = vy_field;
+        first = false;
+    }
     else
     {
-        lastvaliddata_Radar_X = 0;
+        dt = constrain((nowUs - lastUs) * 1e-6f, 0.0f, 0.05f);
+        if (dt > 0.0f)
+            omega = DEG_TO_RAD * Util.AMap(heading - lastHeading) / dt;
     }
+    lastUs      = nowUs;
+    lastHeading = heading;
 
-    // 3. Tor-Offset
-    float xForGoal;
-    bool xFallback = false;
+    // ---- Vorhersage (Raeder) --------------------------------------------
+    float vx = vx_field;
+    float vy = vy_field;
+    float speed = sqrtf(vx * vx + vy * vy);
 
-    if (certainty_x >= POS_TRUST_THRESHOLD)
+    if (speed < FUS_V_DEADBAND) { vx = 0.0f; vy = 0.0f; speed = 0.0f; }
+
+    if (use_odometry)
     {
-        xForGoal = Position.X;
-    }
-    else if (Position.X >= 0.0f)
-    {
-        xForGoal = Position.X;
+        // Trapez statt Rechteck: Mittel aus alter und neuer Geschwindigkeit
+        fusionPredict(filtX, 0.5f * (vx + vxPrev) * dt, speed, fabsf(omega), dt, feld_x);
+        fusionPredict(filtY, 0.5f * (vy + vyPrev) * dt, speed, fabsf(omega), dt, feld_y);
     }
     else
     {
-        xForGoal = feld_x / 2.0f;
-        xFallback = true;
+        fusionPredict(filtX, 0.0f, FUS_ASSUMED_SPEED, fabsf(omega), dt, feld_x);
+        fusionPredict(filtY, 0.0f, FUS_ASSUMED_SPEED, fabsf(omega), dt, feld_y);
     }
+    vxPrev = vx;
+    vyPrev = vy;
 
-    float goalSure = 1.0f;
-    const float goalOff = goalOffset(xForGoal, goalSure);
-
-    if (xFallback)
-    {
-        goalSure = min(goalSure, 0.5f);
-    }
-
-    // 4. Y-Achse berechnen
+    // ---- Korrektur (Radar) ----------------------------------------------
+    // Sensoren sind am Roboter fest montiert: bei ~180° schauen Li/Re und
+    // Vo/Hi auf die jeweils andere Wand. Bei ~90° / 270° oder mitten in der
+    // Drehung ist die Zuordnung unbrauchbar -> nur Raeder.
     if (use_radar)
     {
-        Position.Y = calcAxisPosition(RadarHi, RadarVo, feld_y, goalOff, goalOff, lastY, certainty_y);
-    }
-    else
-    {
-        certainty_y = 0.0f; // Radar bewusst überspringen
-    }
+        const float hAbs     = fabsf(heading);
+        const bool  backward = (hAbs > 90.0f);
+        const float tilt     = backward ? (180.0f - hAbs) : hAbs;
 
-    certainty_y *= POS_PLAUS_GOAL_EDGE + (1.0f - POS_PLAUS_GOAL_EDGE) * goalSure;
-    Position.AtGoal = (goalOff > 0.5f);
-
-    // Y-Fallback & Dead Reckoning (Odometrie)
-    if (certainty_y < POS_MIN_THRESHOLD)
-    {
-        // Timeout (>=2000ms ohne Radar) wird NUR geprüft, wenn Radar aktiv genutzt wird
-        bool radarTimeout = use_radar && (lastvaliddata_Radar_Y >= 2000);
-
-        if (use_odometry && !radarTimeout)
+        if (tilt <= FUS_MAX_TILT_DEG)
         {
-            Position.Y = (lastY >= 0.0f) ? (lastY + (vy_field * dt_s)) : -1.0f;
-        }
-        else
-        {
-            Position.Y = -1.0f;
+            const float tn         = tilt / 10.0f;
+            const float tiltFactor = 1.0f + tn * tn; // 25° -> Sigma x2.7
+
+            // Das Radar liefert nur alle paar Zyklen einen NEUEN Wert. Jeder Wert
+            // darf nur einmal in den Filter, sonst zaehlt er mehrfach als
+            // "unabhaengige" Messung und der Filter wird ueberselbstsicher.
+            auto isFresh = [&](uint8_t a, uint8_t b) -> bool
+            {
+                return (Radar[a].Time != radarUsed[a]) || (Radar[b].Time != radarUsed[b]);
+            };
+            auto markUsed = [&](uint8_t a, uint8_t b)
+            {
+                radarUsed[a] = Radar[a].Time;
+                radarUsed[b] = Radar[b].Time;
+            };
+
+            // X
+            const uint8_t xl = backward ? RadarRe : RadarLi;
+            const uint8_t xh = backward ? RadarLi : RadarRe;
+            if (isFresh(xl, xh))
+            {
+                AxisMeasSet mx = radarAxisMeasurements(Radar[xl], Radar[xh],
+                                                       Radar.giveAge(xl), Radar.giveAge(xh),
+                                                       feld_x, 0.0f, 0.0f);
+                for (uint8_t i = 0; i < mx.n; i++)
+                    if (fusionUpdate(filtX, mx.m[i], tiltFactor, current_time_ms))
+                        lastvaliddata_Radar_X = 0;
+                markUsed(xl, xh);
+            }
+
+            // Tor-Offset aus der GEFILTERTEN X-Position (ruhiger als Rohradar)
+            const float sigmaX = sqrtf(filtX.P);
+            const bool  xFallback = (sigmaX > FUS_LOST_SIGMA);
+            float goalSure = 1.0f;
+            const float goalOff = goalOffset(xFallback ? feld_x / 2.0f : filtX.x, goalSure);
+
+            if (xFallback)
+                goalSure = min(goalSure, 0.5f);
+            else if (sigmaX > POS_GOAL_EDGE_CM)
+                goalSure = min(goalSure, (float)(POS_GOAL_EDGE_CM / sigmaX)); // X unsicher -> Tor/Wand unsicher
+
+            Position.AtGoal = (goalOff > 0.5f);
+
+            // Y
+            const uint8_t yl = backward ? RadarVo : RadarHi;
+            const uint8_t yh = backward ? RadarHi : RadarVo;
+            if (isFresh(yl, yh))
+            {
+                AxisMeasSet my = radarAxisMeasurements(Radar[yl], Radar[yh],
+                                                       Radar.giveAge(yl), Radar.giveAge(yh),
+                                                       feld_y, goalOff, goalOff);
+                const float goalFactor = POS_PLAUS_GOAL_EDGE + (1.0f - POS_PLAUS_GOAL_EDGE) * goalSure;
+                for (uint8_t i = 0; i < my.n; i++)
+                {
+                    my.m[i].cert *= goalFactor;
+                    if (fusionUpdate(filtY, my.m[i], tiltFactor, current_time_ms))
+                        lastvaliddata_Radar_Y = 0;
+                }
+                markUsed(yl, yh);
+            }
         }
     }
-    else
-    {
-        lastvaliddata_Radar_Y = 0;
-    }
 
-    // 5. Validitäts-Flags & Certainty
-    Position.XValid = (certainty_x >= POS_TRUST_THRESHOLD);
-    Position.YValid = (certainty_y >= POS_TRUST_THRESHOLD);
+    // ---- Ausgabe --------------------------------------------------------
+    const float sx = sqrtf(filtX.P);
+    const float sy = sqrtf(filtY.P);
 
-    Position.Certainty = (Position.XValid && Position.YValid) 
-                         ? min(certainty_x, certainty_y) 
+    Position.X = (sx > FUS_LOST_SIGMA) ? -1.0f : filtX.x;
+    Position.Y = (sy > FUS_LOST_SIGMA) ? -1.0f : filtY.x;
+
+    Position.XValid = (sx <= FUS_VALID_SIGMA);
+    Position.YValid = (sy <= FUS_VALID_SIGMA);
+    Position.Certainty = (Position.XValid && Position.YValid)
+                         ? 1.0f / (1.0f + 0.3f * max(sx, sy))
                          : 0.0f;
+
+    // Debug: Innovation = Radar minus Vorhersage. Springt sie oft -> Radar oder Odometrie tunen.
+    PDS.Channel(192, filtX.innov);
+    PDS.Channel(193, filtY.innov);
+    PDS.Channel(194, sx);
+    PDS.Channel(195, sy);
 
     return Position;
 }
@@ -909,8 +1145,8 @@ void systemlib::setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break){
 
 void systemlib::updateMotors(void)
 {
-    uint8_t Port_List[8];
-    byte out;
+    uint8_t Port_List[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    byte out = 0;
     if (MoDataVL.Speed == 0 || giveExpander(0,3))
     {
         MoDataVL.Speed = 0;
@@ -1023,6 +1259,16 @@ void systemlib::updateMotors(void)
     }
 
     Motor_EXP.write(out);
+
+    /*for(int i = 0 ; i<8 ; i++){
+        Serial.print("channel ");
+        Serial.print(i);
+        Serial.print(" : ");
+        Serial.println(ADC_Motor.read(i));
+    }
+
+    Serial.println(ADC_Motor.read(0)-ADC_Motor.read(1));
+    */
 
     MoDataVL.Speed_real = ADC_Motor.read(MotorVL_AP1,true,true);
     MoDataVL.Current = ADC_Motor.read(MotorVL_AP2,true,false);
@@ -1239,7 +1485,7 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andreh
     }
 
     setHeading(Andrehwinkel*DEG_TO_RAD);
-    setOmniWheelDir(Util.AMap(atan2f(dx, dy) * (180.0f / PI)),Speed,giveHeadingController()*100);
+    setOmniWheelDir(Util.AMap(atan2f(dx*-1, dy) * (180.0f / PI)),Speed,giveHeadingController()*100);
 }
 
 void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel){
@@ -1269,7 +1515,7 @@ void systemlib::setOmniWheelDir(float directionDeg, uint8_t speedPercent, float 
 
     float w[4];
     static const float wheelAngles[4] = {45,315,135,225};
-    Serial.println("omega : "+String(omega));
+    // Serial.println("omega : "+String(omega));  // deaktiviert: blockierendes USB-Serial im 100-Hz-Takt verfaelscht dt
  
     float directionRad = directionDeg * DEG_TO_RAD;
     float speedNorm     = speedPercent / 100.0f; // 0..1
@@ -1306,7 +1552,7 @@ int checkWallDistance(float posX, float posY)
     if (posX < MARGIN_CM || posX > (FIELD_X_CM - MARGIN_CM) ||
         posY < MARGIN_CM || posY > (FIELD_Y_CM - MARGIN_CM))
     {
-        return 180; // Näher als 10 cm an der Wand
+        return 1; // Näher als 10 cm an der Wand
     }
 
     return 0; // Sicherer Bereich
@@ -1314,6 +1560,10 @@ int checkWallDistance(float posX, float posY)
 
 void systemlib::moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel){
     setHeading(Andrehwinkel*DEG_TO_RAD);
-    Dir = Util.AMap(checkWallDistance(Position.X, Position.Y)+Dir);
-    setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
+    if(checkWallDistance(Position.X, Position.Y)==1){
+        setOmniWheelDir(Dir,5,giveHeadingController()*100);
+    }
+    else{
+        setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
+    }
 }

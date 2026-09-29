@@ -17,7 +17,7 @@ class ADC108S102 {
         uint8_t csPinBin3;
         bool useBinExp = false;
         int16_t lastValue[8]; // Store the last read value for each channel
-        int comandlist[8] = {2048,4096,6144,8192,10240,12288,14336,16384};
+        uint16_t comandlist[8] = {2048,4096,6144,8192,10240,12288,14336,16384};
         DecoderAddress getAddressForLowPin(uint8_t pin);
     public:
         ADC108S102(SPIClass *spi_port, uint8_t chipSelectPin, bool useBinExpander = false) : _spi(spi_port), csPin(chipSelectPin), useBinExp(useBinExpander) {}

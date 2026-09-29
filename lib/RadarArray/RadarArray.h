@@ -40,15 +40,16 @@
 enum RadarPos : uint8_t
 {
     RadarVo = 0, ///< vorne
-    RadarLi = 1, ///< links
+    RadarLi = 3, ///< links
     RadarHi = 2, ///< hinten
-    RadarRe = 3  ///< rechts
+    RadarRe = 1  ///< rechts
 };
 
 /// Messwerte EINES Sensors — immer Peak 0, der Rest wird nicht ausgewertet.
 struct RadarData
 {
-    uint16_t Dist     = 0;     ///< Rohwert von Peak 0 ("Counts", NICHT mm — siehe XM125.md)
+    uint16_t Dist     = 0;     ///< Rohwert von Peak 0 ("Counts", NICHT mm — siehe XM125.md), alpha-beta-gefiltert
+    uint16_t DistRaw  = 0;     ///< derselbe Wert UNGEFILTERT (fuer die Positionsfusion, die selbst filtert)
     int32_t  Strenght = 0;     ///< Signalstaerke von Peak 0
     uint8_t  Peaks    = 0;     ///< Anzahl erkannter Peaks (0 = nichts gesehen)
     bool     isCon    = false; ///< true = Sensor antwortet und ist konfiguriert

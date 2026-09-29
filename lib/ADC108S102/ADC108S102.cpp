@@ -53,9 +53,7 @@ int16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 
     if(!useBinExp){
         digitalWriteFast(csPin, LOW);
-        delayMicroseconds(100);
         result = _spi->transfer16(comandlist[channel]);
-        delayMicroseconds(100);
         digitalWriteFast(csPin, HIGH);
     }
     else{
@@ -73,8 +71,6 @@ int16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
     result_raw = map(result,0,4060,0,3300);
 
     if(MOT_ADC && ADC_Mode){
-        Serial.print("inV ");
-        Serial.println(result_raw);
         if(result_raw > 1700){
             result = (result_raw - 1650) * (6000 - 0) / (3300 - 1650) + 0;
         }
@@ -99,9 +95,6 @@ int16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
     else{
         result = result_raw;
     }
-
-    Serial.print("outRPM ");
-    Serial.println(result);
 
     lastValue[channel] = result;
     return result;
