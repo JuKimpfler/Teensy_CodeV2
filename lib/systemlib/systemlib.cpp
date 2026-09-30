@@ -540,11 +540,26 @@ namespace
     constexpr float    FUS_LOST_SIGMA     = 40.0f;  // cm    darueber -> Position = -1 (verloren)
     constexpr float    FUS_MIN_CERT       = 0.05f;
 
+    // ---- Verzoegerungen (gegen das "Hinterherhinken") ---------------------
+    // Radar: Ein Wert ist ~Messdauer/2 + Abholverzoegerung alt, wenn er in
+    // Radar[..].Time landet. Der Filter vergleicht ihn deshalb mit der
+    // Position von damals (Historie), nicht mit der von jetzt.
+    constexpr uint32_t FUS_RADAR_LATENCY_MS = 30;
+    // Motoren: Analogausgang des Maxon-Treibers + ADC hinken der echten
+    // Drehzahl hinterher. Wird ueber die gemessene Beschleunigung ausgeglichen.
+    constexpr float    FUS_MOTOR_LAG_MS     = 20.0f;
+    constexpr float    FUS_MAX_ACCEL        = 600.0f; // cm/s²  physikalische Grenze, begrenzt Rauschen
+    constexpr float    FUS_ACCEL_LPF        = 0.35f;  // 0..1, kleiner = glatter, aber traeger
+    constexpr uint8_t  FUS_HIST_N           = 128;    // Positionshistorie (Zyklen)
+
+    uint32_t motorSampleUs = 0; // micros() der letzten ADC-Messung, gesetzt in updateMotors()
+
     struct AxisMeas
     {
-        float  z;       // gemessene Position auf der Achse (cm)
-        float  cert;    // 0..1
-        int8_t suspect; // -1: Sensor an der niedrigen Wand, +1: an der hohen, 0: Paar stimmt ueberein
+        float    z;       // gemessene Position auf der Achse (cm)
+        float    cert;    // 0..1
+        int8_t   suspect; // -1: Sensor an der niedrigen Wand, +1: an der hohen, 0: Paar stimmt ueberein
+        uint32_t t;       // Zeitstempel des Radarwerts (millis)
     };
 
     struct AxisMeasSet
@@ -558,21 +573,80 @@ namespace
         float    x = 0.0f;
         float    P = FUS_P_INIT;
         float    innov = 0.0f;
+        bool     accepted = false;
         float    cand[3]      = {0, 0, 0};
         uint32_t candSince[3] = {0, 0, 0};
         bool     candActive[3] = {false, false, false};
+        // Positionshistorie (Ringpuffer) fuer die Radar-Latenzkompensation
+        uint32_t hT[FUS_HIST_N] = {0};
+        float    hX[FUS_HIST_N] = {0};
+        uint8_t  hHead  = 0;
+        uint8_t  hCount = 0;
     };
 
     AxisFilter filtX;
     AxisFilter filtY;
 
-    AxisMeas makeMeas(float z, float cert, int8_t suspect)
+    AxisMeas makeMeas(float z, float cert, int8_t suspect, uint32_t t)
     {
         AxisMeas m;
         m.z = z;
         m.cert = cert;
         m.suspect = suspect;
+        m.t = t;
         return m;
+    }
+
+    void histPush(AxisFilter &f, uint32_t t, float x)
+    {
+        if (f.hCount > 0)
+        {
+            const uint8_t last = (f.hHead + FUS_HIST_N - 1) % FUS_HIST_N;
+            if (f.hT[last] == t) { f.hX[last] = x; return; } // zwei Zyklen in derselben ms
+        }
+        f.hT[f.hHead] = t;
+        f.hX[f.hHead] = x;
+        f.hHead = (f.hHead + 1) % FUS_HIST_N;
+        if (f.hCount < FUS_HIST_N) f.hCount++;
+    }
+
+    /// Position zum Zeitpunkt t (linear interpoliert). false, wenn t aelter als die Historie ist.
+    bool histLookup(const AxisFilter &f, uint32_t t, float &x)
+    {
+        for (uint8_t k = 0; k < f.hCount; k++)
+        {
+            const uint8_t idx = (f.hHead + FUS_HIST_N - 1 - k) % FUS_HIST_N;
+            if (f.hT[idx] <= t)
+            {
+                if (k == 0) { x = f.hX[idx]; return true; } // t ist neuer als alles -> neuester Wert
+                const uint8_t nxt  = (idx + 1) % FUS_HIST_N;
+                const uint32_t span = f.hT[nxt] - f.hT[idx];
+                const float a = (span > 0) ? (float)(t - f.hT[idx]) / (float)span : 0.0f;
+                x = f.hX[idx] + a * (f.hX[nxt] - f.hX[idx]);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Korrektur d gilt ab Messzeitpunkt tFrom -> auch in der Historie nachtragen,
+    /// sonst wuerde die naechste Messung dieselbe Korrektur nochmal anwenden.
+    void histShift(AxisFilter &f, uint32_t tFrom, float d)
+    {
+        for (uint8_t k = 0; k < f.hCount; k++)
+        {
+            const uint8_t idx = (f.hHead + FUS_HIST_N - 1 - k) % FUS_HIST_N;
+            if (f.hT[idx] >= tFrom) f.hX[idx] += d;
+        }
+    }
+
+    /// Geschwindigkeit um die Rueckmelde-Verzoegerung nach vorne schieben.
+    /// Extrapoliert nie ueber Null hinaus (kein Rueckwaertsruckeln beim Bremsen).
+    float leadVelocity(float v, float a, float lead)
+    {
+        if (v == 0.0f) return 0.0f;
+        const float vt = v + a * lead;
+        return (vt * v < 0.0f) ? 0.0f : vt;
     }
 }
 
@@ -631,26 +705,27 @@ static AxisMeasSet radarAxisMeasurements(const RadarData &low, const RadarData &
             // Beide Waende sehen dasselbe -> sehr belastbar, ein gemittelter Wert
             const float plaus = POS_PLAUS_PAIR - (err / POS_PAIR_TOL_CM) * (POS_PLAUS_PAIR - POS_PLAUS_SINGLE);
             out.m[0] = makeMeas(0.5f * (zLow + zHigh),
-                                certOf(plaus, max(ageLow, ageHigh), min(low.Strenght, high.Strenght)), 0);
+                                certOf(plaus, max(ageLow, ageHigh), min(low.Strenght, high.Strenght)), 0,
+                                max(low.Time, high.Time));
             out.n = 1;
         }
         else
         {
             // Widerspruch: ein Sensor sieht ein Hindernis. Beide getrennt an den
             // Filter geben, die Vorhersage entscheidet, welcher glaubwuerdig ist.
-            out.m[0] = makeMeas(zLow,  certOf(POS_PLAUS_CONFLICT, ageLow,  low.Strenght),  -1);
-            out.m[1] = makeMeas(zHigh, certOf(POS_PLAUS_CONFLICT, ageHigh, high.Strenght), +1);
+            out.m[0] = makeMeas(zLow,  certOf(POS_PLAUS_CONFLICT, ageLow,  low.Strenght),  -1, low.Time);
+            out.m[1] = makeMeas(zHigh, certOf(POS_PLAUS_CONFLICT, ageHigh, high.Strenght), +1, high.Time);
             out.n = 2;
         }
     }
     else if (lowOk)
     {
-        out.m[0] = makeMeas(zLow, certOf(POS_PLAUS_SINGLE, ageLow, low.Strenght), -1);
+        out.m[0] = makeMeas(zLow, certOf(POS_PLAUS_SINGLE, ageLow, low.Strenght), -1, low.Time);
         out.n = 1;
     }
     else if (highOk)
     {
-        out.m[0] = makeMeas(zHigh, certOf(POS_PLAUS_SINGLE, ageHigh, high.Strenght), +1);
+        out.m[0] = makeMeas(zHigh, certOf(POS_PLAUS_SINGLE, ageHigh, high.Strenght), +1, high.Time);
         out.n = 1;
     }
     return out;
@@ -671,24 +746,34 @@ static bool fusionUpdate(AxisFilter &f, const AxisMeas &m, float tiltFactor, uin
     const float cert  = max(m.cert, FUS_MIN_CERT);
     const float sigma = FUS_SIGMA_RADAR_CM / cert;
     const float R     = sigma * sigma * tiltFactor;
-    const float y     = m.z - f.x;
-    const float S     = f.P + R;
 
-    f.innov = y;
+    // Der Radarwert ist alt: er gehoert zur Position von vor ~Latenz, nicht zu "jetzt".
+    const uint32_t tMeas = (m.t > FUS_RADAR_LATENCY_MS) ? (m.t - FUS_RADAR_LATENCY_MS) : 0;
+    float xRef = f.x;
+    if (!histLookup(f, tMeas, xRef)) xRef = f.x;
+
+    const float y = m.z - xRef;
+    const float S = f.P + R;
+
+    f.innov    = y;
+    f.accepted = false;
 
     if (y * y <= FUS_GATE_SIGMA * FUS_GATE_SIGMA * S)
     {
         const float K = f.P / S;
-        f.x += K * y;
+        const float d = K * y;
+        f.x += d;
         f.P *= (1.0f - K);
+        histShift(f, tMeas, d);
         for (uint8_t i = 0; i < 3; i++) f.candActive[i] = false;
+        f.accepted = true;
         return true;
     }
 
     // Ausreisser: Hindernis / Sprung. Merken, ob er stabil bleibt.
-    const bool    obstacleLike = (m.suspect != 0) && (y * (float)m.suspect > 0.0f);
-    const uint32_t need        = obstacleLike ? FUS_REACQ_OBST_MS : FUS_REACQ_MS;
-    const uint8_t idx          = (m.suspect < 0) ? 0 : (m.suspect > 0 ? 1 : 2);
+    const bool     obstacleLike = (m.suspect != 0) && (y * (float)m.suspect > 0.0f);
+    const uint32_t need         = obstacleLike ? FUS_REACQ_OBST_MS : FUS_REACQ_MS;
+    const uint8_t  idx          = (m.suspect < 0) ? 0 : (m.suspect > 0 ? 1 : 2);
 
     if (!f.candActive[idx] || fabsf(m.z - f.cand[idx]) > FUS_REACQ_TOL_CM)
     {
@@ -698,9 +783,11 @@ static bool fusionUpdate(AxisFilter &f, const AxisMeas &m, float tiltFactor, uin
     }
     else if (now_ms - f.candSince[idx] >= need)
     {
-        f.x = m.z;
-        f.P = R;
+        f.x += y; // = Messwert + Weg seit dem Messzeitpunkt
+        f.P  = R;
+        histShift(f, tMeas, y);
         for (uint8_t i = 0; i < 3; i++) f.candActive[i] = false;
+        f.accepted = true;
         return true;
     }
     return false;
@@ -709,18 +796,28 @@ static bool fusionUpdate(AxisFilter &f, const AxisMeas &m, float tiltFactor, uin
 /**
  * Feldposition berechnen (Odometrie-gefuehrt, Radar korrigiert).
  *
- * Signatur unveraendert. current_time_ms wird nur noch fuer die Zeitfenster
- * (Reacquire) genutzt; dt kommt aus micros(), weil millis() bei 100-200 Hz
- * Zyklus bis zu 20 % Fehler in dt bedeutet.
+ * Signatur unveraendert. current_time_ms muss millis() sein (gleiche Zeitbasis
+ * wie Radar[..].Time); dt kommt aus micros().
+ *
+ * Gegen das "Hinterherhinken":
+ *  - Motor: Die Analog-Rueckmeldung hinkt der echten Drehzahl nach. Aus der
+ *    Beschleunigung (zwischen zwei ADC-Messungen) wird die Geschwindigkeit um
+ *    FUS_MOTOR_LAG_MS + Alter der Messung nach vorne geschoben.
+ *  - Radar: Der Messwert wird mit der Position von damals verglichen
+ *    (Historie, FUS_RADAR_LATENCY_MS), die Korrektur wirkt dann auf "jetzt".
  */
 PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_field, float vy_field, bool use_radar, bool use_odometry)
 {
-    static bool     first       = true;
-    static uint32_t lastUs      = 0;
-    static float    lastHeading = 0.0f;
-    static float    vxPrev      = 0.0f;
-    static float    vyPrev      = 0.0f;
+    static bool     first        = true;
+    static uint32_t lastUs       = 0;
+    static float    lastHeading  = 0.0f;
+    static float    vxPrev       = 0.0f; // zuletzt verwendete (vorgeschobene) Geschwindigkeit
+    static float    vyPrev       = 0.0f;
     static uint32_t radarUsed[4] = {0, 0, 0, 0}; // Time des zuletzt verrechneten Radarwerts je Sensor
+    static uint32_t lastSampleUs = 0;            // ADC-Zeitstempel der letzten Auswertung
+    static float    vxSample = 0.0f, vySample = 0.0f; // Messwerte der vorigen ADC-Messung
+    static float    axLP = 0.0f, ayLP = 0.0f;         // geglaettete Beschleunigung [cm/s²]
+    static float    latEstX = 0.0f, latEstY = 0.0f;   // Tuning-Hilfe, siehe PDS 196/197
 
     // ---- Zeit & Drehrate ------------------------------------------------
     const uint32_t nowUs   = micros();
@@ -745,16 +842,43 @@ PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_fie
     lastUs      = nowUs;
     lastHeading = heading;
 
+    // ---- Geschwindigkeit: Totzeit der Analogrueckmeldung ausgleichen ------
+    float vxm = vx_field;
+    float vym = vy_field;
+    if (sqrtf(vxm * vxm + vym * vym) < FUS_V_DEADBAND) { vxm = 0.0f; vym = 0.0f; }
+
+    const uint32_t sUs = motorSampleUs;
+    if (sUs != lastSampleUs)
+    {
+        if (lastSampleUs != 0 && sUs != 0)
+        {
+            const float sdt = (uint32_t)(sUs - lastSampleUs) * 1e-6f; // Abstand zweier ADC-Messungen
+            if (sdt > 0.0005f && sdt < 0.1f)
+            {
+                const float ax = constrain((vxm - vxSample) / sdt, -FUS_MAX_ACCEL, FUS_MAX_ACCEL);
+                const float ay = constrain((vym - vySample) / sdt, -FUS_MAX_ACCEL, FUS_MAX_ACCEL);
+                axLP += FUS_ACCEL_LPF * (ax - axLP);
+                ayLP += FUS_ACCEL_LPF * (ay - ayLP);
+            }
+        }
+        vxSample = vxm;
+        vySample = vym;
+        lastSampleUs = sUs;
+    }
+
+    // Alter der Messung: ADC wurde am Ende des letzten Zyklus gelesen
+    float age = (sUs != 0) ? (uint32_t)(nowUs - sUs) * 1e-6f : 0.0f;
+    age = constrain(age, 0.0f, 0.05f);
+    const float lead = FUS_MOTOR_LAG_MS * 1e-3f + age;
+
+    const float vx = leadVelocity(vxm, axLP, lead);
+    const float vy = leadVelocity(vym, ayLP, lead);
+    const float speed = sqrtf(vx * vx + vy * vy);
+
     // ---- Vorhersage (Raeder) --------------------------------------------
-    float vx = vx_field;
-    float vy = vy_field;
-    float speed = sqrtf(vx * vx + vy * vy);
-
-    if (speed < FUS_V_DEADBAND) { vx = 0.0f; vy = 0.0f; speed = 0.0f; }
-
     if (use_odometry)
     {
-        // Trapez statt Rechteck: Mittel aus alter und neuer Geschwindigkeit
+        // Trapez: Mittel aus voriger und aktueller (vorgeschobener) Geschwindigkeit
         fusionPredict(filtX, 0.5f * (vx + vxPrev) * dt, speed, fabsf(omega), dt, feld_x);
         fusionPredict(filtY, 0.5f * (vy + vyPrev) * dt, speed, fabsf(omega), dt, feld_y);
     }
@@ -765,6 +889,12 @@ PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_fie
     }
     vxPrev = vx;
     vyPrev = vy;
+
+    // Historie fuer die Radar-Latenzkompensation (nach der Vorhersage, vor den Korrekturen)
+    histPush(filtX, current_time_ms, filtX.x);
+    histPush(filtY, current_time_ms, filtY.x);
+    filtX.accepted = false;
+    filtY.accepted = false;
 
     // ---- Korrektur (Radar) ----------------------------------------------
     // Sensoren sind am Roboter fest montiert: bei ~180° schauen Li/Re und
@@ -841,6 +971,12 @@ PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_fie
         }
     }
 
+    // ---- Tuning-Hilfe: wie falsch ist FUS_RADAR_LATENCY_MS? ----------------
+    // Bei Fahrt mit v > 30 cm/s ist Innovation = -v * (Latenz_echt - Latenz_angenommen).
+    // Positiver Wert in ms -> FUS_RADAR_LATENCY_MS um diesen Wert ERHOEHEN (Mittelwert ueber Zeit).
+    if (filtX.accepted && fabsf(vx) > 30.0f) latEstX += 0.05f * ((-filtX.innov / vx) * 1000.0f - latEstX);
+    if (filtY.accepted && fabsf(vy) > 30.0f) latEstY += 0.05f * ((-filtY.innov / vy) * 1000.0f - latEstY);
+
     // ---- Ausgabe --------------------------------------------------------
     const float sx = sqrtf(filtX.P);
     const float sy = sqrtf(filtY.P);
@@ -859,6 +995,8 @@ PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_fie
     PDS.Channel(193, filtY.innov);
     PDS.Channel(194, sx);
     PDS.Channel(195, sy);
+    PDS.Channel(196, latEstX);
+    PDS.Channel(197, latEstY);
 
     return Position;
 }
@@ -1270,6 +1408,7 @@ void systemlib::updateMotors(void)
     Serial.println(ADC_Motor.read(0)-ADC_Motor.read(1));
     */
 
+    motorSampleUs = micros(); // Zeitstempel der Drehzahlmessung (fuer Totzeitausgleich in calculatePosition)
     MoDataVL.Speed_real = ADC_Motor.read(MotorVL_AP1,true,true);
     MoDataVL.Current = ADC_Motor.read(MotorVL_AP2,true,false);
     MoDataVR.Speed_real = ADC_Motor.read(MotorVR_AP1,true,true);
@@ -1485,7 +1624,7 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andreh
     }
 
     setHeading(Andrehwinkel*DEG_TO_RAD);
-    setOmniWheelDir(Util.AMap(atan2f(dx*-1, dy) * (180.0f / PI)),Speed,giveHeadingController()*100);
+    setOmniWheelDir(Util.AMap(atan2f(dx, dy) * (180.0f / PI)),Speed,giveHeadingController()*100);
 }
 
 void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel){
@@ -1552,7 +1691,7 @@ int checkWallDistance(float posX, float posY)
     if (posX < MARGIN_CM || posX > (FIELD_X_CM - MARGIN_CM) ||
         posY < MARGIN_CM || posY > (FIELD_Y_CM - MARGIN_CM))
     {
-        return 1; // Näher als 10 cm an der Wand
+        return 180; // Näher als 10 cm an der Wand
     }
 
     return 0; // Sicherer Bereich
@@ -1560,10 +1699,6 @@ int checkWallDistance(float posX, float posY)
 
 void systemlib::moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel){
     setHeading(Andrehwinkel*DEG_TO_RAD);
-    if(checkWallDistance(Position.X, Position.Y)==1){
-        setOmniWheelDir(Dir,5,giveHeadingController()*100);
-    }
-    else{
-        setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
-    }
+    Dir = Util.AMap(checkWallDistance(Position.X, Position.Y)+Dir);
+    setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
 }
