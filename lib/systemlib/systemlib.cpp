@@ -320,20 +320,6 @@ float systemlib::convertMotorRpmToWheelSpeedCmS(float motor_rpm)
     return v_cms;
 }
 
-/* ------------------------------------------------------------------------
- * Odometrie-Kalibrierung im ROBOTER-Frame (vor der Drehung ins Feld!)
- *
- * Deine alten Faktoren 0.83 / 0.857 haben beide vy_rob skaliert, aber
- * je nach Heading nur in einem Term -> bei diagonalen Headings inkonsistent.
- * Hier wird die Achse einmal sauber skaliert, danach erst gedreht.
- * Feintuning: siehe Kalibrierfahrt in der Antwort.
- * --------------------------------------------------------------------- */
-namespace
-{
-    constexpr float ODO_SCALE_X = 1.000f; // Roboter quer
-    constexpr float ODO_SCALE_Y = 0.845f; // Roboter laengs (Mittel aus 0.83 / 0.857)
-}
-
 /**
  * Berechnet aus den 4 Motordrehzahlen [VL, VR, HL, HR] und dem IMU-Winkel
  * die Feld-Geschwindigkeiten vx_field und vy_field (cm/s).
@@ -523,35 +509,6 @@ float systemlib::calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSiz
  * ===================================================================== */
 namespace
 {
-    // ---- Tuning ---------------------------------------------------------
-    constexpr float    FUS_SIGMA_RADAR_CM = 2.5f;   // Radar-Rauschen bei Certainty 1. GROESSER = mehr Vertrauen in Raeder
-    constexpr float    FUS_Q_BASE         = 1.0f;   // cm²/s   Grunddrift (auch im Stand, z.B. Anschieben)
-    constexpr float    FUS_Q_SPEED        = 0.15f;  // relativer Odometriefehler (15 % der Geschwindigkeit)
-    constexpr float    FUS_Q_ROT          = 1.0f;   // cm pro rad/s  Schlupf beim Drehen
-    constexpr float    FUS_GATE_SIGMA     = 3.0f;   // Gate-Breite
-    constexpr uint32_t FUS_REACQ_MS       = 300;    // stabil abweichender Radarwert -> Position neu setzen
-    constexpr uint32_t FUS_REACQ_OBST_MS  = 1500;   // dasselbe, wenn es wie ein Hindernis aussieht
-    constexpr float    FUS_REACQ_TOL_CM   = 4.0f;   // "stabil" = Werte streuen weniger als das
-    constexpr float    FUS_MAX_TILT_DEG   = 25.0f;  // Radar nur nutzen, wenn Roboter so nah an 0° / 180° steht
-    constexpr float    FUS_V_DEADBAND     = 2.0f;   // cm/s  darunter = Stand (Offset der Analogwerte)
-    constexpr float    FUS_ASSUMED_SPEED  = 60.0f;  // cm/s  fuer Q, wenn Odometrie abgeschaltet ist
-    constexpr float    FUS_P_INIT         = 900.0f; // cm²  Startunsicherheit (30 cm)
-    constexpr float    FUS_VALID_SIGMA    = 5.0f;   // cm    darunter gilt die Achse als "Valid"
-    constexpr float    FUS_LOST_SIGMA     = 40.0f;  // cm    darueber -> Position = -1 (verloren)
-    constexpr float    FUS_MIN_CERT       = 0.05f;
-
-    // ---- Verzoegerungen (gegen das "Hinterherhinken") ---------------------
-    // Radar: Ein Wert ist ~Messdauer/2 + Abholverzoegerung alt, wenn er in
-    // Radar[..].Time landet. Der Filter vergleicht ihn deshalb mit der
-    // Position von damals (Historie), nicht mit der von jetzt.
-    constexpr uint32_t FUS_RADAR_LATENCY_MS = 30;
-    // Motoren: Analogausgang des Maxon-Treibers + ADC hinken der echten
-    // Drehzahl hinterher. Wird ueber die gemessene Beschleunigung ausgeglichen.
-    constexpr float    FUS_MOTOR_LAG_MS     = 20.0f;
-    constexpr float    FUS_MAX_ACCEL        = 600.0f; // cm/s²  physikalische Grenze, begrenzt Rauschen
-    constexpr float    FUS_ACCEL_LPF        = 0.35f;  // 0..1, kleiner = glatter, aber traeger
-    constexpr uint8_t  FUS_HIST_N           = 128;    // Positionshistorie (Zyklen)
-
     uint32_t motorSampleUs = 0; // micros() der letzten ADC-Messung, gesetzt in updateMotors()
 
     struct AxisMeas
@@ -655,9 +612,7 @@ namespace
  * aber KEINE fertige Position mehr, sondern 0..2 Messungen. Ueber Sprung,
  * Hinderniss und Vertrauen entscheidet der Filter, der die Vorhersage kennt.
  */
-static AxisMeasSet radarAxisMeasurements(const RadarData &low, const RadarData &high,
-                                         uint32_t ageLow, uint32_t ageHigh,
-                                         float feldSize, float offLow, float offHigh)
+static AxisMeasSet radarAxisMeasurements(const RadarData &low, const RadarData &high, uint32_t ageLow, uint32_t ageHigh, float feldSize, float offLow, float offHigh)
 {
     AxisMeasSet out;
     out.n = 0;

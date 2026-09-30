@@ -68,10 +68,10 @@ void loop()
   if (PDS.getFastParam(3)>50) // "Zielpunkt_anfahren"
   {
     if (PDS.getFastParam(2)>50){
-      sys.moveToPoint(50,50,SPattern_LateBrake,80,5,45);
+      sys.moveToPoint(50,50,SPattern_LateBrake,100,5,45);
     }
     else{
-      sys.moveToPoint(50,50,SPattern_LateBrake,80,5,0);
+      sys.moveToPoint(50,50,SPattern_LateBrake,100,5,0);
     }
   }
   else
