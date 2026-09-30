@@ -171,6 +171,9 @@ public:
     void resetHeadingController(void);
     void moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andrehwinkel);
     void moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel);
+    void resetMoveProfile(void);             ///< naechster moveToPoint()-Aufruf startet das Speed-Pattern von vorn
+    bool giveMoveArrived(void) const;        ///< true = Ziel von moveToPoint() erreicht (Zielkreis)
+    float giveMoveProgress(void) const;      ///< Fortschritt 0..1 des aktuellen Speed-Patterns
     void moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel);
     void setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break);
     void setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break);

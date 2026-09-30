@@ -101,6 +101,41 @@ static constexpr float WHEEL_RADIUS_CM = 2.9f;     // Radradius in cm
 static constexpr float GEAR_RATIO       = 16.0f;    // Getriebeuntersetzung (z. B. 14:1)
 static constexpr float SQRT2_OVER_4     = 0.35355339f; // sqrt(2) / 4
 
+/* ========================================================================
+ * Speed-Pattern fuer systemlib::moveToPoint()   -> in params.h einfuegen
+ *
+ * Ein Pattern beschreibt nur den VERLAUF der Geschwindigkeit ueber den
+ * Fahrweg. Fortschritt p = 0 (Start) ... 1 (Ziel), f(p) = 0 ... 1.
+ * Gefahren wird:   Speed = MinSpeed + (MaxSpeed - MinSpeed) * f(p)
+ * ===================================================================== */
+#define SPattern_Linear         0   // f = 1 - p             linear bremsen: Max am Start -> Min am Ziel
+#define SPattern_LinearUp       1   // f = p                 linear beschleunigen: Min am Start -> Max am Ziel
+#define SPattern_Constant       2   // f = 1                 konstant MaxSpeed (Halt erst im Zielkreis)
+#define SPattern_Trapezoid      3   // 20 % hoch, Reise, 40 % runter
+#define SPattern_Triangle       4   // hoch bis zur Mitte, dann runter
+#define SPattern_QuadDecel      5   // f = (1-p)^2           frueh bremsen, sanfter Auslauf
+#define SPattern_ConstDecel     6   // f = sqrt(1-p)         konstante Verzoegerung (spaet bremsen)
+#define SPattern_SmoothStep     7   // weiche S-Kurve runter (ruckfrei an Start und Ziel)
+#define SPattern_Cosine         8   // Cosinus-Rampe runter
+#define SPattern_Sine           9   // sin(pi*p): weich hoch, Spitze in der Mitte, weich runter
+#define SPattern_SCurve         10  // weich anfahren, Reise, weich bremsen
+#define SPattern_LateBrake      11  // Vollgas bis 70 %, dann weich runter
+#define SPattern_FastThenCrawl  12  // Vollgas bis 50 %, dann runter, letzte 30 % Schleichfahrt (Min)
+#define SPattern_QuadUp         13  // f = p^2               Anlauf, am Ziel schnell (Rammen)
+#define SPattern_CubicUp        14  // f = p^3               noch spaeter beschleunigen
+#define SPattern_Expo           15  // exponentiell abklingend
+#define SPattern_Stairs         16  // 4 Stufen: 100 / 67 / 33 / 0 %
+#define SPattern_Wave           17  // Sinus-Welle mit abklingender Huellkurve
+#define SPattern_Pulse          18  // abwechselnd Max / Min (5 Perioden)
+#define SPattern_COUNT          19
+
+/* Feineinstellung moveToPoint */
+#define MOVE_ARRIVE_CM          4.0f    // Zielkreis: darin Speed = 0
+#define MOVE_ARRIVE_HYST_CM     3.0f    // erst ausserhalb Zielkreis + Hysterese wird nachgefahren
+#define MOVE_MAX_ACCEL_PCT_S    10000.0f  // max. Zunahme des Speed [%/s], 0 = aus (Bremsen ist nie begrenzt)
+#define MOVE_RESTART_GAP_MS     200     // Pause zwischen zwei Aufrufen, ab der das Pattern neu startet
+#define MOVE_TARGET_TOL_CM      3.0f    // Zielaenderung bis zu diesem Wert startet das Pattern NICHT neu
+
 
 #define D_Mode_Test 0
 #define D_Mode_Game 1

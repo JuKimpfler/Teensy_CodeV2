@@ -1624,11 +1624,173 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andreh
     }
 
     setHeading(Andrehwinkel*DEG_TO_RAD);
-    setOmniWheelDir(Util.AMap(atan2f(dx, dy) * (180.0f / PI)),Speed,giveHeadingController()*100);
+    setOmniWheelDir(Util.AMap(atan2f(-dx, dy) * (180.0f / PI)),Speed,giveHeadingController()*100);
 }
 
-void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel){
+namespace
+{
+    struct MoveState
+    {
+        bool     active     = false;
+        bool     arrived    = false;
+        bool     correcting = false; // nach dem Wegschieben: Feinkorrektur mit MinSpeed
+        float    tx = 0.0f, ty = 0.0f;
+        uint8_t  pattern = 0, maxS = 0, minS = 0;
+        float    dist0    = 0.0f;    // Abstand beim Start des Patterns
+        float    progress = 0.0f;
+        float    lastSpeed = 0.0f;
+        uint32_t lastCallMs = 0;
+        uint32_t lastUs     = 0;
+    };
+    MoveState mv;
 
+    inline float smoothstep01(float x)
+    {
+        x = constrain(x, 0.0f, 1.0f);
+        return x * x * (3.0f - 2.0f * x);
+    }
+
+    /// Verlauf f(p) in 0..1 (p = Fortschritt 0..1)
+    float speedPatternValue(uint8_t pattern, float p)
+    {
+        p = constrain(p, 0.0f, 1.0f);
+        float f;
+        switch (pattern)
+        {
+        case SPattern_Linear:        f = 1.0f - p; break;
+        case SPattern_LinearUp:      f = p; break;
+        case SPattern_Constant:      f = 1.0f; break;
+        case SPattern_Trapezoid:     f = min(min(p / 0.2f, 1.0f), (1.0f - p) / 0.4f); break;
+        case SPattern_Triangle:      f = 1.0f - fabsf(1.0f - 2.0f * p); break;
+        case SPattern_QuadDecel:     f = (1.0f - p) * (1.0f - p); break;
+        case SPattern_ConstDecel:    f = sqrtf(1.0f - p); break;
+        case SPattern_SmoothStep:    f = 1.0f - smoothstep01(p); break;
+        case SPattern_Cosine:        f = 0.5f * (1.0f + cosf(PI * p)); break;
+        case SPattern_Sine:          f = sinf(PI * p); break;
+        case SPattern_SCurve:        f = min(smoothstep01(p / 0.25f), 1.0f - smoothstep01((p - 0.6f) / 0.4f)); break;
+        case SPattern_LateBrake:     f = (p < 0.7f) ? 1.0f : 0.5f * (1.0f + cosf(PI * (p - 0.7f) / 0.3f)); break;
+        case SPattern_FastThenCrawl: f = (p < 0.5f) ? 1.0f : ((p < 0.7f) ? 1.0f - (p - 0.5f) / 0.2f : 0.0f); break;
+        case SPattern_QuadUp:        f = p * p; break;
+        case SPattern_CubicUp:       f = p * p * p; break;
+        case SPattern_Expo:          f = (expf(-3.0f * p) - expf(-3.0f)) / (1.0f - expf(-3.0f)); break;
+        case SPattern_Stairs:        f = 1.0f - min(floorf(p * 4.0f), 3.0f) / 3.0f; break;
+        case SPattern_Wave:          f = (1.0f - p) * (0.6f + 0.4f * sinf(2.0f * PI * 3.0f * p)); break;
+        case SPattern_Pulse:         f = (fmodf(p * 5.0f, 1.0f) < 0.6f) ? 1.0f : 0.0f; break;
+        default:                     f = 1.0f; break; // unbekanntes Pattern: konstant
+        }
+        return constrain(f, 0.0f, 1.0f);
+    }
+}
+
+void systemlib::resetMoveProfile(void)
+{
+    mv.active     = false;
+    mv.lastSpeed  = 0.0f;
+}
+
+bool  systemlib::giveMoveArrived(void) const  { return mv.active && mv.arrived; }
+
+float systemlib::giveMoveProgress(void) const { return mv.progress; }
+
+/**
+ * Faehrt zum Punkt (X, Y) [cm, Feldkoordinaten] und dreht dabei auf Andrehwinkel [Grad].
+ *
+ * @param SpeedPattern SPattern_* aus params.h (Verlauf ueber den Fahrweg)
+ * @param MaxSpeed     Speed [%] bei f = 1
+ * @param MinSpeed     Speed [%] bei f = 0 (Mindestfahrt, damit der Roboter nicht stehen bleibt)
+ * @param Andrehwinkel Soll-Heading [Grad], wird waehrend der ganzen Fahrt geregelt
+ *
+ * Zyklisch aufrufen. Position ungueltig (-1) -> Roboter haelt an, Heading wird weiter geregelt.
+ * Zielkreis MOVE_ARRIVE_CM: darin Speed 0; wird der Roboter weggeschoben, faehrt er
+ * nach MOVE_ARRIVE_HYST_CM mit MinSpeed zurueck. Status: giveMoveArrived().
+ * Der Speed darf hoechstens mit MOVE_MAX_ACCEL_PCT_S ansteigen (weicher Anlauf, Bremsen nie begrenzt).
+ */
+void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel)
+{
+    // Heading wird immer geregelt, auch wenn der Roboter steht
+    setHeading(Andrehwinkel * DEG_TO_RAD);
+    const float omega = giveHeadingController() * 100;
+
+    if (MaxSpeed > 100) MaxSpeed = 100;
+    if (MinSpeed > MaxSpeed) MinSpeed = MaxSpeed;
+
+    const uint32_t nowMs = millis();
+    const uint32_t nowUs = micros();
+    float dt = (mv.lastUs != 0) ? (nowUs - mv.lastUs) * 1e-6f : 0.0f;
+    dt = constrain(dt, 0.0f, 0.1f);
+    mv.lastUs = nowUs;
+
+    // Position verloren: anhalten, Profil verwerfen
+    if (Position.X < 0.0f || Position.Y < 0.0f)
+    {
+        resetMoveProfile();
+        mv.lastCallMs = nowMs;
+        setOmniWheelDir(0, 0, omega);
+        return;
+    }
+
+    const float tx = constrain((float)X, 0.0f, feld_x);
+    const float ty = constrain((float)Y, 0.0f, feld_y);
+    const float dx = tx - Position.X;
+    const float dy = ty - Position.Y;
+    const float dist = sqrtf(dx * dx + dy * dy);
+
+    // ---- Neustart des Patterns? -----------------------------------------
+    const bool sameTarget = (fabsf(tx - mv.tx) <= MOVE_TARGET_TOL_CM) && (fabsf(ty - mv.ty) <= MOVE_TARGET_TOL_CM);
+    const bool restart = !mv.active || !sameTarget
+                         || (SpeedPattern != mv.pattern) || (MaxSpeed != mv.maxS) || (MinSpeed != mv.minS)
+                         || ((nowMs - mv.lastCallMs) > (uint32_t)MOVE_RESTART_GAP_MS);
+    mv.lastCallMs = nowMs;
+
+    if (restart)
+    {
+        mv.active     = true;
+        mv.tx = tx;  mv.ty = ty;
+        mv.pattern = SpeedPattern;  mv.maxS = MaxSpeed;  mv.minS = MinSpeed;
+        mv.dist0      = dist;
+        mv.progress   = 0.0f;
+        mv.arrived    = (dist <= MOVE_ARRIVE_CM);
+        mv.correcting = false;
+        // lastSpeed bleibt: rollt der Roboter noch, wird der Speed nicht ruckartig umgesetzt
+    }
+
+    // ---- Zielkreis mit Hysterese -----------------------------------------
+    if (mv.arrived)
+    {
+        if (dist > MOVE_ARRIVE_CM + MOVE_ARRIVE_HYST_CM) // weggeschoben -> Feinkorrektur
+        {
+            mv.arrived    = false;
+            mv.correcting = true;
+            mv.dist0      = dist;
+            mv.progress   = 0.0f;
+        }
+    }
+    else if (dist <= MOVE_ARRIVE_CM)
+    {
+        mv.arrived = true;
+    }
+
+    // ---- Geschwindigkeit ----------------------------------------------------
+    float speed = 0.0f;
+    if (!mv.arrived)
+    {
+        mv.progress = (mv.dist0 > MOVE_ARRIVE_CM) ? constrain(1.0f - dist / mv.dist0, 0.0f, 1.0f) : 1.0f;
+
+        const float f = mv.correcting ? 0.0f : speedPatternValue(mv.pattern, mv.progress);
+        speed = MinSpeed + (MaxSpeed - MinSpeed) * f;
+
+        // weicher Anlauf: Zunahme begrenzen, Abnahme (Bremsen) nie
+        if (MOVE_MAX_ACCEL_PCT_S > 0.0f && speed > mv.lastSpeed + MOVE_MAX_ACCEL_PCT_S * dt)
+            speed = mv.lastSpeed + MOVE_MAX_ACCEL_PCT_S * dt;
+    }
+    else
+    {
+        mv.progress = 1.0f;
+    }
+    mv.lastSpeed = speed;
+
+    setOmniWheelDir(Util.AMap(atan2f(-dx, dy) * (180.0f / PI)),
+                    (uint8_t)constrain(speed + 0.5f, 0.0f, 100.0f), omega);
 }
 
 void systemlib::setOmniWheelVek(float vx, float vy, float omega) {
@@ -1691,7 +1853,7 @@ int checkWallDistance(float posX, float posY)
     if (posX < MARGIN_CM || posX > (FIELD_X_CM - MARGIN_CM) ||
         posY < MARGIN_CM || posY > (FIELD_Y_CM - MARGIN_CM))
     {
-        return 180; // Näher als 10 cm an der Wand
+        return 1; // Näher als 10 cm an der Wand
     }
 
     return 0; // Sicherer Bereich
@@ -1699,6 +1861,10 @@ int checkWallDistance(float posX, float posY)
 
 void systemlib::moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel){
     setHeading(Andrehwinkel*DEG_TO_RAD);
-    Dir = Util.AMap(checkWallDistance(Position.X, Position.Y)+Dir);
-    setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
+    if(checkWallDistance(Position.X, Position.Y)==1){
+        setOmniWheelDir(Dir,5,giveHeadingController()*100);
+    }
+    else{
+        setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
+    }
 }
