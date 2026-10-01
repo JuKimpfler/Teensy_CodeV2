@@ -1748,6 +1748,275 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_
                     (uint8_t)constrain(speed + 0.5f, 0.0f, 100.0f), omega);
 }
 
+/* ========================================================================
+ * Punkt-Array: Liste von Zielpunkten, die nacheinander angefahren werden
+ *
+ * Jeder Punkt hat Ziel (X, Y), Andrehwinkel, Speed-Pattern, Max-/MinSpeed und
+ * optional eine Wartezeit. Gefahren wird mit moveToPoint(), der Verlauf des
+ * Speed-Patterns startet also an jedem Punkt neu.
+ *
+ *   ArrayPoint route[] = {
+ *       // X    Y    Winkel  Pattern             Max  Min  Wartezeit
+ *       {  60,  80,    0,    SPattern_Linear,     80,  25,    0 },
+ *       { 120, 160,   90,    SPattern_Trapezoid,  70,  25,  500 },
+ *   };
+ *   Robot.setPointArray(route, 2);   // zyklisch aufrufbar: unveraendert = kein Neustart
+ *   Robot.startArray();              // zyklisch aufrufbar: laeuft schon = kein Neustart
+ *   Robot.updateArray();             // JEDEN Zyklus: faehrt, schaltet beim Erreichen weiter
+ *
+ * Ein Punkt gilt als erreicht, wenn der Zielkreis (MOVE_ARRIVE_CM) erreicht ist,
+ * der Roboter auf Andrehwinkel +-ARRAY_HEADING_TOL_DEG steht und die Wartezeit
+ * abgelaufen ist.
+ * ===================================================================== */
+#ifndef ARRAY_MAX_POINTS
+#define ARRAY_MAX_POINTS 16
+#endif
+#ifndef ARRAY_HEADING_TOL_DEG
+#define ARRAY_HEADING_TOL_DEG 5.0f // 0 = Winkel wird beim Weiterschalten nicht geprueft
+#endif
+
+namespace
+{
+    struct ArrayData
+    {
+        ArrayPoint pts[ARRAY_MAX_POINTS];
+        uint8_t    count       = 0;
+        uint8_t    index       = 0;     // aktueller Zielpunkt
+        bool       loop        = false;
+        ArrayState state       = ArrayIdle;
+        bool       holding     = false; // Punkt erreicht, Wartezeit laeuft
+        uint32_t   holdStartMs = 0;
+    };
+    ArrayData pa;
+
+    bool samePoint(const ArrayPoint &a, const ArrayPoint &b)
+    {
+        return a.X == b.X && a.Y == b.Y && a.Andrehwinkel == b.Andrehwinkel
+               && a.SpeedPattern == b.SpeedPattern && a.MaxSpeed == b.MaxSpeed
+               && a.MinSpeed == b.MinSpeed && a.HoldMs == b.HoldMs;
+    }
+}
+
+/**
+ * Ersetzt die komplette Liste. Zyklisch aufrufbar: sind Punkte und loop unveraendert,
+ * passiert nichts (Fortschritt bleibt). Bei jeder Aenderung beginnt die Liste wieder
+ * beim ersten Punkt (ein laufender oder pausierter Zustand bleibt erhalten,
+ * ein beendeter/ruhender wird zu Idle -> startArray()).
+ *
+ * @param loop true = nach dem letzten Punkt wieder beim ersten weitermachen
+ * @return false, wenn die Liste laenger als ARRAY_MAX_POINTS ist (dann unveraendert)
+ */
+bool systemlib::setPointArray(const ArrayPoint *points, uint8_t count, bool loop)
+{
+    if (count > ARRAY_MAX_POINTS || (points == nullptr && count > 0))
+    {
+        return false;
+    }
+
+    bool same = (count == pa.count) && (loop == pa.loop);
+    for (uint8_t i = 0; same && i < count; i++)
+    {
+        same = samePoint(points[i], pa.pts[i]);
+    }
+    if (same)
+    {
+        return true;
+    }
+
+    for (uint8_t i = 0; i < count; i++)
+    {
+        pa.pts[i] = points[i];
+    }
+    pa.count   = count;
+    pa.loop    = loop;
+    pa.index   = 0;
+    pa.holding = false;
+    resetMoveProfile();
+
+    if (count == 0 || pa.state == ArrayFinished)
+    {
+        pa.state = ArrayIdle;
+    }
+    return true;
+}
+
+/**
+ * Haengt einen Punkt hinten an. Eine laufende Fahrt wird dadurch nicht unterbrochen;
+ * war die Liste schon beendet, faehrt der Roboter zum neuen Punkt weiter.
+ *
+ * @param HoldMs Wartezeit nach Erreichen des Punkts [ms], bevor der naechste folgt
+ * @return false, wenn die Liste voll ist (ARRAY_MAX_POINTS)
+ */
+bool systemlib::addPointToArray(uint16_t X, uint16_t Y, int16_t Andrehwinkel, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, uint16_t HoldMs)
+{
+    ArrayPoint p;
+    p.X            = X;
+    p.Y            = Y;
+    p.Andrehwinkel = Andrehwinkel;
+    p.SpeedPattern = SpeedPattern;
+    p.MaxSpeed     = MaxSpeed;
+    p.MinSpeed     = MinSpeed;
+    p.HoldMs       = HoldMs;
+    return addPointToArray(p);
+}
+
+bool systemlib::addPointToArray(const ArrayPoint &point)
+{
+    if (pa.count >= ARRAY_MAX_POINTS)
+    {
+        return false;
+    }
+
+    pa.pts[pa.count] = point;
+    pa.count++;
+
+    if (pa.state == ArrayFinished) // Liste war fertig -> zum neuen Punkt weiterfahren
+    {
+        pa.index   = pa.count - 1;
+        pa.state   = ArrayRunning;
+        pa.holding = false;
+        resetMoveProfile();
+    }
+    return true;
+}
+
+/** Loescht alle Punkte und setzt den Zustand auf Idle. updateArray() sendet dann keine Motorbefehle mehr. */
+void systemlib::resetArray(void)
+{
+    pa.count   = 0;
+    pa.index   = 0;
+    pa.loop    = false;
+    pa.state   = ArrayIdle;
+    pa.holding = false;
+    resetMoveProfile();
+}
+
+/**
+ * Startet die Liste beim ersten Punkt. Zyklisch aufrufbar: laeuft sie schon, ist sie
+ * pausiert (-> resumeArray()) oder beendet, passiert nichts.
+ *
+ * @param restart true = in jedem Zustand von vorn beginnen
+ */
+void systemlib::startArray(bool restart)
+{
+    if (pa.count == 0)
+    {
+        return;
+    }
+    if (pa.state != ArrayIdle && !restart)
+    {
+        return;
+    }
+
+    pa.index   = 0;
+    pa.holding = false;
+    pa.state   = ArrayRunning;
+    resetMoveProfile();
+}
+
+/** Haelt den Roboter an (Heading wird weiter geregelt). Der Fortschritt bleibt erhalten. */
+void systemlib::pauseArray(void)
+{
+    if (pa.state == ArrayRunning)
+    {
+        pa.state   = ArrayPaused;
+        pa.holding = false;
+        resetMoveProfile();
+    }
+}
+
+/** Setzt eine pausierte Liste am aktuellen Punkt fort (das Speed-Pattern startet fuer diesen Punkt neu). */
+void systemlib::resumeArray(void)
+{
+    if (pa.state == ArrayPaused)
+    {
+        pa.state   = ArrayRunning;
+        pa.holding = false;
+        resetMoveProfile();
+    }
+}
+
+/**
+ * Jeden Zyklus aufrufen (wie moveToPoint). Faehrt den aktuellen Punkt an und schaltet
+ * weiter, sobald er erreicht ist.
+ *
+ *  Idle      -> keine Motorbefehle
+ *  Running   -> faehrt / wartet am Punkt
+ *  Paused    -> steht, haelt Andrehwinkel des aktuellen Punkts
+ *  Finished  -> haelt Position und Winkel des letzten Punkts
+ */
+void systemlib::updateArray(void)
+{
+    if (pa.count == 0)
+    {
+        return;
+    }
+
+    const ArrayPoint &p = pa.pts[pa.index];
+
+    switch (pa.state)
+    {
+    case ArrayRunning:
+        break;
+
+    case ArrayFinished:
+        moveToPoint(p.X, p.Y, p.SpeedPattern, p.MaxSpeed, p.MinSpeed, p.Andrehwinkel);
+        return;
+
+    case ArrayPaused:
+        setHeading(p.Andrehwinkel * DEG_TO_RAD);
+        setOmniWheelDir(0, 0, giveHeadingController() * 100);
+        return;
+
+    default: // ArrayIdle
+        return;
+    }
+
+    moveToPoint(p.X, p.Y, p.SpeedPattern, p.MaxSpeed, p.MinSpeed, p.Andrehwinkel);
+
+    // ---- Punkt erreicht? ----------------------------------------------------
+    const float headingErr = fabsf(Util.AMap(p.Andrehwinkel - giveOrbitDir()));
+    const bool  reached    = giveMoveArrived() && (ARRAY_HEADING_TOL_DEG <= 0.0f || headingErr <= ARRAY_HEADING_TOL_DEG);
+
+    if (!reached)
+    {
+        pa.holding = false;
+        return;
+    }
+
+    const uint32_t nowMs = millis();
+    if (!pa.holding)
+    {
+        pa.holding     = true;
+        pa.holdStartMs = nowMs;
+    }
+    if ((uint32_t)(nowMs - pa.holdStartMs) < p.HoldMs)
+    {
+        return; // Wartezeit laeuft
+    }
+
+    // ---- weiterschalten ---------------------------------------------------------
+    pa.holding = false;
+    if (pa.index + 1 < pa.count)
+    {
+        pa.index++;
+        resetMoveProfile(); // Pattern fuer den neuen Punkt von vorn, auch bei gleichem Ziel
+    }
+    else if (pa.loop)
+    {
+        pa.index = 0;
+        resetMoveProfile();
+    }
+    else
+    {
+        pa.state = ArrayFinished;
+    }
+}
+
+ArrayState systemlib::giveArrayState(void) const { return pa.state; }
+uint8_t    systemlib::giveArrayIndex(void) const { return pa.index; }
+uint8_t    systemlib::giveArrayCount(void) const { return pa.count; }
+
 void systemlib::setOmniWheelVek(float vx, float vy, float omega) {
     float w[4];
     static const float wheelAngles[4] = {45,315,135,225};
