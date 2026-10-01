@@ -136,6 +136,7 @@ void systemlib::readSensors(void)
     RobotVelocity vel = calculateFieldVelocityFromMotorRpm(motorRpm, hMid);
     calculatePosition(millis(), vel.vx_field, vel.vy_field);
     // readIR();
+    updateArray(); 
     updateLine();
 
     readExpanders();

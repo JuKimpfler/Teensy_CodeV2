@@ -17,6 +17,22 @@ float y;
 
 uint8_t buttons[5] = {0, 0, 0, 0, 0};
 
+const ArrayPoint eck_route0[] = {
+    // X    Y   Winkel  Pattern             Max Min  Wartezeit
+    {  60,  60,   0,   SPattern_Trapezoid,     100, 50,    0 },
+    {  60, 180,   0,   SPattern_Trapezoid,  100, 50,    0 },
+    {  120, 180,   0,   SPattern_Trapezoid,  100, 50,   0 },
+    {  120, 60,   0,   SPattern_Trapezoid,  100, 50,    0 },
+};
+
+const ArrayPoint eck_route45[] = {
+    // X    Y   Winkel  Pattern             Max Min  Wartezeit
+    {  60,  60,   45,   SPattern_Trapezoid,     100, 50,    0 },
+    {  60, 180,   45,   SPattern_Trapezoid,  100, 50,    0 },
+    {  120, 180,   45,  SPattern_Trapezoid,  100, 50,   00 },
+    {  120, 60,   45,   SPattern_Trapezoid,  100, 50,    00 },
+};
+
 void setup()
 {
   RadarServo.attach(7);
@@ -68,14 +84,18 @@ void loop()
   if (PDS.getFastParam(3)>50) // "Zielpunkt_anfahren"
   {
     if (PDS.getFastParam(2)>50){
-      sys.moveToPoint(50,50,SPattern_LateBrake,100,5,45);
+      sys.setPointArray(eck_route45,4,true);
+      sys.startArray();
     }
     else{
-      sys.moveToPoint(50,50,SPattern_LateBrake,100,5,0);
+      
+      sys.setPointArray(eck_route0,4,true);
+      sys.startArray();
     }
   }
   else
   {
+    sys.resetArray();
     if (PDS.getFastParam(2)>50){
       sys.moveDir(angle, speed, 45);
     }
