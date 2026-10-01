@@ -1,5 +1,17 @@
 #include <systemlib.h>
 
+// A*-Pathfinder (lib/pathfinder). Fehlt die Bibliothek, faehrt moveToPointAvoid() geradeaus.
+#ifndef PF_AVAILABLE // kann auch per build_flags gesetzt werden: -DPF_AVAILABLE=1 / 0
+#if __has_include(<pathfinder.h>)
+#define PF_AVAILABLE 1
+#else
+#define PF_AVAILABLE 0
+#endif
+#endif
+#if PF_AVAILABLE
+#include <pathfinder.h>
+#endif
+
 /* -------------- Instanzen -------------- */
 
 BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
@@ -1640,8 +1652,7 @@ namespace
 
 void systemlib::resetMoveProfile(void)
 {
-    mv.active     = false;
-    mv.lastSpeed  = 0.0f;
+    mv.active = false; // lastSpeed bleibt: rollt der Roboter weiter, steigt der Speed stetig statt von 0
 }
 
 bool  systemlib::giveMoveArrived(void) const  { return mv.active && mv.arrived; }
@@ -1673,13 +1684,14 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_
     const uint32_t nowMs = millis();
     const uint32_t nowUs = micros();
     float dt = (mv.lastUs != 0) ? (nowUs - mv.lastUs) * 1e-6f : 0.0f;
-    dt = constrain(dt, 0.0f, 0.1f);
+    if (dt > 0.1f) dt = 0.0f; // lange Aufrufpause: Anlaufbegrenzung beginnt von vorn statt sofort 60 % freizugeben
     mv.lastUs = nowUs;
 
     // Position verloren: anhalten, Profil verwerfen
     if (Position.X < 0.0f || Position.Y < 0.0f)
     {
         resetMoveProfile();
+        mv.lastSpeed  = 0.0f;
         mv.lastCallMs = nowMs;
         setOmniWheelDir(0, 0, omega);
         return;
@@ -1794,7 +1806,7 @@ namespace
     {
         return a.X == b.X && a.Y == b.Y && a.Andrehwinkel == b.Andrehwinkel
                && a.SpeedPattern == b.SpeedPattern && a.MaxSpeed == b.MaxSpeed
-               && a.MinSpeed == b.MinSpeed && a.HoldMs == b.HoldMs;
+               && a.MinSpeed == b.MinSpeed && a.HoldMs == b.HoldMs && a.PassCm == b.PassCm;
     }
 }
 
@@ -1858,6 +1870,7 @@ bool systemlib::addPointToArray(uint16_t X, uint16_t Y, int16_t Andrehwinkel, ui
     p.MaxSpeed     = MaxSpeed;
     p.MinSpeed     = MinSpeed;
     p.HoldMs       = HoldMs;
+    p.PassCm       = 0;
     return addPointToArray(p);
 }
 
@@ -1923,6 +1936,7 @@ void systemlib::pauseArray(void)
         pa.state   = ArrayPaused;
         pa.holding = false;
         resetMoveProfile();
+        mv.lastSpeed = 0.0f; // Roboter steht -> Anlauf nach resumeArray() wieder begrenzt
     }
 }
 
@@ -1975,6 +1989,21 @@ void systemlib::updateArray(void)
 
     moveToPoint(p.X, p.Y, p.SpeedPattern, p.MaxSpeed, p.MinSpeed, p.Andrehwinkel);
 
+    // ---- Durchfahrpunkt: weiterschalten, ohne anzuhalten ------------------------
+    // Zielkreis, Winkel und Wartezeit gelten nur fuer Haltepunkte (PassCm = 0) und den letzten Punkt.
+    if (p.PassCm > 0 && !(pa.index + 1 >= pa.count && !pa.loop))
+    {
+        pa.holding = false;
+        const float dx = p.X - Position.X;
+        const float dy = p.Y - Position.Y;
+        if (Position.X >= 0.0f && Position.Y >= 0.0f && sqrtf(dx * dx + dy * dy) <= p.PassCm)
+        {
+            pa.index = (pa.index + 1 < pa.count) ? (pa.index + 1) : 0;
+            resetMoveProfile(); // Pattern fuer den naechsten Punkt von vorn, Speed laeuft stetig weiter
+        }
+        return;
+    }
+
     // ---- Punkt erreicht? ----------------------------------------------------
     const float headingErr = fabsf(Util.AMap(p.Andrehwinkel - giveOrbitDir()));
     const bool  reached    = giveMoveArrived() && (ARRAY_HEADING_TOL_DEG <= 0.0f || headingErr <= ARRAY_HEADING_TOL_DEG);
@@ -2017,6 +2046,402 @@ void systemlib::updateArray(void)
 ArrayState systemlib::giveArrayState(void) const { return pa.state; }
 uint8_t    systemlib::giveArrayIndex(void) const { return pa.index; }
 uint8_t    systemlib::giveArrayCount(void) const { return pa.count; }
+
+/* ========================================================================
+ * Pfadplanung: moveToPointAvoid()
+ *
+ * Verknuepft den A*-Pathfinder (lib/pathfinder) mit dem Punkt-Array:
+ *
+ *   Position, Ziel, Ball, Partner  ->  pathfinder::findPath()  (Raster 90 x 120)
+ *     ->  Zellpfad  ->  Linie-fuer-Linie vereinfachen (wenige Wegpunkte, in cm)
+ *     ->  Wegpunkte als ArrayPoints  ->  setPointArray() / updateArray()
+ *
+ * Das Speed-Pattern gilt fuer die GANZE Strecke: Zwischenpunkte bekommen je
+ * ein konstantes Tempo, das aus dem Pattern an der Stelle des Teilstuecks
+ * berechnet wird; sie werden ohne Halt durchfahren (PassCm). Das letzte
+ * Teilstueck faehrt das Pattern selbst, inkl. Zielkreis und Andrehwinkel.
+ *
+ * Neu geplant wird bei: neuem Ziel / Pattern / Speed, bewegtem Hindernis
+ * (> PF_OBST_MOVE_CM) und zyklisch alle PF_REPLAN_MS (nur wenn noch unterwegs).
+ *
+ * Ohne die Bibliothek (kein <pathfinder.h>) faehrt moveToPointAvoid() einfach
+ * geradeaus per moveToPoint().
+ *
+ * ACHTUNG: Waehrend moveToPointAvoid() benutzt wird, gehoert ihm das Punkt-Array.
+ * ===================================================================== */
+#ifndef PF_REPLAN_MS
+#define PF_REPLAN_MS 300 // Neuplanung alle ... ms, solange der Roboter unterwegs ist
+#endif
+#ifndef PF_REPLAN_FAIL_MS
+#define PF_REPLAN_FAIL_MS 1000 // nach einer gescheiterten Planung seltener erneut versuchen
+#endif
+#ifndef PF_OBST_MOVE_CM
+#define PF_OBST_MOVE_CM 8.0f // Hindernis hat sich so weit bewegt -> sofort neu planen
+#endif
+#ifndef PF_PASS_CM
+#define PF_PASS_CM 12 // Zwischenpunkte gelten ab diesem Abstand als durchfahren
+#endif
+#ifndef PF_LOS_MAX_CELLS
+#define PF_LOS_MAX_CELLS 80 // so weit (in Zellen) wird beim Vereinfachen vorausgeschaut
+#endif
+#ifndef PF_FALLBACK_DIRECT
+#define PF_FALLBACK_DIRECT 1 // 1 = ohne Weg geradeaus fahren, 0 = stehen bleiben
+#endif
+
+#if PF_AVAILABLE
+
+// Gewichtskarte (weights.cpp): enthaelt nach findPath() auch die Masken von Ball und Partner
+extern uint8_t field[pathfinder::kFieldWidth][pathfinder::kFieldHeight];
+
+namespace
+{
+    constexpr uint8_t PF_NO_OBSTACLE = 255; // Zelle ausserhalb des Rasters: Maske wird nicht gesetzt
+
+    struct PathPlan
+    {
+        bool     valid = false;   // es gibt eine Planung fuer das aktuelle Ziel
+        bool     found = false;   // A* hat einen Weg gefunden
+        uint16_t tx = 0, ty = 0;
+        uint8_t  pattern = 0, maxS = 0, minS = 0;
+        int16_t  ballIn[2]   = {-1, -1}; // aktuelle Eingabe [cm], -1 = kein Hindernis
+        int16_t  robIn[2]    = {-1, -1};
+        int16_t  ballUsed[2] = {-1, -1}; // beim letzten Planen verwendet
+        int16_t  robUsed[2]  = {-1, -1};
+        uint32_t lastPlanMs = 0;
+        uint32_t planUs     = 0;
+        uint8_t  wpCount    = 0;
+        float    total0     = 1.0f; // Streckenlaenge [cm], auf die sich der Pattern-Fortschritt bezieht
+        uint8_t  path[pathfinder::kPathMaxLength][2];
+    };
+    PathPlan pf;
+
+    uint8_t cmToCell(float cm, float fieldCm, uint8_t cells)
+    {
+        const int c = (int)(cm / fieldCm * cells);
+        return (uint8_t)constrain(c, 0, (int)cells - 1);
+    }
+
+    float cellToCm(uint8_t cell, float fieldCm, uint8_t cells)
+    {
+        return (cell + 0.5f) * fieldCm / cells;
+    }
+
+    /// true, wenn auf der Linie (Bresenham) nichts blockiert ist und keine Zelle teurer als costLimit ist
+    bool lineClear(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t costLimit)
+    {
+        int x = x0;
+        int y = y0;
+        const int dx = abs((int)x1 - (int)x0);
+        const int dy = abs((int)y1 - (int)y0);
+        const int sx = (x0 < x1) ? 1 : -1;
+        const int sy = (y0 < y1) ? 1 : -1;
+        int err = dx - dy;
+
+        while (true)
+        {
+            const uint8_t w = field[x][y];
+            if (w >= 255 || w > costLimit)
+            {
+                return false;
+            }
+            if (x == x1 && y == y1)
+            {
+                return true;
+            }
+            const int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x += sx; }
+            if (e2 < dx)  { err += dx; y += sy; }
+        }
+    }
+
+    /**
+     * Zellpfad auf wenige Wegpunkte reduzieren: von jedem Ankerpunkt so weit voraus,
+     * wie eine freie Gerade moeglich ist. Die Gerade darf nie durch teurere Zellen laufen
+     * als der A*-Weg selbst (die Gewichte der Karte bleiben also wirksam).
+     *
+     * @return Anzahl der Wegpunkte in wp (ohne Startzelle, der letzte ist die Zielzelle)
+     */
+    uint8_t simplifyPath(uint16_t len, uint8_t (&wp)[ARRAY_MAX_POINTS][2])
+    {
+        uint8_t runMax[PF_LOS_MAX_CELLS + 1];
+        uint8_t n = 0;
+        uint16_t i = 0;
+
+        while (i + 1 < len && n < ARRAY_MAX_POINTS)
+        {
+            const uint16_t jMax = (i + PF_LOS_MAX_CELLS < len - 1) ? (i + PF_LOS_MAX_CELLS) : (len - 1);
+
+            uint8_t m = 0;
+            for (uint16_t j = i + 1; j <= jMax; j++)
+            {
+                const uint8_t w = field[pf.path[j][0]][pf.path[j][1]];
+                if (w > m) m = w;
+                runMax[j - i] = m;
+            }
+
+            uint16_t best = i + 1; // mindestens ein Schritt: der A*-Weg ist begehbar
+            for (uint16_t j = jMax; j > i + 1; j--)
+            {
+                if (lineClear(pf.path[i][0], pf.path[i][1], pf.path[j][0], pf.path[j][1], runMax[j - i]))
+                {
+                    best = j;
+                    break;
+                }
+            }
+
+            wp[n][0] = pf.path[best][0];
+            wp[n][1] = pf.path[best][1];
+            n++;
+            i = best;
+        }
+        return n;
+    }
+
+    /// true, wenn sich ein Hindernis gegenueber der letzten Planung bewegt hat (oder neu/weg ist)
+    bool obstacleMoved(const int16_t (&now)[2], const int16_t (&used)[2])
+    {
+        const bool a = (now[0] >= 0 && now[1] >= 0);
+        const bool b = (used[0] >= 0 && used[1] >= 0);
+        if (a != b) return true;
+        if (!a)     return false;
+        const float dx = now[0] - used[0];
+        const float dy = now[1] - used[1];
+        return sqrtf(dx * dx + dy * dy) > PF_OBST_MOVE_CM;
+    }
+
+    /**
+     * A* + Vereinfachung + Tempo je Teilstueck -> ArrayPoints.
+     * Versuche: 1) mit Ball und Partner, 2) ohne Ball (Ziel liegt oft im Ballbereich),
+     * 3) ohne Hindernisse (Startzelle im Sperrbereich). Jeder Fehlversuch kostet Rechenzeit.
+     */
+    bool buildRoute(float sx, float sy, float fieldX, float fieldY, uint16_t tx, uint16_t ty,
+                    uint8_t pattern, uint8_t maxS, uint8_t minS, int16_t angle, bool restartPattern,
+                    ArrayPoint (&route)[ARRAY_MAX_POINTS], uint8_t &count)
+    {
+        const uint8_t W = pathfinder::kFieldWidth;
+        const uint8_t H = pathfinder::kFieldHeight;
+
+        const uint8_t scx = cmToCell(sx, fieldX, W), scy = cmToCell(sy, fieldY, H);
+        const uint8_t tcx = cmToCell(tx, fieldX, W), tcy = cmToCell(ty, fieldY, H);
+
+        const bool hasBall = (pf.ballIn[0] >= 0 && pf.ballIn[1] >= 0);
+        const bool hasRob  = (pf.robIn[0]  >= 0 && pf.robIn[1]  >= 0);
+        const uint8_t bx = hasBall ? cmToCell(pf.ballIn[0], fieldX, W) : PF_NO_OBSTACLE;
+        const uint8_t by = hasBall ? cmToCell(pf.ballIn[1], fieldY, H) : PF_NO_OBSTACLE;
+        const uint8_t rx = hasRob  ? cmToCell(pf.robIn[0],  fieldX, W) : PF_NO_OBSTACLE;
+        const uint8_t ry = hasRob  ? cmToCell(pf.robIn[1],  fieldY, H) : PF_NO_OBSTACLE;
+
+        uint16_t len = 0;
+        bool ok = false;
+        for (uint8_t attempt = 0; attempt < 3 && !ok; attempt++)
+        {
+            if (attempt == 1 && !hasBall) continue;
+            if (attempt == 2 && !hasRob)  continue;
+
+            const bool useBall = (attempt == 0);
+            const bool useRob  = (attempt <= 1);
+            ok = pathfinder::findPath(scx, scy, tcx, tcy,
+                                      useBall ? bx : PF_NO_OBSTACLE, useBall ? by : PF_NO_OBSTACLE,
+                                      useRob  ? rx : PF_NO_OBSTACLE, useRob  ? ry : PF_NO_OBSTACLE,
+                                      pf.path, len);
+        }
+        if (!ok)
+        {
+            return false;
+        }
+
+        // ---- Wegpunkte (cm) -------------------------------------------------
+        uint8_t wp[ARRAY_MAX_POINTS][2];
+        uint8_t n = (len >= 2) ? simplifyPath(len, wp) : 0;
+
+        float px[ARRAY_MAX_POINTS + 1];
+        float py[ARRAY_MAX_POINTS + 1];
+        px[0] = sx;
+        py[0] = sy;
+        for (uint8_t i = 0; i < n; i++)
+        {
+            px[i + 1] = cellToCm(wp[i][0], fieldX, W);
+            py[i + 1] = cellToCm(wp[i][1], fieldY, H);
+        }
+        if (n == 0) n = 1; // Start und Ziel in derselben Zelle: nur das Ziel
+        px[n] = tx;        // letzter Punkt = exaktes Ziel, nicht Zellmitte
+        py[n] = ty;
+
+        // ---- Tempo: Pattern ueber die ganze Strecke --------------------------------
+        float total = 0.0f;
+        float seg[ARRAY_MAX_POINTS];
+        for (uint8_t i = 0; i < n; i++)
+        {
+            const float dx = px[i + 1] - px[i];
+            const float dy = py[i + 1] - py[i];
+            seg[i] = sqrtf(dx * dx + dy * dy);
+            total += seg[i];
+        }
+        if (total < 1.0f) total = 1.0f;
+
+        // Der Pattern-Fortschritt bezieht sich auf die Strecke bei Fahrtbeginn (neues Ziel / Pattern / Speed).
+        // Periodische Neuplanungen aendern das nicht, sonst wuerde das Tempo bei jeder Neuplanung neu anlaufen.
+        if (restartPattern || total > pf.total0) pf.total0 = total;
+
+        float cum = 0.0f;
+        for (uint8_t i = 0; i < n; i++)
+        {
+            const float pStart = constrain(1.0f - (total - cum) / pf.total0, 0.0f, 1.0f);
+            const float pMid   = constrain(1.0f - (total - cum - 0.5f * seg[i]) / pf.total0, 0.0f, 1.0f);
+            cum += seg[i];
+
+            ArrayPoint &a = route[i];
+            a.X            = (uint16_t)constrain(px[i + 1] + 0.5f, 0.0f, fieldX);
+            a.Y            = (uint16_t)constrain(py[i + 1] + 0.5f, 0.0f, fieldY);
+            a.Andrehwinkel = angle;
+            a.HoldMs       = 0;
+
+            if (i + 1 < n) // Zwischenpunkt: konstantes Tempo, ohne Halt durchfahren
+            {
+                const float v = minS + (maxS - minS) * speedPatternValue(pattern, pMid);
+                a.SpeedPattern = SPattern_Constant;
+                a.MaxSpeed     = (uint8_t)(v + 0.5f);
+                a.MinSpeed     = a.MaxSpeed;
+                a.PassCm       = PF_PASS_CM;
+            }
+            else // letztes Teilstueck: Pattern bis zum Ziel
+            {
+                const float v0 = minS + (maxS - minS) * speedPatternValue(pattern, pStart);
+                a.SpeedPattern = pattern;
+                a.MaxSpeed     = (uint8_t)(v0 + 0.5f);
+                a.MinSpeed     = minS;
+                a.PassCm       = 0;
+            }
+        }
+        count = n;
+        return true;
+    }
+}
+
+#endif // PF_AVAILABLE
+
+/**
+ * Hindernisse fuer die Pfadplanung [cm, Feldkoordinaten]. -1 = kein Hindernis.
+ * Zyklisch aufrufbar, vor moveToPointAvoid(). Ball = Ball, Roboter = Partner (oder Gegner).
+ */
+void systemlib::setPathObstacles(int16_t ballX, int16_t ballY, int16_t robotX, int16_t robotY)
+{
+#if PF_AVAILABLE
+    pf.ballIn[0] = ballX;   pf.ballIn[1] = ballY;
+    pf.robIn[0]  = robotX;  pf.robIn[1]  = robotY;
+#endif
+}
+
+/**
+ * Wie moveToPoint(), aber um Hindernisse herum. Zyklisch aufrufen.
+ * Alle Parameter wie bei moveToPoint(); das Speed-Pattern gilt fuer die ganze Strecke.
+ *
+ * Kein Weg gefunden: PF_FALLBACK_DIRECT = 1 faehrt geradeaus per moveToPoint(),
+ * sonst bleibt der Roboter stehen und haelt den Winkel. Status: givePathFound().
+ */
+void systemlib::moveToPointAvoid(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel)
+{
+#if PF_AVAILABLE
+    // Position unbekannt: moveToPoint() haelt an und regelt den Winkel
+    if (Position.X < 0.0f || Position.Y < 0.0f)
+    {
+        moveToPoint(X, Y, SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel);
+        return;
+    }
+
+    const uint32_t nowMs = millis();
+
+    const bool settingsChanged = !pf.valid || X != pf.tx || Y != pf.ty
+                                 || SpeedPattern != pf.pattern || MaxSpeed != pf.maxS || MinSpeed != pf.minS;
+    const bool moved   = obstacleMoved(pf.ballIn, pf.ballUsed) || obstacleMoved(pf.robIn, pf.robUsed);
+    const bool settled = pf.found && giveMoveArrived(); // am Ziel: nicht dauernd neu planen
+    const uint32_t interval = pf.found ? PF_REPLAN_MS : PF_REPLAN_FAIL_MS;
+    const bool due = !settled && (uint32_t)(nowMs - pf.lastPlanMs) >= interval;
+
+    if (settingsChanged || moved || due)
+    {
+        pf.lastPlanMs = nowMs;
+        pf.valid   = true;
+        pf.tx      = X;
+        pf.ty      = Y;
+        pf.pattern = SpeedPattern;
+        pf.maxS    = MaxSpeed;
+        pf.minS    = MinSpeed;
+        for (uint8_t i = 0; i < 2; i++)
+        {
+            pf.ballUsed[i] = pf.ballIn[i];
+            pf.robUsed[i]  = pf.robIn[i];
+        }
+
+        ArrayPoint route[ARRAY_MAX_POINTS];
+        uint8_t    count = 0;
+
+        const uint32_t t0 = micros();
+        pf.found  = buildRoute(Position.X, Position.Y, feld_x, feld_y, X, Y,
+                               SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel, settingsChanged, route, count);
+        pf.planUs = micros() - t0;
+
+        if (pf.found)
+        {
+            pf.wpCount = count;
+            setPointArray(route, count); // unveraenderte Wegpunkte: kein Neustart
+        }
+        else
+        {
+            pf.wpCount = 0;
+            resetArray();
+        }
+    }
+
+    if (pf.found)
+    {
+        // Winkel darf sich waehrend der Fahrt aendern, ohne dass neu geplant wird
+        for (uint8_t i = 0; i < pa.count; i++)
+        {
+            pa.pts[i].Andrehwinkel = Andrehwinkel;
+        }
+        startArray();
+        updateArray();
+    }
+    else
+    {
+#if PF_FALLBACK_DIRECT
+        moveToPoint(X, Y, SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel);
+#else
+        setHeading(Andrehwinkel * DEG_TO_RAD);
+        setOmniWheelDir(0, 0, giveHeadingController() * 100);
+#endif
+    }
+#else
+    moveToPoint(X, Y, SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel);
+#endif
+}
+
+/**
+ * Verwirft Planung, Punkt-Array und Fahrprofil (Speed 0). Aufrufen beim Wechsel in einen anderen
+ * Modus, damit die naechste Fahrt ohne Reste der vorigen beginnt.
+ */
+void systemlib::resetPathPlan(void)
+{
+#if PF_AVAILABLE
+    pf.valid   = false;
+    pf.found   = false;
+    pf.wpCount = 0;
+    pf.total0  = 1.0f;
+#endif
+    resetArray();
+    mv.lastSpeed = 0.0f;
+}
+
+#if PF_AVAILABLE
+bool     systemlib::givePathFound(void) const     { return pf.found; }
+uint8_t  systemlib::givePathWaypoints(void) const { return pf.wpCount; }
+uint32_t systemlib::givePathTimeUs(void) const    { return pf.planUs; }
+#else
+bool     systemlib::givePathFound(void) const     { return false; }
+uint8_t  systemlib::givePathWaypoints(void) const { return 0; }
+uint32_t systemlib::givePathTimeUs(void) const    { return 0; }
+#endif
 
 void systemlib::setOmniWheelVek(float vx, float vy, float omega) {
     float w[4];
