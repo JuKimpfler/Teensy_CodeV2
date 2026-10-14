@@ -132,17 +132,17 @@ Beim Verteilen daran denken: Jeder Bus braucht eigene Pull-ups, und
 ## 6. Sensorring (4 Module)
 
 Im Projekt sitzen vier Distance-Module im 90°-Raster auf einem Ring
-(vorne / rechts / hinten / links). Die Positionsbibliothek geht davon aus
-([lib/positioning](../../positioning/positioning.md)):
+(vorne / rechts / hinten / links). Die Positionsbestimmung in [systemlib](../../systemlib/systemlib.md) geht davon aus
+(Werte in `lib/include/params/params_radar.h` und `params_position.h`):
 
 | Größe | Wert | Bedeutung |
 |---|---|---|
-| `mountAngleDeg[]` | `{0, 90, 180, 270}` | Montagewinkel im Uhrzeigersinn |
-| `radarRingRadius_cm` | `9.0` | Abstand Sensorstirn → Roboterzentrum |
-| `RADAR_MAX_PEAKS` | `10` | passend zu `XM125D_MAX_PEAKS` |
+| `RADAR_SENSOR_ADDRS[]` | `{0x58, 0x56, 0x55, 0x52}` | I2C-Adressen, Reihenfolge = `RadarPos` (Vo, Re, Hi, Li) |
+| `POS_RADAR_OFFSET_CM` | `2.0` | Abstand Sensorfläche → Roboterzentrum |
+| `RADAR_PEAKS_TO_FETCH` | `1` | ausgewertet wird nur Peak 0 (max. `XM125D_MAX_PEAKS`) |
 
-Der Ringradius wird **in der Positionsbibliothek** aufgeschlagen — die
-XM125-Library liefert die Distanz ab Sensorstirn. Nicht doppelt einrechnen.
+Der Offset wird **in `systemlib`** aufgeschlagen — die XM125-Library liefert
+die Distanz ab Sensorstirn. Nicht doppelt einrechnen.
 
 ## 7. PlatformIO — Build & Tests
 
@@ -198,9 +198,9 @@ pio device monitor -b 115200
    `XM125_Calib_Sensitivity` (`RADAR_SIGNAL_QUALITY`,
    `RADAR_THRESHOLD_SENSITIVITY`) → `XM125_Calib_Crosstalk`
    (stören sich die gleichzeitig messenden Sensoren?). Ergebnisse nach
-   [params.h](../../include/params.h) übertragen.
+   [params_radar.h](../../include/params/params_radar.h) übertragen.
 5. **`XM125_Distance_Multi`** — alle vier Sensoren, inklusive PDS-Ausgabe.
-6. Erst danach die Positionsbibliothek dazunehmen.
+6. Erst danach `RadarArray` und die Positionsbestimmung dazunehmen.
 
 Der Rohwert↔Distanz-Teil (Counts → mm) hat kein eigenes Skript, weil der
 Umrechnungsfaktor offen ist — dafür weiterhin `XM125_WallCalibration`
@@ -243,7 +243,7 @@ uint16_t d = sys.Radar[RadarVo].Dist;   // Rohwert Peak 0
 ```
 
 Alle Zahlen dazu stehen zentral in
-[lib/include/params.h](../../include/params.h):
+[lib/include/params/params_radar.h](../../include/params/params_radar.h):
 
 | Konstante | Wert | Bedeutung |
 |---|---|---|
@@ -288,45 +288,34 @@ Gehäuse), gehören sie neu gemessen.
 
 ## 10. Integration: Positionsbestimmung
 
-Die Positionsbibliothek erwartet pro Zyklus ein `RadarReading` je Sensor in
-Ringreihenfolge (vorne, rechts, hinten, links):
+Im Roboter übernimmt [`RadarArray`](../../RadarArray/RadarArray.md) die vier Sensoren: Es startet alle
+Messungen gleichzeitig, holt die Ergebnisse ab und stellt sie als `RadarData` je Einbauposition bereit
+(`RadarVo`, `RadarRe`, `RadarHi`, `RadarLi`). `systemlib::calculatePosition()` macht daraus die Position:
 
 ```cpp
-Positioning::RadarReading rd[Positioning::RADAR_COUNT];
-
-for (uint8_t i = 0; i < Positioning::RADAR_COUNT; i++) {
-  rd[i].valid = radarSensor[i].hasResult();   // nach isMeasuring() == false
-  if (!rd[i].valid) continue;
-
-  uint8_t n = radarSensor[i].getNumDistances();
-  if (n > Positioning::RADAR_MAX_PEAKS) n = Positioning::RADAR_MAX_PEAKS;
-  rd[i].peakCount = n;
-
-  for (uint8_t p = 0; p < n; p++) {
-    rd[i].peaks[p].distance_cm = Positioning::rawCountToCm(radarSensor[i].getPeakDistanceRaw(p));
-    rd[i].peaks[p].strength    = radarSensor[i].getPeakStrength(p);
-  }
-}
-
-Positioning::position pos = Positioning::update(heading, camOpp, camOwn, rd);
+RadarArray Radar;                       // in systemlib
+Radar.begin();                          // alle Sensoren einrichten (blockierend, einmal)
+Radar.update();                         // JEDEN Zyklus, blockiert nie
+uint16_t distRaw = Radar[RadarVo].DistRaw;
+bool     alive   = Radar.giveCon(RadarVo);
 ```
 
 Empfohlene Sensor-Konfiguration für diesen Einsatzfall (Bandenwände messen):
 
 ```cpp
-radar.config.startMm              = RADAR_START_MM;              // 200
+radar.config.startMm              = RADAR_START_MM;              // 150
 radar.config.endMm                = RADAR_END_MM;                // 2700, Reserve über 2500
-radar.config.signalQuality        = RADAR_SIGNAL_QUALITY;        // 25000, Holz reflektiert schwach
-radar.config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY; // 750
+radar.config.signalQuality        = RADAR_SIGNAL_QUALITY;        // 30000, Holz reflektiert schwach
+radar.config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY; // 0
 radar.config.peakSorting          = XM125D_SORT_CLOSEST;         // nächste Wand zuerst
 radar.config.reflectorShape       = XM125D_REFLECTOR_PLANAR;     // flache Bande
 ```
 
 Begründung jedes Werts: [04-Konfiguration.md](04-Konfiguration.md#in-diesem-projekt-verwendete-werte).
 
-> **Solange die Rohwert-Kalibrierung offen ist**, rechnet
-> `Positioning::rawCountToCm()` mit einer Annahme (`20.0 cm + raw · 0.902 cm`).
-> Sobald die Messreihe aus [07-Kalibrierung.md Teil B](07-Kalibrierung.md#teil-b--kalibrierung-der-peak-rohwerte-counts--mm)
+> **Solange die Rohwert-Kalibrierung offen ist**, rechnet `systemlib` mit der Annahme
+> `DistRaw / 10.0f + POS_RADAR_OFFSET_CM`. Sobald die Messreihe aus
+> [07-Kalibrierung.md Teil B](07-Kalibrierung.md#teil-b--kalibrierung-der-peak-rohwerte-counts--mm)
 > gefahren ist, müssen **beide** Stellen konsistent nachgezogen werden.
 
 ## 11. Checkliste für eine neue Platine

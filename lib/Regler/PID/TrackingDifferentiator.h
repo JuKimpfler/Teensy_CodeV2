@@ -22,7 +22,8 @@
 
 #include <math.h>
 
-class TrackingDifferentiator {
+class TrackingDifferentiator
+{
 public:
     // Ts    = Abtastzeit [s]
     // wTD   = Bandbreite des Filters [rad/s] (je groesser, desto schneller)

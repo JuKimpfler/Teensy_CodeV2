@@ -36,7 +36,7 @@ Beispiel oben: Doppelklick-Fenster 100 ms, Long-Press ab 3 s, Entprellung
 
 ## Statuscodes
 
-`getStatusCode()` liefert (Enum `fancyBTNStatusCode`):
+`giveStatusCode()` liefert (Enum `fancyBTNStatusCode`):
 
 | Wert | Name | Bedeutung |
 |---|---|---|
@@ -63,7 +63,7 @@ Zeitlicher Ablauf:
 | Funktion | Beschreibung |
 |---|---|
 | `void update(bool buttonState)` | **Jeden Zyklus aufrufen.** `buttonState` = roher Eingangszustand |
-| `uint8_t getStatusCode() const` | Aktueller Statuscode (siehe Tabelle) |
+| `uint8_t giveStatusCode() const` | Aktueller Statuscode (siehe Tabelle) |
 | `bool isPressed() const` | Interner `_buttonState` |
 
 `update()` arbeitet mit `millis()`, es wird nicht geblockt.
@@ -76,9 +76,9 @@ Zeitlicher Ablauf:
 `(50, 6, 8, true)`, und speist sie aus dem Button-Expander:
 
 ```cpp
-BTN1.update(Button_EXP.readPin(0));
+BTN1.update(Exp_MotorB.givePinState(BUTTON1_BIT)); // Platine V2.0: BUTTON1
 ...
-fancyBTNstates[0] = BTN1.getStatusCode();
+fancyBTNstates[0] = BTN1.giveStatusCode();
 ```
 
 Abholen im Hauptprogramm:
@@ -106,7 +106,7 @@ void setup() { pinMode(2, INPUT_PULLDOWN); }
 void loop() {
     btn.update(digitalRead(2));
 
-    switch (btn.getStatusCode()) {
+    switch (btn.giveStatusCode()) {
         case fancy_CLICKED:       /* ... */ break;
         case fancy_DOUBLE_CLICK:  /* ... */ break;
         case fancy_LONG_PRESS:    /* ... */ break;

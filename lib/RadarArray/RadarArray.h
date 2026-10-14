@@ -48,12 +48,12 @@ enum RadarPos : uint8_t
 /// Messwerte EINES Sensors — immer Peak 0, der Rest wird nicht ausgewertet.
 struct RadarData
 {
-    uint16_t Dist     = 0;     ///< Rohwert von Peak 0 ("Counts", NICHT mm — siehe XM125.md), alpha-beta-gefiltert
-    uint16_t DistRaw  = 0;     ///< derselbe Wert UNGEFILTERT (fuer die Positionsfusion, die selbst filtert)
-    int32_t  Strenght = 0;     ///< Signalstaerke von Peak 0
-    uint8_t  Peaks    = 0;     ///< Anzahl erkannter Peaks (0 = nichts gesehen)
-    bool     isCon    = false; ///< true = Sensor antwortet und ist konfiguriert
-    uint32_t Time     = 0;     ///< millis() der letzten uebernommenen Messung (0 = noch nie gemessen)
+    uint16_t Dist = 0;    ///< Rohwert von Peak 0 ("Counts", NICHT mm — siehe XM125.md), alpha-beta-gefiltert
+    uint16_t DistRaw = 0; ///< derselbe Wert UNGEFILTERT (fuer die Positionsfusion, die selbst filtert)
+    int32_t Strenght = 0; ///< Signalstaerke von Peak 0
+    uint8_t Peaks = 0;    ///< Anzahl erkannter Peaks (0 = nichts gesehen)
+    bool isCon = false;   ///< true = Sensor antwortet und ist konfiguriert
+    uint32_t Time = 0;    ///< millis() der letzten uebernommenen Messung (0 = noch nie gemessen)
 };
 
 class RadarArray
@@ -89,7 +89,7 @@ public:
     /* -------------- give -------------- */
 
     /// Messwerte einer Einbauposition: Radar[RadarVo].Dist
-    RadarData       &operator[](uint8_t pos)       { return _data[_clamp(pos)]; }
+    RadarData &operator[](uint8_t pos) { return _data[_clamp(pos)]; }
     const RadarData &operator[](uint8_t pos) const { return _data[_clamp(pos)]; }
 
     /// true, wenn der Sensor antwortet und konfiguriert ist.
@@ -110,22 +110,25 @@ public:
 
 private:
     XM125Distance _sensors[RADAR_NUM_SENSORS];
-    RadarData     _data[RADAR_NUM_SENSORS];
+    RadarData _data[RADAR_NUM_SENSORS];
 
-    bool     _ready[RADAR_NUM_SENSORS]      = {}; ///< Sensor ist eingerichtet
-    bool     _pending[RADAR_NUM_SENSORS]    = {}; ///< Sensor misst gerade in dieser Runde
-    uint8_t  _fails[RADAR_NUM_SENSORS]      = {}; ///< Fehlschlaege in Folge
+    bool _ready[RADAR_NUM_SENSORS] = {};           ///< Sensor ist eingerichtet
+    bool _pending[RADAR_NUM_SENSORS] = {};         ///< Sensor misst gerade in dieser Runde
+    uint8_t _fails[RADAR_NUM_SENSORS] = {};        ///< Fehlschlaege in Folge
     uint32_t _lastSetupMs[RADAR_NUM_SENSORS] = {}; ///< Bremse fuer den blockierenden Wiederanlauf
+
+    bool _roundActive = false;  ///< mindestens ein Sensor misst in der laufenden Runde
+    bool _roundFailed = false;  ///< in der laufenden Runde ist mindestens eine Messung fehlgeschlagen
+    uint32_t _roundStartUs = 0; ///< Beginn der laufenden Runde
+    uint32_t _lastRoundUs = 0;  ///< Dauer der letzten fehlerfreien Runde (0 = noch unbekannt)
 
     TwoWire *_wire = &I2C_RADAR;
 
-    static constexpr uint8_t RADAR_MAX_CONSEC_FAILURES = 5;
-
     static uint8_t _clamp(uint8_t pos) { return (pos < RADAR_NUM_SENSORS) ? pos : 0; }
 
-    bool _setupSens(uint8_t idx);   ///< blockierende Einrichtung EINES Sensors
-    void _startRound(void);         ///< Messung bei ALLEN Sensoren gleichzeitig anstossen
-    void _takeResult(uint8_t idx);  ///< fertiges Ergebnis nach _data[idx] uebernehmen
+    bool _setupSens(uint8_t idx);     ///< blockierende Einrichtung EINES Sensors
+    void _startRound(void);           ///< Messung bei ALLEN Sensoren gleichzeitig anstossen
+    void _takeResult(uint8_t idx);    ///< fertiges Ergebnis nach _data[idx] uebernehmen
     void _measureFailed(uint8_t idx); ///< Fehlerzaehler, markiert den Sensor ggf. als tot
-    void _retrySetup(uint8_t idx);  ///< gedrosselter Wiederanlauf eines toten Sensors
+    void _retrySetup(uint8_t idx);    ///< gedrosselter Wiederanlauf eines toten Sensors
 };

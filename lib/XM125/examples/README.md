@@ -23,7 +23,7 @@ git checkout -- src/main.cpp
 ```
 
 Alle Skripte außer `XM125_Connectivity` und `XM125_Presence` binden
-`lib/include/params.h` ein und benutzen dieselben Konstanten
+`lib/include/params/params_radar.h` ein und benutzen dieselben Konstanten
 (`RADAR_SENSOR_ADDRS`, `RADAR_START_MM`, `RADAR_SIGNAL_QUALITY`, …), mit denen
 auch `systemlib::setupRadarSens()` den Roboter im Wettkampf konfiguriert —
 was hier gemessen wird, gilt damit auch für den echten Betrieb.
@@ -175,7 +175,7 @@ Strahlkegel, Sensor nicht in der Hand halten.
 `thresholdSensitivity` (plus `maxProfile` und `reflectorShape`), mit denen die
 Wand am äußersten Nutzabstand **zuverlässig** als Peak auftaucht, ohne
 unnötig langsam oder fehleranfällig zu werden. Ergebnis wandert nach
-`lib/include/params.h` (`RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY`).
+`lib/include/params/params_radar.h` (`RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY`).
 
 **Befehle:**
 
@@ -251,7 +251,7 @@ der Integration in `systemlib`.
 **Bedienung:** keine — läuft automatisch.
 
 **Wann benutzen:** letzter Schritt vor der Integration in die
-Positionsbibliothek/`systemlib` — bestätigt, dass alle vier Sensoren
+`RadarArray`/`systemlib` — bestätigt, dass alle vier Sensoren
 zusammen im Dauerbetrieb stabil laufen.
 
 ---
@@ -310,8 +310,8 @@ nicht amortisieren. Details: [../doc/07-Kalibrierung.md, Teil B](../doc/07-Kalib
 
 **Messaufbau:** Ein einzelnes, flaches Objekt (Holzwand) auf exakt bekannter
 Distanz, sonst nichts im Messkegel. Referenzebene (ab wo gemessen wird)
-vorher festlegen und nicht doppelt mit `radarRingRadius_cm` in der
-Positionsbibliothek verrechnen.
+vorher festlegen und nicht doppelt mit `POS_RADAR_OFFSET_CM` in
+`systemlib` verrechnen.
 
 ---
 

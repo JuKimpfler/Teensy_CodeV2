@@ -29,5 +29,4 @@ void loop()
     USBC_UART.print("US_hi = " + String(sys.giveUS_hi()) + " cm , ");
     USBC_UART.print("US_re = " + String(sys.giveUS_re()) + " cm , ");
     USBC_UART.println("US_li = " + String(sys.giveUS_li()) + " cm");*/
-    
 }

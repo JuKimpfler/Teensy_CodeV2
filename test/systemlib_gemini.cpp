@@ -268,10 +268,10 @@ float systemlib::convertMotorRpmToWheelSpeedCmS(float motor_rpm)
 RobotVelocity systemlib::calculateFieldVelocityFromMotorRpm(const float motor_rpm[4], float heading_deg)
 {
     // 1. Rad-Geschwindigkeiten berechnen (cm/s)
-    float v_VL = convertMotorRpmToWheelSpeedCmS(motor_rpm[0]); // VL 
-    float v_VR = convertMotorRpmToWheelSpeedCmS(motor_rpm[1]); // VR 
-    float v_HL = convertMotorRpmToWheelSpeedCmS(motor_rpm[2]); // HL 
-    float v_HR = convertMotorRpmToWheelSpeedCmS(motor_rpm[3]); // HR 
+    float v_VL = convertMotorRpmToWheelSpeedCmS(motor_rpm[0]); // VL
+    float v_VR = convertMotorRpmToWheelSpeedCmS(motor_rpm[1]); // VR
+    float v_HL = convertMotorRpmToWheelSpeedCmS(motor_rpm[2]); // HL
+    float v_HR = convertMotorRpmToWheelSpeedCmS(motor_rpm[3]); // HR
 
     static constexpr float s = 0.70710678f;  // √2/2
 
@@ -326,14 +326,14 @@ float systemlib::calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSiz
     const float blindDistThreshold = max(POS_BLIND_CM, minDist + 2.0f);
 
     // 1. Grundprüfung je Sensor
-    bool lowOk  = low.isCon  && (low.Peaks  > 0) 
+    bool lowOk  = low.isCon  && (low.Peaks  > 0)
                   && (low.Strenght >= getMinStrengthMdb(distLow))
-                  && (distLow  >= minDist) 
+                  && (distLow  >= minDist)
                   && (distLow  <= span + POS_MAX_OVERSHOOT_CM);
 
-    bool highOk = high.isCon && (high.Peaks > 0) 
+    bool highOk = high.isCon && (high.Peaks > 0)
                   && (high.Strenght >= getMinStrengthMdb(distHigh))
-                  && (distHigh >= minDist) 
+                  && (distHigh >= minDist)
                   && (distHigh <= span + POS_MAX_OVERSHOOT_CM);
 
     // 2. Blindbereich des Gegenübers
@@ -619,7 +619,7 @@ void systemlib::updateLine(){
         line_bool_array[i] = line_array[i]>LineSensorSchwelle[i];
         if(line_bool_array[i]){line_summe++;}
     }
-    
+
     if(line_summe > 1){
         float maxDistanz = -1.0f;
         float sensorA = 0.0f, sensorB = 0.0f;
@@ -813,7 +813,7 @@ void systemlib::setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, b
 
 void systemlib::setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break){
     bool Dir;
-    
+
     if (Speed<0){Dir=false;}
     else{Dir=true;}
 

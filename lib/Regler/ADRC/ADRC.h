@@ -51,48 +51,51 @@
 #include <Arduino.h>
 #include <math.h>
 
-enum class ADRCOrder : uint8_t {
-    FIRST  = 1,   // Strecke 1. Ordnung (z.B. Geschwindigkeit)
-    SECOND = 2    // Strecke 2. Ordnung (z.B. Winkel/Position)
+enum class ADRCOrder : uint8_t
+{
+    FIRST = 1, // Strecke 1. Ordnung (z.B. Geschwindigkeit)
+    SECOND = 2 // Strecke 2. Ordnung (z.B. Winkel/Position)
 };
 
-struct ADRCConfig {
+struct ADRCConfig
+{
     ADRCOrder order = ADRCOrder::SECOND;
 
-    float Ts = 0.001f;     // Nominelle/feste Abtastzeit [s] -- nur genutzt,
-                            // wenn update() OHNE dt-Argument aufgerufen wird
+    float Ts = 0.001f; // Nominelle/feste Abtastzeit [s] -- nur genutzt,
+                       // wenn update() OHNE dt-Argument aufgerufen wird
 
-    float dtMin = 1e-6f;    // untere Begrenzung fuer variables dt [s]
-                             // (verhindert Division/Instabilitaet bei dt=0)
-    float dtMax = 0.05f;    // obere Begrenzung fuer variables dt [s]
-                             // (verhindert ESO-Ueberschwinger bei Ausreissern,
-                             //  z.B. wenn der Loop mal blockiert hat;
-                             //  auf max. plausible Zykluszeit deines
-                             //  Hauptprogramms einstellen)
+    float dtMin = 1e-6f; // untere Begrenzung fuer variables dt [s]
+                         // (verhindert Division/Instabilitaet bei dt=0)
+    float dtMax = 0.05f; // obere Begrenzung fuer variables dt [s]
+                         // (verhindert ESO-Ueberschwinger bei Ausreissern,
+                         //  z.B. wenn der Loop mal blockiert hat;
+                         //  auf max. plausible Zykluszeit deines
+                         //  Hauptprogramms einstellen)
 
-    float wc  = 10.0f;     // Regler-Bandbreite [rad/s]
-    float wo  = 50.0f;     // Beobachter-Bandbreite [rad/s] (typ. 3-10x wc)
-    float b0  = 1.0f;      // Streckenverstaerkung (Schaetzwert)
+    float wc = 10.0f; // Regler-Bandbreite [rad/s]
+    float wo = 50.0f; // Beobachter-Bandbreite [rad/s] (typ. 3-10x wc)
+    float b0 = 1.0f;  // Streckenverstaerkung (Schaetzwert)
 
-    float uMin = -1.0f;    // untere Stellgroessengrenze
-    float uMax =  1.0f;    // obere Stellgroessengrenze
+    float uMin = -1.0f; // untere Stellgroessengrenze
+    float uMax = 1.0f;  // obere Stellgroessengrenze
 
-    bool angleMode = false;        // true: Regelgroesse ist ein Winkel [rad],
-                                    // Fehler wird auf [-pi, pi] gewrapped
+    bool angleMode = false; // true: Regelgroesse ist ein Winkel [rad],
+                            // Fehler wird auf [-pi, pi] gewrapped
 
-    bool useNonlinearESO = false;  // fal()-basierte ESO statt linearer ESO
-    bool useNonlinearLaw = false;  // fal()-basiertes Regelgesetz statt linearem PD
+    bool useNonlinearESO = false; // fal()-basierte ESO statt linearer ESO
+    bool useNonlinearLaw = false; // fal()-basiertes Regelgesetz statt linearem PD
 
-    float falAlpha1 = 0.5f;        // fal-Exponent fuer Lageanteil
-    float falAlpha2 = 0.25f;       // fal-Exponent fuer Geschw./Stoerungsanteil
-    float falDelta  = 0.01f;       // Breite der Linearisierungszone um 0
+    float falAlpha1 = 0.5f;  // fal-Exponent fuer Lageanteil
+    float falAlpha2 = 0.25f; // fal-Exponent fuer Geschw./Stoerungsanteil
+    float falDelta = 0.01f;  // Breite der Linearisierungszone um 0
 
-    float outputRateLimit = 0.0f;  // max. |du/dt| in Stellgroesse/s, 0 = aus
+    float outputRateLimit = 0.0f; // max. |du/dt| in Stellgroesse/s, 0 = aus
 };
 
-class ADRC {
+class ADRC
+{
 public:
-    explicit ADRC(const ADRCConfig& cfg = ADRCConfig());
+    explicit ADRC(const ADRCConfig &cfg = ADRCConfig());
 
     // Setzt den Regler + ESO-Zustaende zurueck. y0 = aktueller Messwert,
     // sinnvoll beim (Neu-)Start, damit der ESO nicht erst "einschwingen" muss.
@@ -112,8 +115,8 @@ public:
     void setBandwidths(float wc, float wo);
     void setB0(float b0);
     void setOutputLimits(float uMin, float uMax);
-    void setConfig(const ADRCConfig& cfg);
-    const ADRCConfig& getConfig() const { return cfg_; }
+    void setConfig(const ADRCConfig &cfg);
+    const ADRCConfig &getConfig() const { return cfg_; }
 
     // ESO-Zustaende auslesen (Diagnose/Tuning):
     //   Ordnung 1: z1 = geschaetzte Regelgroesse, z2 = geschaetzte Stoerung
@@ -133,7 +136,7 @@ private:
     float z3_ = 0.0f; // nur bei SECOND order genutzt
 
     float beta1_ = 0.0f, beta2_ = 0.0f, beta3_ = 0.0f; // ESO-Verstaerkungen
-    float kp_ = 0.0f, kd_ = 0.0f;                       // Regelgesetz-Verstaerkungen
+    float kp_ = 0.0f, kd_ = 0.0f;                      // Regelgesetz-Verstaerkungen
 
     float lastU_ = 0.0f;
 

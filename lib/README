@@ -1,10 +1,11 @@
-Hauptlib: system
+Hauptlib: systemlib
 -> Zugriff auf alle Sensorwerte und auf alle Aktuatoren
--> Parameter in Include
+-> Parameter in lib/include/params/ (Uebersicht: lib/include/include.md)
 
 Sublibs:
--> exakt 2 Dateien: .h und .cpp
--> eindeutige funktions namen
+-> exakt 2 Dateien: .h und .cpp (dazu .md)
+-> eindeutige Funktionsnamen
 -> give und set Funktionen
+-> Lebenszyklus: begin() / update() / calib()
 
-
+Regeln im Detail: docs/Coding_Rules.md

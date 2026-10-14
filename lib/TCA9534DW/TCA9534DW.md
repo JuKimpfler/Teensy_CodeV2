@@ -13,7 +13,7 @@ Dateien: `TCA9534DW.h`, `TCA9534DW.cpp`
 ### Instanziierung
 
 ```cpp
-TCA9534DW Motor_EXP(&Wire1, 0x20);
+TCA9534DW Exp_MotorB(&Wire1, 0x20);
 ```
 
 | Parameter | Bedeutung |
@@ -21,15 +21,15 @@ TCA9534DW Motor_EXP(&Wire1, 0x20);
 | `i2c` | Zeiger auf die `TwoWire`-Instanz |
 | `address` | I²C-Adresse `0x20`…`0x27`, per A0/A1/A2-Pins eingestellt |
 
-`Wire.begin()` muss vor `setup()` erfolgt sein.
+`Wire.begin()` muss vor `begin()` erfolgt sein.
 
 ### Richtung festlegen
 
 ```cpp
-expander.setup(true);   // alle 8 Pins als Eingang
-expander.setup(false);  // alle 8 Pins als Ausgang
+expander.begin(true);   // alle 8 Pins als Eingang
+expander.begin(false);  // alle 8 Pins als Ausgang
 
-expander.setup(true, true, false, false, false, false, false, false);
+expander.begin(true, true, false, false, false, false, false, false);
 //             pin0  pin1  pin2 ...   → true = Eingang, false = Ausgang
 ```
 
@@ -43,7 +43,7 @@ Die Richtung wird ins Configuration-Register `0x03` geschrieben
 | Input Port | `0x00` | `read()`, `readPin()` |
 | Output Port | `0x01` | `write()`, `writePin()` |
 | Polarity Inversion | `0x02` | *nicht genutzt* |
-| Configuration | `0x03` | `setup()` |
+| Configuration | `0x03` | `begin()` |
 
 ---
 
@@ -51,13 +51,14 @@ Die Richtung wird ins Configuration-Register `0x03` geschrieben
 
 | Funktion | Beschreibung |
 |---|---|
-| `void setup(bool Input)` | Alle Pins gemeinsam als Ein- (`true`) oder Ausgang (`false`) |
-| `void setup(bool pin0 … bool pin7)` | Richtung je Pin einzeln |
+| `void begin(bool Input)` | Alle Pins gemeinsam als Ein- (`true`) oder Ausgang (`false`) |
+| `void begin(bool pin0 … bool pin7)` | Richtung je Pin einzeln |
 | `void write(uint8_t value)` | Ganzes Ausgangsbyte schreiben, `_state` wird mitgeführt |
 | `void writePin(uint8_t pin, bool value)` | Einzelnes Bit in `_state` setzen und das ganze Byte schreiben |
 | `uint8_t read()` | Eingangsbyte lesen und in `_state` ablegen. `0xFF` (−1) wenn keine Daten |
 | `uint8_t readPin(uint8_t pin)` | Liest das Byte und gibt Bit `pin` zurück |
-| `bool getPinState(uint8_t pin) const` | Bit aus dem **zwischengespeicherten** `_state`, ohne I²C-Zugriff |
+| `void update()` | Eingangsport **einmal** lesen und merken (`_state = read()`). Bei Lesefehler gelten alle Pins als 1, wie bisher bei `readPin()` |
+| `bool givePinState(uint8_t pin) const` | Bit aus dem **zwischengespeicherten** `_state`, ohne I²C-Zugriff |
 
 **Wichtig:** `_state` wird sowohl von `write()` als auch von `read()`
 beschrieben. Ein Expander sollte deshalb entweder als reiner Ausgang oder als
@@ -65,36 +66,25 @@ reiner Eingang betrieben werden – bei gemischtem Betrieb überschreiben sich
 Ausgabezustand und Eingangsbild gegenseitig.
 
 **Performance:** `readPin()` löst pro Aufruf eine vollständige I²C-Transaktion
-aus. Für mehrere Pins besser einmal `read()` und danach `getPinState()`
-verwenden.
+aus (bei 100 kHz ≈ 0,4 ms). Für mehrere Pins immer einmal `update()` und danach
+`givePinState()` verwenden – so macht es `systemlib::readExpanders()`, siehe
+[Laufzeit_Optimierung.md](../../docs/Laufzeit_Optimierung.md).
 
 ---
 
 ## Verwendung im Projekt
 
-Vier Expander (siehe `systemlib.cpp`):
+Drei Expander am Teensy-Bus `Wire1` (siehe `systemlib.cpp`, Schaltplan Blatt 4):
 
-| Instanz | Bus | Adresse | Richtung | Zweck |
-|---|---|---|---|---|
-| `Motor_EXP` | `Wire1` | `0x20` | Ausgang | Motor-Richtung + Enable |
-| `Rand_EXP` | `Wire1` | `0x21` | Ausgang | frei/sonstiges |
-| `SW_EXP` | `I2C_SW` (`Wire`) | `0x22` | Eingang | Schalter |
-| `Button_EXP` | `Wire1` | `0x23` | Eingang | Taster → [fancyBTN](../fancyBTN/fancyBTN.md) |
+| Instanz | Adresse | Eingänge | Ausgänge |
+|---|---|---|---|
+| `Exp_MotorA` | `0x22` | `DIO4` Motor 1 und 2, `BLDC_DIO2` | Enable und Richtung Motor 1 (VL) und 2 (HL), Dribbler-Richtung |
+| `Exp_MotorB` | `0x20` | `SWITCH1` (P6), `BUTTON1` (P7), `DIO4` Motor 3 und 4 | Enable und Richtung Motor 3 (VR) und 4 (HR) |
+| `Exp_System` | `0x23` | `UART_DIO1`, `LINE_EN_T` (solange nicht getrieben) | `VMOT_EN`, `VDRIB_EN`, `LIGHT_BARRIER_EN`, `I2C_INTERCON_3V3_EN` |
 
-Die Bitzuordnung des Motor-Expanders kommt aus `enum.h`
-([Doku](../include/include.md)):
-
-| Konstante | Bit | Bedeutung |
-|---|---|---|
-| `MotorVL_P1` = 0 | 0 | Richtung vorne links |
-| `MotorVL_P2` = 1 | 1 | Enable vorne links |
-| `MotorVR_P1` = 2 / `_P2` = 3 | 2/3 | Richtung/Enable vorne rechts |
-| `MotorHL_P1` = 4 / `_P2` = 5 | 4/5 | Richtung/Enable hinten links |
-| `MotorHR_P1` = 6 / `_P2` = 7 | 6/7 | Richtung/Enable hinten rechts |
-
-> `systemlib::updateMotors()` baut das Ausgabebyte mit
-> `out |= (1 << (7 - i))` – die Bits werden also **gespiegelt** abgelegt.
-> Beim Nachmessen an der Hardware darauf achten.
+Die Bitzuordnung steht in `enum.h` ([Tabelle](../include/include.md)); Bit n ist Pin Pn, es wird nicht gespiegelt.
+`write()`/`writePin()` und `update()`/`read()` benutzen getrennte Register (`_outState` und `_state`): Ein Schreiben
+überschreibt nie den zwischengespeicherten Eingangszustand, den `givePinState()` liefert.
 
 ---
 
@@ -107,12 +97,12 @@ Die Bitzuordnung des Motor-Expanders kommt aus `enum.h`
 TCA9534DW out(&Wire, 0x20);
 TCA9534DW in (&Wire, 0x23);
 
-void setup() {
+void begin() {
     Wire.begin();
     Wire.setClock(400000);
 
-    out.setup(false);   // alle Ausgang
-    in.setup(true);     // alle Eingang
+    out.begin(false);   // alle Ausgang
+    in.begin(true);     // alle Eingang
 }
 
 void loop() {
@@ -120,8 +110,8 @@ void loop() {
     out.writePin(0, true);
 
     in.read();                      // ein I²C-Zugriff
-    bool b0 = in.getPinState(0);    // danach ohne Bus-Zugriff
-    bool b1 = in.getPinState(1);
+    bool b0 = in.givePinState(0);    // danach ohne Bus-Zugriff
+    bool b1 = in.givePinState(1);
 }
 ```
 
@@ -135,5 +125,5 @@ Testprogramm: `test/Test-TCA9534DW.cpp`
   daraus wird `0xFF`, was von einem gültigen „alle Pins high" nicht zu
   unterscheiden ist.
 - Schlägt das Lesen fehl, setzt `readPin()` `_state` auf `0xFF`. Ein
-  anschließendes `getPinState()` meldet dann für alle Pins `true`.
+  anschließendes `givePinState()` meldet dann für alle Pins `true`.
 - Das Polarity-Inversion-Register (`0x02`) wird nicht unterstützt.

@@ -38,14 +38,12 @@ zwei Dateien und `give`/`set`-Funktionen.
 |---|---|---|
 | `BNO` | [BNO055](../BNO055/BNO055.md) | `I2C_BNO` (`Wire`), `0x28` |
 | `ir_ring` | [IR_ring](../IR/README.md) | `I2C_IR` (`Wire`), `0x0A` |
-| `INA219_Main` | [INA219](../INA219/INA219.md) | `Wire1`, `0x40` |
-| `INA219_Motor` | INA219 | `Wire1`, `0x41` |
+| `INA219_Main` / `INA219_Motor` / `INA219_Drib` | [INA219](../INA219/INA219.md) | `I2C_TNS` (`Wire1`), `0x40` / `0x41` / `0x45`; Shunts in `params_system.h` |
 | `SRF08_vo/re/hi/li` | [SRF08](../SRF08/SRF08.md) | `I2C_US` (`Wire`), `0xE2/E4/E6/E8` |
-| `SW_EXP` | [TCA9534DW](../TCA9534DW/TCA9534DW.md) | `I2C_SW` (`Wire`), `0x22` |
-| `Motor_EXP` / `Rand_EXP` / `Button_EXP` | TCA9534DW | `Wire1`, `0x20` / `0x21` / `0x23` |
-| `ADC_Motor` | [ADC108S102](../ADC108S102/ADC108S102.md) | `SPI1`, CS 32 |
+| `Exp_MotorA` / `Exp_MotorB` / `Exp_System` | [TCA9534DW](../TCA9534DW/TCA9534DW.md) | `I2C_TNS` (`Wire1`), `0x22` / `0x20` / `0x23` |
+| `ADC_Motor` | [ADC108S102](../ADC108S102/ADC108S102.md) | `SPI`, CS Pin 30 |
 | `BTN1`…`BTN5` | [fancyBTN](../fancyBTN/fancyBTN.md) | – |
-| `PDS` | [PowerDebugger](../PDS/PDS.md) | `UART_DBG` (`Serial3`) |
+| `PDS` | [PowerDebugger](../PDS/PDS.md) | `UART_DBG` (`Serial1`) |
 | `communication` | [commlib](../commlib/commlib.md) | – |
 | `headingControllerA/P` | [ADRC](../Regler/ADRC/README.md) / [PID](../Regler/PID/README.md) | – |
 
@@ -64,7 +62,8 @@ zwei Dateien und `give`/`set`-Funktionen.
 | SRF08 `setJumpThreshold(...)` | `50` cm (alle vier) |
 | `setDebugTimeout(...)` | `5` ms |
 | `setupHeadingController(...)` | `true` → **ADRC** |
-| Expander-Richtung | `Motor_EXP`/`Rand_EXP` = Ausgang, `SW_EXP`/`Button_EXP` = Eingang |
+| Expander-Richtung | je Pin in `initExpanders()`: Motor-Enable/-Richtung und Freigaben = Ausgang, `SWITCH1`, `BUTTON1`, `DIO4` = Eingang |
+| `setMotorPower(...)` | `true` → `VMOT_EN` an, Antriebe freigegeben |
 | fancyBTN-Parameter | `(50, 6, 8, true)` → 100 ms Doppelklick, 3 s Long-Press, 8 ms Entprellung |
 
 ### Heading-Regler
@@ -79,7 +78,7 @@ bleibt gleich.
 | Parameter | Wert | Bedeutung |
 |---|---|---|
 | `order` | `SECOND` | Winkel = Strecke 2. Ordnung |
-| `Ts` | `0.005f` | nur Fallback (`TS_NOMINAL`), es wird mit echtem `dt` gerechnet |
+| `Ts` | `0.005f` | nur Fallback (`HDG_TS_NOMINAL_S`), es wird mit echtem `dt` gerechnet |
 | `dtMin` / `dtMax` | `1e-5f` / `0.03f` | 10 µs … 30 ms |
 | `wc` | `15.0f` | Reglerbandbreite – wie schnell ausgerichtet wird |
 | `wo` | `80.0f` | Beobachterbandbreite (≈ 5× `wc`) |
@@ -230,11 +229,11 @@ Bleibt nichts Brauchbares übrig, bleibt die letzte Position stehen und
 
 ### Tore
 
-Das Feld ist `POS_FIELD_X_CM` × `POS_FIELD_Y_CM` (182 × 243 cm, Wand zu Wand).
-An **beiden** Enden steht aber mittig ein Tor `POS_GOAL_DEPTH_CM` weit im Feld.
+Das Feld ist `FIELD_X_CM` × `FIELD_Y_CM` (182 × 243 cm, Wand zu Wand).
+An **beiden** Enden steht aber mittig ein Tor `FIELD_GOAL_DEPTH_CM` weit im Feld.
 Steht der Roboter davor, sieht der vordere bzw. hintere Sensor die
 **Torrückwand statt der Feldwand** — die Y-Achse ist dort um die Tortiefe
-kürzer, an beiden Enden zusammen also um `2 × POS_GOAL_DEPTH_CM`:
+kürzer, an beiden Enden zusammen also um `2 × FIELD_GOAL_DEPTH_CM`:
 
 ```
 y = 243  ┌───────┬───────────┬───────┐
@@ -252,15 +251,15 @@ Ob der Sensor Tor oder Wand trifft, sagt allein **X** — deshalb rechnet
 es nichts zu korrigieren) und daraus den Tor-Offset für Y.
 
 Die Torkante ist für den Radar kein scharfer Sprung: die Keule ist breiter als
-ein Punkt. Im Band `POS_GOAL_EDGE_CM` (± 12 cm) um die Kante wird deshalb
+ein Punkt. Im Band `FIELD_GOAL_EDGE_CM` (± 12 cm) um die Kante wird deshalb
 linear zwischen beiden Fällen geblendet — der Fehler bleibt damit unter der
 **halben** Tortiefe (max. 5 cm statt 10 cm) — und `Certainty` der Y-Achse fällt
 auf `POS_PLAUS_GOAL_EDGE` (0.5), weil eben nicht feststeht, was der Sensor
 gesehen hat. `PositionData.AtGoal` zeigt, ob die Korrektur greift.
 
 > Ist ein Tor bei euch eine **Nische in der Wand** (Feld dort länger statt
-> kürzer), einfach `POS_GOAL_DEPTH_CM` negativ eintragen — die Rechnung stimmt
-> genauso. `POS_GOAL_DEPTH_CM = 0` schaltet die Torkorrektur komplett ab.
+> kürzer), einfach `FIELD_GOAL_DEPTH_CM` negativ eintragen — die Rechnung stimmt
+> genauso. `FIELD_GOAL_DEPTH_CM = 0` schaltet die Torkorrektur komplett ab.
 
 ### Certainty
 
@@ -283,12 +282,12 @@ und fällt linear von `1` bei 0 ms auf `0` bei `POS_AGE_MAX_MS` (1000 ms). Bei
 einem Paar zählt der **ältere** der beiden Werte. Ein Sensor, der noch nie
 gemessen hat, liefert ein Alter von `millis()` und damit `Certainty` `0`.
 
-Alle Stellschrauben stehen in `params.h` unter *Positionsbestimmung aus den
+Alle Stellschrauben stehen in `params/params_position.h` (Feld: `params_field.h`) unter *Positionsbestimmung aus den
 Radarwerten*, *Feldgeometrie* und *Tore*. Dort sitzt auch `POS_RADAR_OFFSET_CM`: der Abstand vom
 Roboter-Mittelpunkt zur Sensorfläche, der auf jede Messung addiert wird, weil
-die Koordinaten ab Mittelpunkt zählen. **Noch nicht ausgemessen (0.0)** —
-solange dort `0` steht, ist die Position um genau diesen Betrag zur Wand hin
-verschoben.
+die Koordinaten ab Mittelpunkt zählen. Aktuell `2.0` cm — ob das
+nachgemessen ist, steht im Code nicht; stimmt der Wert nicht, ist die Position um genau
+den Fehler zur Wand hin verschoben.
 
 > Die Rechnung setzt voraus, dass der Roboter zum Feld ausgerichtet ist
 > (Heading-Regler), sonst schaut kein Sensor senkrecht auf seine Wand.
@@ -320,7 +319,7 @@ zurückschreiben. `setMotorData()` ruft direkt `updateMotors()` auf. Eine
 unbekannte ID liefert einen Datensatz mit `ID = 100`.
 
 `updateMotors()` schreibt die PWMs direkt am Teensy, die Richtungs-/Enable-Bits
-gesammelt über `Motor_EXP` und liest anschließend Drehzahl und Strom aller vier
+gesammelt über `Exp_MotorA`/`Exp_MotorB` (nur bei Änderung) und liest anschließend Drehzahl und Strom aller vier
 Antriebsmotoren vom `ADC_Motor`.
 
 ---

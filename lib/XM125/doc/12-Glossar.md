@@ -231,7 +231,7 @@ das Modul neu gestartet (Brown-Out, Reset).
 | **ms / s** | Zeitkonstanten in Millisekunden, `interFramePresenceTimeoutS` in Sekunden |
 | **"Counts"** | Projektinterne Bezeichnung für den unkalibrierten 0–255-Rohwert der Peak-Distanz — **keine** Einheit im Sinne des Datenblatts, siehe [07-Kalibrierung.md](07-Kalibrierung.md) |
 
-Projektweite Abkürzungen (aus [test/Coding_Rules.md](../../../test/Coding_Rules.md)):
+Projektweite Abkürzungen (aus [docs/Coding_Rules.md](../../../docs/Coding_Rules.md)):
 `Dir` = Direction, `Pos` = Position, `Calib` = Calibrate, `Var` = Variables,
 `US` = Ultraschall, `us` = Mikrosekunden, `ms` = Millisekunden,
 `DBG` = Debugger.

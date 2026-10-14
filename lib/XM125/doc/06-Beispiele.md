@@ -223,7 +223,7 @@ durcheinandergehen:
 3. Der Sketch empfiehlt am Ende die *günstigste* Kombination mit 20/20
    Treffern (möglichst wenig Signalqualität = kurze Messzeit, möglichst wenig
    Empfindlichkeit = wenig Fehlalarme). Diese Zahlen nach
-   [params.h](../../include/params.h) übertragen.
+   [params_radar.h](../../include/params/params_radar.h) übertragen.
 
 Ausgabeformat (Zahlen hier nur als Beispiel, nicht gemessen):
 

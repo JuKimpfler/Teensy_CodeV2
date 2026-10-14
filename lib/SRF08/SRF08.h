@@ -33,14 +33,14 @@
 // Einfach das Makro auf die Aufdruckadresse anwenden:
 //   SRF08_ADDR(0xE0) → 0x70
 //   SRF08_ADDR(0xE2) → 0x71  usw.
-#define SRF08_ADDR(hw8bit)   (static_cast<uint8_t>((hw8bit) >> 1))
+#define SRF08_ADDR(hw8bit) (static_cast<uint8_t>((hw8bit) >> 1))
 
 // ── Register ─────────────────────────────────────────────────────────────────
-static constexpr uint8_t SRF08_REG_CMD      = 0x00; ///< W: Befehl     | R: SW-Revision
-static constexpr uint8_t SRF08_REG_GAIN     = 0x01; ///< W: Gain       | R: Lichtsensor
-static constexpr uint8_t SRF08_REG_RANGE    = 0x02; ///< W: Range      | R: Echo1 High
-static constexpr uint8_t SRF08_REG_ECHO_H   = 0x02; ///< Echo 1 High Byte (Read)
-static constexpr uint8_t SRF08_REG_ECHO_L   = 0x03; ///< Echo 1 Low  Byte (Read)
+static constexpr uint8_t SRF08_REG_CMD = 0x00;    ///< W: Befehl     | R: SW-Revision
+static constexpr uint8_t SRF08_REG_GAIN = 0x01;   ///< W: Gain       | R: Lichtsensor
+static constexpr uint8_t SRF08_REG_RANGE = 0x02;  ///< W: Range      | R: Echo1 High
+static constexpr uint8_t SRF08_REG_ECHO_H = 0x02; ///< Echo 1 High Byte (Read)
+static constexpr uint8_t SRF08_REG_ECHO_L = 0x03; ///< Echo 1 Low  Byte (Read)
 
 // ── Befehle ───────────────────────────────────────────────────────────────────
 static constexpr uint8_t SRF08_CMD_RANGE_CM = 0x51; ///< Messung starten, Ergebnis in cm
@@ -48,51 +48,53 @@ static constexpr uint8_t SRF08_CMD_RANGE_IN = 0x50; ///< Messung starten, Ergebn
 static constexpr uint8_t SRF08_CMD_RANGE_US = 0x52; ///< Messung starten, Ergebnis in µs
 
 // Indikator: Sensor misst noch (SDA hochgezogen → 0xFF)
-static constexpr uint8_t SRF08_BUSY         = 0xFF;
+static constexpr uint8_t SRF08_BUSY = 0xFF;
 
 // ── Range-Register Presets ────────────────────────────────────────────────────
 // Berechnung: range_mm = (reg * 43) + 43
 // Wartezeit (ca.): time_ms = (2 * range_mm / 343) + 2
-static constexpr uint8_t SRF08_RANGE_1M  =  24; ///< ~1075 mm → ~8  ms Wartezeit
-static constexpr uint8_t SRF08_RANGE_2M  =  46; ///< ~2021 mm → ~14 ms Wartezeit
-static constexpr uint8_t SRF08_RANGE_3M  =  69; ///< ~3010 mm → ~20 ms Wartezeit
-static constexpr uint8_t SRF08_RANGE_4M  =  92; ///< ~3999 mm → ~25 ms Wartezeit
-static constexpr uint8_t SRF08_RANGE_6M  = 139; ///< ~6020 mm → ~37 ms Wartezeit
+static constexpr uint8_t SRF08_RANGE_1M = 24;  ///< ~1075 mm → ~8  ms Wartezeit
+static constexpr uint8_t SRF08_RANGE_2M = 46;  ///< ~2021 mm → ~14 ms Wartezeit
+static constexpr uint8_t SRF08_RANGE_3M = 69;  ///< ~3010 mm → ~20 ms Wartezeit
+static constexpr uint8_t SRF08_RANGE_4M = 92;  ///< ~3999 mm → ~25 ms Wartezeit
+static constexpr uint8_t SRF08_RANGE_6M = 139; ///< ~6020 mm → ~37 ms Wartezeit
 
 // ── Gain-Register Presets ─────────────────────────────────────────────────────
-static constexpr uint8_t SRF08_GAIN_MIN  =  0;  ///< Gain  94  – sehr kurze Zyklen
-static constexpr uint8_t SRF08_GAIN_LOW  = 10;  ///< Gain 133  – reflektive Umgebung
-static constexpr uint8_t SRF08_GAIN_MID  = 18;  ///< Gain 199  – guter Kompromiss (default)
-static constexpr uint8_t SRF08_GAIN_HIGH = 25;  ///< Gain 352  – normale Umgebung
-static constexpr uint8_t SRF08_GAIN_MAX  = 31;  ///< Gain 1025 – Werkseinstellung
+static constexpr uint8_t SRF08_GAIN_MIN = 0;   ///< Gain  94  – sehr kurze Zyklen
+static constexpr uint8_t SRF08_GAIN_LOW = 10;  ///< Gain 133  – reflektive Umgebung
+static constexpr uint8_t SRF08_GAIN_MID = 18;  ///< Gain 199  – guter Kompromiss (default)
+static constexpr uint8_t SRF08_GAIN_HIGH = 25; ///< Gain 352  – normale Umgebung
+static constexpr uint8_t SRF08_GAIN_MAX = 31;  ///< Gain 1025 – Werkseinstellung
 
 // ── Filter-Parameter (anpassbar zur Compile-Zeit) ─────────────────────────────
-static constexpr uint8_t  SRF08_MEDIAN_WINDOW  = 5;     ///< Median-Fenstergröße (ungerade!)
-static constexpr float    SRF08_EMA_ALPHA_DEF  = 0.30f; ///< EMA-Faktor (0=träge, 1=aus)
-static constexpr uint16_t SRF08_JUMP_DEF       = 40;    ///< Max. plausible Änderung [cm]
-static constexpr uint16_t SRF08_MIN_DIST_CM    = 3;     ///< Minimale Messdistanz
-static constexpr uint16_t SRF08_MAX_DIST_CM    = 600;   ///< Maximale Messdistanz
+static constexpr uint8_t SRF08_MEDIAN_WINDOW = 5;   ///< Median-Fenstergröße (ungerade!)
+static constexpr float SRF08_EMA_ALPHA_DEF = 0.30f; ///< EMA-Faktor (0=träge, 1=aus)
+static constexpr uint16_t SRF08_JUMP_DEF = 40;      ///< Max. plausible Änderung [cm]
+static constexpr uint16_t SRF08_MIN_DIST_CM = 3;    ///< Minimale Messdistanz
+static constexpr uint16_t SRF08_MAX_DIST_CM = 600;  ///< Maximale Messdistanz
 
 // ── Timeout ───────────────────────────────────────────────────────────────────
-static constexpr uint32_t SRF08_POLL_TIMEOUT_MS = 20;   ///< Max. Polling-Fenster nach Ranging-Window
+static constexpr uint32_t SRF08_POLL_TIMEOUT_MS = 20; ///< Max. Polling-Fenster nach Ranging-Window
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  MedianFilter  —  Sliding-Window Median über N Samples
 // ═════════════════════════════════════════════════════════════════════════════
-struct MedianFilter {
+struct MedianFilter
+{
     uint16_t buf[SRF08_MEDIAN_WINDOW] = {};
-    uint8_t  idx  = 0;
-    bool     full = false;
+    uint8_t idx = 0;
+    bool full = false;
 
-    void     reset();
-    void     push(uint16_t value);
+    void reset();
+    void push(uint16_t value);
     uint16_t compute() const; ///< sortiert intern auf Stack-Kopie → kein Seiteneffekt
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  SRF08State  —  Interner Sensor-Zustand
 // ═════════════════════════════════════════════════════════════════════════════
-enum class SRF08State : uint8_t {
+enum class SRF08State : uint8_t
+{
     UNINITIALIZED, ///< begin() wurde nicht aufgerufen
     IDLE,          ///< Bereit für neue Messung
     RANGING,       ///< Ping gesendet, warte auf Echo
@@ -101,7 +103,8 @@ enum class SRF08State : uint8_t {
 // ═════════════════════════════════════════════════════════════════════════════
 //  SRF08Sensor  —  Einzelner Sensor
 // ═════════════════════════════════════════════════════════════════════════════
-class SRF08Sensor {
+class SRF08Sensor
+{
 public:
     /**
      * @param addr7bitOr8bit  7-bit Adresse (z.B. 0x70) ODER 8-bit SRF08-Adresse (z.B. 0xE0)
@@ -110,11 +113,11 @@ public:
      */
     SRF08Sensor(uint8_t addr7bitOr8bit,
                 uint8_t rangeReg = SRF08_RANGE_2M,
-                uint8_t gainReg  = SRF08_GAIN_MID);
+                uint8_t gainReg = SRF08_GAIN_MID);
 
     // ── Setup ──────────────────────────────────────────────────────────────
     /** Initialisiert Sensor, schreibt Range & Gain. Gibt false zurück wenn nicht erreichbar. */
-    bool begin(TwoWire& wire = Wire);
+    bool begin(TwoWire &wire = Wire);
 
     /** Range-Register direkt setzen (0–255). */
     void setRange(uint8_t rangeReg);
@@ -136,18 +139,18 @@ public:
     bool update();
 
     // ── Datenzugriff ───────────────────────────────────────────────────────
-    uint16_t   getDistance()    const { return _filtered;  } ///< Gefilterter Wert [cm]
-    uint16_t   getRaw()         const { return _raw;       } ///< Letzter Rohwert   [cm]
-    uint8_t    getLightLevel()  const { return _light;     } ///< Lichtsensor [0–255]
-    uint32_t   getCycleTimeMs() const { return _cycleTime; } ///< Letzte Messzeit   [ms]
-    SRF08State getState()       const { return _state;     }
-    uint8_t    getAddress()     const { return _addr;      }
-    bool       hasValidData()   const { return _hasData;   }
+    uint16_t getDistance() const { return _filtered; }     ///< Gefilterter Wert [cm]
+    uint16_t getRaw() const { return _raw; }               ///< Letzter Rohwert   [cm]
+    uint8_t getLightLevel() const { return _light; }       ///< Lichtsensor [0–255]
+    uint32_t getCycleTimeMs() const { return _cycleTime; } ///< Letzte Messzeit   [ms]
+    SRF08State getState() const { return _state; }
+    uint8_t getAddress() const { return _addr; }
+    bool hasValidData() const { return _hasData; }
 
     // ── Filter-Konfiguration ───────────────────────────────────────────────
     void resetFilters();
-    void setEMAAlpha(float alpha)         { _emaAlpha = constrain(alpha, 0.0f, 1.0f); }
-    void setJumpThreshold(uint16_t cm)    { _jumpThreshold = cm; }
+    void setEMAAlpha(float alpha) { _emaAlpha = constrain(alpha, 0.0f, 1.0f); }
+    void setJumpThreshold(uint16_t cm) { _jumpThreshold = cm; }
 
     // ── I²C Adresse ändern ─────────────────────────────────────────────────
     /**
@@ -159,35 +162,35 @@ public:
     bool changeI2CAddress(uint8_t newAddr7or8bit);
 
 private:
-    uint8_t     _addr;
-    uint8_t     _rangeReg;
-    uint8_t     _gainReg;
-    TwoWire*    _wire;
-    SRF08State  _state;
+    uint8_t _addr;
+    uint8_t _rangeReg;
+    uint8_t _gainReg;
+    TwoWire *_wire;
+    SRF08State _state;
 
-    elapsedMillis _timer;        ///< Läuft seit startRanging()
-    uint32_t      _rangingWindow; ///< Berechnete Wartezeit [ms]
-    uint32_t      _cycleTime;
+    elapsedMillis _timer;    ///< Läuft seit startRanging()
+    uint32_t _rangingWindow; ///< Berechnete Wartezeit [ms]
+    uint32_t _cycleTime;
 
     // ── Filterzustand ──────────────────────────────────────────────────────
     MedianFilter _median;
-    float        _ema;
-    bool         _emaInit;
-    float        _emaAlpha;
-    uint16_t     _jumpThreshold;
-    uint16_t     _lastValid;
+    float _ema;
+    bool _emaInit;
+    float _emaAlpha;
+    uint16_t _jumpThreshold;
+    uint16_t _lastValid;
 
     // ── Ausgabe ────────────────────────────────────────────────────────────
     uint16_t _raw;
     uint16_t _filtered;
-    uint8_t  _light;
-    bool     _hasData;
+    uint8_t _light;
+    bool _hasData;
 
     // ── Interne Helfer ─────────────────────────────────────────────────────
-    void     _writeReg(uint8_t reg, uint8_t val);
-    uint8_t  _readByte(uint8_t reg);
+    void _writeReg(uint8_t reg, uint8_t val);
+    uint8_t _readByte(uint8_t reg);
     uint16_t _readWord(uint8_t reg);
     uint32_t _calcRangingWindow() const;
-    bool     _isBusy();                    ///< Pollt Register 0 auf 0xFF
+    bool _isBusy(); ///< Pollt Register 0 auf 0xFF
     uint16_t _applyFilters(uint16_t raw);
 };

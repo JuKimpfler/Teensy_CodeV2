@@ -4,15 +4,17 @@
  * @brief Initializes the TCA9534DW port expander by setting all pins as inputs.
  * @note This function needs the Wire to be already set up and initialized.
  */
-void TCA9534DW::setup(bool Input)
+void TCA9534DW::begin(bool Input)
 {
-    if(Input){
+    if (Input)
+    {
         _i2c->beginTransmission(_address);
         _i2c->write(0x03); // Configuration register
         _i2c->write(0xFF); // Set all pins as inputs
         _i2c->endTransmission();
     }
-    else{
+    else
+    {
         _i2c->beginTransmission(_address);
         _i2c->write(0x03); // Configuration register
         _i2c->write(0x00); // Set all pins as outputs
@@ -24,9 +26,8 @@ void TCA9534DW::setup(bool Input)
  * @brief Initializes the TCA9534DW port expander by setting the direction of each pin.
  * @note This function needs the Wire to be already set up and initialized.
  */
-void TCA9534DW::setup(bool pin0, bool pin1, bool pin2, bool pin3, bool pin4, bool pin5, bool pin6, bool pin7)
+void TCA9534DW::begin(bool pin0, bool pin1, bool pin2, bool pin3, bool pin4, bool pin5, bool pin6, bool pin7)
 {
-
     _i2c->beginTransmission(_address);
     _i2c->write(0x03); // Configuration register
     uint8_t config = (pin0) | (pin1 << 1) | (pin2 << 2) | (pin3 << 3) |
@@ -44,7 +45,7 @@ void TCA9534DW::write(uint8_t value)
     _i2c->write(0x01); // Output port register
     _i2c->write(value);
     _i2c->endTransmission();
-    _state = value;
+    _outState = value;
 }
 
 /**
@@ -53,13 +54,13 @@ void TCA9534DW::write(uint8_t value)
 void TCA9534DW::writePin(uint8_t pin, bool value)
 {
     if (value)
-        _state |= (1 << pin);
+        _outState |= (1 << pin);
     else
-        _state &= ~(1 << pin);
+        _outState &= ~(1 << pin);
 
     _i2c->beginTransmission(_address);
     _i2c->write(0x01); // Output port register
-    _i2c->write(_state);
+    _i2c->write(_outState);
     _i2c->endTransmission();
 }
 
@@ -81,6 +82,15 @@ uint8_t TCA9534DW::read()
     }
 
     return -1; // Return -1 if no data is available
+}
+
+/**
+ * @brief Reads the input port once and keeps it for givePinState().
+ * @note A failed read sets all pins to 1 (same as readPin() did). One bus transaction, no matter how many pins are asked afterwards.
+ */
+void TCA9534DW::update()
+{
+    _state = read();
 }
 
 /**

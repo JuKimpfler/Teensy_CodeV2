@@ -6,7 +6,7 @@ in der [systemlib](../systemlib/systemlib.md) nur noch drei Aufrufe übrig
 bleiben.
 
 Der eigentliche Treiber liegt in [XM125](../XM125/XM125.md), alle Zahlenwerte
-in [params.h](../include/include.md).
+in [params_radar.h](../include/include.md).
 
 ---
 
@@ -26,16 +26,17 @@ void loop() {
 | Position | Index | Einbau |
 |---|---|---|
 | `RadarVo` | 0 | vorne |
-| `RadarLi` | 1 | links |
+| `RadarRe` | 1 | rechts |
 | `RadarHi` | 2 | hinten |
-| `RadarRe` | 3 | rechts |
+| `RadarLi` | 3 | links |
 
 Die Reihenfolge entspricht `RADAR_SENSOR_ADDRS` in `params.h`.
 
 ```cpp
 struct RadarData
 {
-    uint16_t Dist;      // Rohwert von Peak 0 ("Counts", NICHT mm — siehe XM125.md)
+    uint16_t Dist;      // Rohwert von Peak 0 ("Counts", NICHT mm — siehe XM125.md), alpha-beta-gefiltert
+    uint16_t DistRaw;   // derselbe Wert ungefiltert (für die Positionsfusion)
     int32_t  Strenght;  // Signalstärke von Peak 0
     uint8_t  Peaks;     // Anzahl erkannter Peaks (0 = nichts gesehen)
     bool     isCon;     // true = Sensor antwortet und ist konfiguriert
@@ -86,7 +87,7 @@ gewartet:
 | Schritt | Aufgabe | Zeit im Zyklus |
 |---|---|---|
 | `_startRound()` | `startMeasurement()` bei allen Sensoren — sie messen dadurch zeitgleich | 1 Registerschreibzugriff je Sensor |
-| `update()` | je Zyklus einmal `isMeasuring()` je laufendem Sensor; fertige Ergebnisse übernehmen; ist die Runde komplett, sofort die nächste starten | höchstens 1 Registerlesezugriff je Sensor |
+| `update()` | erst ab `RADAR_POLL_START_FRACTION` (70 %) der zuletzt beobachteten Rundendauer je Zyklus einmal `isMeasuring()` je laufendem Sensor, davor kein Buszugriff; fertige Ergebnisse übernehmen; ist die Runde komplett, sofort die nächste starten | höchstens 1 Registerlesezugriff je Sensor, in den ersten ~70 % der Runde keiner |
 | `_takeResult(idx)` | `getLastResult()` → `RadarData` | 0 |
 | `_measureFailed(idx)` | Fehlschläge zählen, nach `RADAR_MAX_CONSEC_FAILURES` (5) den Sensor als tot markieren (`isCon = false`) | 0 |
 | `_retrySetup(idx)` | Wiederanlauf eines toten Sensors — **blockiert** bis ~2 s, deshalb höchstens alle `RADAR_REINIT_INTERVAL_MS` | selten |

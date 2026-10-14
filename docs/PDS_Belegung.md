@@ -17,8 +17,8 @@ python tools/sync_pds.py
 
 | Bereich | Wer | Wie |
 |---|---|---|
-| **0 – 25** | `systemlib::setupPDS()` | fest verdrahtet, siehe unten |
-| 26 – 31 | frei | Reserve für weitere Systemwerte |
+| **0 – 30** | `systemlib::setupPDS()` | fest verdrahtet, siehe unten |
+| 31 | frei | Reserve für weitere Systemwerte |
 | **32 – 193** | der Sketch | automatisch über `PDS.plot()` / `PDS.track()` |
 | 194 – 199 | `PDS.enableSelfDiagnostics()` | optional, belegt die letzten 6 Kanäle |
 
@@ -27,14 +27,14 @@ Dass der Sketch erst bei 32 anfängt, macht `-DPDS_AUTO_CHANNEL_BASE=32` in
 `PDS.plot()` im Sketch bei Kanal 0 anfangen und die Systemwerte
 überschreiben.**
 
-Die festen Nummern 0–25 sind kein Selbstzweck: die Overlays in
+Die festen Nummern 0–30 sind kein Selbstzweck: die Overlays in
 [`lib/PDS/channel_config.h`](../lib/PDS/channel_config.h) (Feld-Draufsicht,
 Akkuanzeige, Wertetabelle) zeigen auf Kanal**nummern**, nicht auf Namen. Wer
 hier etwas verschiebt, muss `channel_config.h` nachziehen.
 
 ---
 
-## Read – Systemkanäle 0 – 25
+## Read – Systemkanäle 0 – 30
 
 Gebunden in `systemlib::setupPDS()`
 ([systemlib.cpp](../lib/systemlib/systemlib.cpp)). `PDS.bind()` merkt sich nur
@@ -54,21 +54,26 @@ den Zeiger, die Werte holt die Bibliothek danach selbst 100×/s ab.
 | `9` | Zykluszeit | ms | `cycleTime` |
 | `10` | Zykluszeit_us | us | `cycleTime_us` |
 | `11` | Ball_Dist | – | `IR_Distance` – **s. o.** |
-| `12` | Radar_Vo | Counts | `Radar[RadarVo].Dist` |
-| `13` | Radar_Li | Counts | `Radar[RadarLi].Dist` |
-| `14` | Radar_Hi | Counts | `Radar[RadarHi].Dist` |
-| `15` | Radar_Re | Counts | `Radar[RadarRe].Dist` |
+| `12` | Radar_Vo | Counts | `Radar[RadarVo].Strenght` (Signalstärke) |
+| `13` | Radar_Li | Counts | `Radar[RadarLi].Strenght` |
+| `14` | Radar_Hi | Counts | `Radar[RadarHi].Strenght` |
+| `15` | Radar_Re | Counts | `Radar[RadarRe].Strenght` |
 | `16` | Pos_X | cm | `Position.X` → Feld-Overlay |
 | `17` | Pos_Y | cm | `Position.Y` → Feld-Overlay |
-| `18` | Pos_Guete | – | `Position.Certainty` (0 … 1) |
-| `19` | Pos_AmTor | – | `Position.AtGoal` |
-| `20` | Motor_VL | % | `MoDataVL.Speed` |
-| `21` | Motor_VR | % | `MoDataVR.Speed` |
-| `22` | Motor_HL | % | `MoDataHL.Speed` |
-| `23` | Motor_HR | % | `MoDataHR.Speed` |
-| `24` | Motor_DR | % | `MoDataDR.Speed` |
-| `25` | Start | – | `startSwitch` |
-| `26`–`31` | *frei* | | Reserve für systemlib |
+| `18` | Pos_certanty_x | – | `Position.XValid` |
+| `19` | Pos_certanty_y | – | `Position.YValid` |
+| `20` | Motor_VL | % | `MoDataVL.Speed_real` |
+| `21` | Motor_VR | % | `MoDataVR.Speed_real` |
+| `22` | Motor_HL | % | `MoDataHL.Speed_real` |
+| `23` | Motor_HR | % | `MoDataHR.Speed_real` |
+| `24` | Motor_VL (Dir) | % | `MoDataVL.Dir_real` |
+| `25` | Motor_VR (Dir) | % | `MoDataVR.Dir_real` |
+| `26` | Motor_HL (Dir) | % | `MoDataHL.Dir_real` |
+| `27` | Motor_HR (Dir) | % | `MoDataHR.Dir_real` |
+| `28` | Start | – | `startSwitch` |
+| `29` | CPU_Temp | °C | `giveCpuTemp()`, 1 Hz nachgeführt. Dauerhaft über ~80 °C: Takt senken (`board_build.f_cpu` in `platformio.ini`); bei 90 °C hält der Chip an |
+| `30` | Dribbler_I | mA | `giveDribblerCurrent()`, INA219 0x45, 10 Hz |
+| `31` | *frei* | | Reserve für systemlib |
 
 > **Radar:** `Dist` ist der Rohwert des XM125 in „Counts", **nicht**
 > Millimeter – siehe [RadarArray.h](../lib/RadarArray/RadarArray.h).

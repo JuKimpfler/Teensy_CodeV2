@@ -25,7 +25,7 @@
 */
 
 #include "pmw3389.h"
- 
+
 #define BEGIN_COM                                                              \
   digitalWriteFast(_ChipSelectPin, LOW);                                                      \
   delayMicroseconds(1)
@@ -38,7 +38,7 @@
 
 const unsigned short firmware_length = 4094;
 const unsigned char firmware_data[] PROGMEM =
-		{
+        {
     0x01, 0xe8, 0xba, 0x26, 0x0b, 0xb2, 0xbe, 0xfe, 0x7e, 0x5f, 0x3c, 0xdb,
     0x15, 0xa8, 0xb3, 0xe4, 0x2b, 0xb5, 0xe8, 0x53, 0x07, 0x6d, 0x3b, 0xd1,
     0x20, 0xc2, 0x06, 0x6f, 0x3d, 0xd9, 0x11, 0xa0, 0xc2, 0xe7, 0x2d, 0xb9,
@@ -384,7 +384,7 @@ const unsigned char firmware_data[] PROGMEM =
 };
 
 //================================================================================
-//	PMW3389 Motion Sensor Module
+//  PMW3389 Motion Sensor Module
 
 // bascially do nothing here
 PMW3389::PMW3389(SPIClass *spi, int ChipSelectPin)

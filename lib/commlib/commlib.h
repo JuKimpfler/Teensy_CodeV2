@@ -1,8 +1,4 @@
-
-
-#ifndef commlib_h
-#define commlib_h
-
+#pragma once
 struct RobotDataCom
 {
     float positionX;
@@ -18,7 +14,7 @@ struct RobotDataCom
 class commlib
 {
 public:
-    RobotDataCom getOtherFlush() const;
+    RobotDataCom giveOtherFlush() const;
     void setOwnFlush(float x, float y, float ballAngle, float ballDistance, float goalAngle, float goalDistance);
     void sendOwnFlush();
 
@@ -26,5 +22,3 @@ private:
     RobotDataCom otherFlush_;
     RobotDataCom ownFlush_;
 };
-
-#endif

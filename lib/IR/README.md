@@ -10,7 +10,7 @@ Die Firmware für den IR-Ring ist unter [Firmware/IR-Ring](https://git.markdorf-
 ***
 ## Beispielcode
 
-Im folgenden ein kurzes Beispielprogramm. Ein ausführliches Codebeispiel, das alle implementierten Features zeigt, findet sich unter [Examples](/examples).
+Im folgenden ein kurzes Beispielprogramm. Ein ausführliches Codebeispiel, das alle implementierten Features zeigt, findet sich im Examples-Ordner des ursprünglichen Projekts (nicht Teil dieses Repos).
 
 ``` c++
 #include <Arduino.h>

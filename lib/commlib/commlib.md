@@ -7,7 +7,7 @@ Dateien: `commlib.h`, `commlib.cpp`, `communication.md` (Protokollnotizen)
 
 > **Status: Gerüst.** Struktur und API stehen, das eigentliche Senden und
 > Empfangen ist noch nicht implementiert (`sendOwnFlush()` und der
-> Empfangspfad sind TODO). `getOtherFlush()` liefert derzeit immer den
+> Empfangspfad sind TODO). `giveOtherFlush()` liefert derzeit immer den
 > uninitialisierten Puffer zurück.
 
 ---
@@ -38,7 +38,7 @@ festgelegt – im Projekt werden Winkel sonst durchgängig in Grad (±180°, sie
 |---|---|
 | `void setOwnFlush(float x, float y, float ballAngle, float ballDistance, float goalAngle, float goalDistance)` | Füllt den eigenen Sendepuffer. Sendet noch nicht. |
 | `void sendOwnFlush()` | Verschickt den Sendepuffer. **TODO – aktuell leer.** |
-| `RobotDataCom getOtherFlush() const` | Liefert die zuletzt empfangenen Daten des Partnerroboters. **TODO – es wird nichts empfangen.** |
+| `RobotDataCom giveOtherFlush() const` | Liefert die zuletzt empfangenen Daten des Partnerroboters. **TODO – es wird nichts empfangen.** |
 
 ---
 
@@ -60,9 +60,9 @@ RobotDataCom partner = sys.giveOtherRobotData();
 
 Damit die Bibliothek nutzbar wird, fehlen im Wesentlichen:
 
-1. **Transportweg festlegen.** Kandidaten laut Pinbelegung
-   ([`enum.h`](../include/include.md)): `UART1_TNS_TX/RX` (Pins 24/25) oder
-   `UART2_TNS_TX/RX` (Pins 28/29), alternativ ein Funkmodul.
+1. **Transportweg festlegen.** Auf der Platine V2.0 ist der Link zum
+   ESP32-S3 `UART_ESP` (`Serial6`, Pins 24/25); Kamera-UARTs sind `UART_CAM1/2`, siehe
+   [`enum.h`](../include/include.md).
 2. **Paketformat.** Sinnvollerweise analog zum
    [Power Debug System](../PDS/PDS.md): Magic-Header + Payload, damit sich
    der Empfänger resynchronisieren kann.

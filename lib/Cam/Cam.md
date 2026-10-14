@@ -5,9 +5,9 @@ Blob-Höhe und rechnet den Kamerawinkel in das **Feld-Koordinatensystem** um.
 
 Dateien: `Cam.h`, `Cam.cpp`
 
-> **Status:** Die IMU-Kopplung ist noch nicht verdrahtet – in `Update()` steht
-> `int imu_deg = 0;` fest. Solange liefert `give_Angle()` denselben Wert wie
-> `give_Angle_Cam()`. Siehe [Bekannte Baustellen](#bekannte-baustellen).
+> **Status:** Die IMU-Kopplung ist noch nicht verdrahtet – in `update()` steht
+> `int imu_deg = 0;` fest. Solange liefert `giveAngle()` denselben Wert wie
+> `giveAngleCam()`. Siehe [Bekannte Baustellen](#bekannte-baustellen).
 
 ---
 
@@ -16,19 +16,17 @@ Dateien: `Cam.h`, `Cam.cpp`
 ### Initialisierung
 
 ```cpp
-CamC cam;
-cam.init(Serial1, 115200);
+Cam cam;
+cam.begin(Serial1, 115200);
 ```
 
 | Parameter | Default | Bedeutung |
 |---|---|---|
-| `ser` | `Serial1` | HardwareSerial-Port, an dem die OpenMV hängt |
+| `ser` | – (Pflicht) | HardwareSerial-Port, an dem die OpenMV hängt: `UART_CAM1` (`Serial2`) oder `UART_CAM2` (`Serial7`) |
 | `baud` | `115200` | Baudrate; muss zur OpenMV-Firmware passen |
 
-Im Projekt sind für die Kamera die Pins `TNS_TX_PIXY_RX = 14` /
-`TNS_RX_PIXY_TX = 15` vorgesehen (siehe [`enum.h`](../include/include.md)) –
-das entspricht `Serial3` auf dem Teensy 4.0. Der Default `Serial1` ist also
-ggf. anzupassen.
+Auf der Platine V2.0 hängen die beiden Kameras an `UART_CAM1` (`Serial2`, Pins 7/8) und `UART_CAM2`
+(`Serial7`, Pins 28/29), siehe [`enum.h`](../include/include.md). Es gibt keinen Standardport mehr, `Serial1` gehört dem PDS.
 
 ### Vorzeichen-Konvention
 
@@ -37,7 +35,7 @@ cam.setSign(true);   // field = imu + cam   (Default)
 cam.setSign(false);  // field = imu - cam
 ```
 
-Richtig eingestellt ist es, wenn `give_Angle()` **konstant bleibt**, während
+Richtig eingestellt ist es, wenn `giveAngle()` **konstant bleibt**, während
 sich der Roboter auf der Stelle dreht.
 
 ### Compile-Zeit-Konstanten
@@ -45,7 +43,7 @@ sich der Roboter auf der Stelle dreht.
 | Konstante | Wert | Bedeutung |
 |---|---|---|
 | `LINE_BUF_SIZE` | `96` | max. Zeilenlänge; längere Zeilen werden verworfen |
-| Gültigkeitsfenster in `Update()` | `250 ms` | älter → kein Update des Feldwinkels |
+| Gültigkeitsfenster in `update()` | `250 ms` | älter → kein Update des Feldwinkels |
 | Default in `isValid()` | `200 ms` | max. Alter, das noch als „gültig" zählt |
 
 ---
@@ -79,15 +77,15 @@ Ein Datensatz wird nur übernommen, wenn **alle vier Felder** vorhanden sind.
 
 | Funktion | Beschreibung |
 |---|---|
-| `void init(HardwareSerial& ser, uint32_t baud)` | UART öffnen, Parser zurücksetzen |
-| `void Update()` | **Muss zyklisch aufgerufen werden.** Pollt den UART, parst Zeilen und berechnet den Feldwinkel |
-| `float give_Angle() const` | Tor-Peilung im Feld-KS, Grad, −180…180 |
-| `float give_Angle_Cam() const` | Winkel relativ zur Kamera, Grad |
-| `int give_BlobH() const` | Blob-Höhe in Pixeln |
+| `void begin(HardwareSerial& ser, uint32_t baud)` | UART öffnen, Parser zurücksetzen |
+| `void update()` | **Muss zyklisch aufgerufen werden.** Pollt den UART, parst Zeilen und berechnet den Feldwinkel |
+| `float giveAngle() const` | Tor-Peilung im Feld-KS, Grad, −180…180 |
+| `float giveAngleCam() const` | Winkel relativ zur Kamera, Grad |
+| `int giveBlobH() const` | Blob-Höhe in Pixeln |
 | `bool isValid(uint32_t maxAgeMs = 200) const` | `true`, wenn zuletzt ein gültiger Datensatz jünger als `maxAgeMs` empfangen wurde |
 | `void setSign(bool usePlus)` | Vorzeichen-Konvention, siehe oben |
 
-`Update()` blockiert nicht: es wird nur gelesen, was im UART-Puffer liegt.
+`update()` blockiert nicht: es wird nur gelesen, was im UART-Puffer liegt.
 Bei 20–60 Hz Kamerarate reicht ein Aufruf pro Hauptschleifen-Durchlauf.
 
 ---
@@ -97,18 +95,18 @@ Bei 20–60 Hz Kamerarate reicht ein Aufruf pro Hauptschleifen-Durchlauf.
 ```cpp
 #include "Cam.h"
 
-CamC cam;
+Cam cam;
 
 void setup() {
-    cam.init(Serial3, 115200);
+    cam.begin(Serial3, 115200);
 }
 
 void loop() {
-    cam.Update();
+    cam.update();
 
     if (cam.isValid()) {
-        float bearing = cam.give_Angle();   // -180..180
-        int   height  = cam.give_BlobH();
+        float bearing = cam.giveAngle();   // -180..180
+        int   height  = cam.giveBlobH();
     }
 }
 ```
@@ -117,13 +115,13 @@ void loop() {
 
 ## Bekannte Baustellen
 
-- **IMU nicht angebunden:** `Update()` verwendet `imu_deg = 0`. Für die
+- **IMU nicht angebunden:** `update()` verwendet `imu_deg = 0`. Für die
   eigentliche Funktion muss hier der Heading aus
   [`systemlib`](../systemlib/systemlib.md) (`giveOrbitDir()`) bzw. dem
   [BNO055](../BNO055/BNO055.md) eingesetzt werden. Der `#include "BNO055.h"`
   in `Cam.cpp` ist dafür schon vorhanden, wird aber nicht genutzt.
 - Das Feld `goal` wird geparst und gespeichert, aber nach außen nicht
   zugänglich gemacht (kein Getter).
-- `CamC::wrap180` ist deklariert, die Implementierung liegt als freie Funktion
+- `Cam::wrap180` ist deklariert, die Implementierung liegt als freie Funktion
   `wrap180f` in der `.cpp`.
 - `Cam` wird derzeit nicht von `systemlib` eingebunden.

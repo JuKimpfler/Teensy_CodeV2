@@ -50,36 +50,38 @@
 #include <Arduino.h>
 #include <math.h>
 
-struct PIDConfig {
-    float Ts = 0.001f;      // Nominelle/feste Abtastzeit [s] -- nur genutzt,
-                             // wenn update() OHNE dt-Argument aufgerufen wird
+struct PIDConfig
+{
+    float Ts = 0.001f; // Nominelle/feste Abtastzeit [s] -- nur genutzt,
+                       // wenn update() OHNE dt-Argument aufgerufen wird
 
-    float dtMin = 1e-6f;    // untere Begrenzung fuer variables dt [s]
-    float dtMax = 0.05f;    // obere Begrenzung fuer variables dt [s]
-                             // (auf max. plausible Zykluszeit deines
-                             //  Hauptprogramms einstellen)
+    float dtMin = 1e-6f; // untere Begrenzung fuer variables dt [s]
+    float dtMax = 0.05f; // obere Begrenzung fuer variables dt [s]
+                         // (auf max. plausible Zykluszeit deines
+                         //  Hauptprogramms einstellen)
 
-    float Kp = 0.5f;        // Proportionalverstaerkung
-    float Ki = 0.0f;        // Integralverstaerkung [1/s]
-    float Kd = 0.0f;        // Differentialverstaerkung [s]
+    float Kp = 0.5f; // Proportionalverstaerkung
+    float Ki = 0.0f; // Integralverstaerkung [1/s]
+    float Kd = 0.0f; // Differentialverstaerkung [s]
 
-    float uMin = -1.0f;     // untere Stellgroessengrenze
-    float uMax =  1.0f;     // obere Stellgroessengrenze
+    float uMin = -1.0f; // untere Stellgroessengrenze
+    float uMax = 1.0f;  // obere Stellgroessengrenze
 
     bool angleMode = true; // true: Regelgroesse ist ein Winkel [rad],
-                             // Fehler wird auf [-pi, pi] gewrapped
+                           // Fehler wird auf [-pi, pi] gewrapped
 
     bool derivativeOnMeasurement = true; // vermeidet Derivative Kick bei
-                                          // Sollwertspruengen (empfohlen)
-    float Tf = 0.01f;       // Zeitkonstante Tiefpassfilter D-Anteil [s],
-                             // 0 = kein Filter (nicht empfohlen, rauschanfaellig)
+                                         // Sollwertspruengen (empfohlen)
+    float Tf = 0.01f;                    // Zeitkonstante Tiefpassfilter D-Anteil [s],
+                                         // 0 = kein Filter (nicht empfohlen, rauschanfaellig)
 
     float outputRateLimit = 0.0f; // max. |du/dt| in Stellgroesse/s, 0 = aus
 };
 
-class PID {
+class PID
+{
 public:
-    explicit PID(const PIDConfig& cfg = PIDConfig());
+    explicit PID(const PIDConfig &cfg = PIDConfig());
 
     // Setzt Regler + Integrator/Ableitungszustand zurueck. y0 = aktueller
     // Messwert, sinnvoll beim (Neu-)Start bzw. nach einer Zwangspause.
@@ -97,8 +99,8 @@ public:
 
     void setGains(float Kp, float Ki, float Kd);
     void setOutputLimits(float uMin, float uMax);
-    void setConfig(const PIDConfig& cfg);
-    const PIDConfig& getConfig() const { return cfg_; }
+    void setConfig(const PIDConfig &cfg);
+    const PIDConfig &getConfig() const { return cfg_; }
 
     // Einzelanteile auslesen (Diagnose/Tuning):
     float getPTerm() const { return pTerm_; }

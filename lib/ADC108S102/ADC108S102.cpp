@@ -5,13 +5,15 @@
 /**
  * @brief Initializes the ADC108S102 by setting the chip select pin and starting SPI communication.
  */
-void ADC108S102::init()
+void ADC108S102::begin()
 {
-    if(!useBinExp){
+    if (!useBinExp)
+    {
         pinMode(csPin, OUTPUT);
         digitalWrite(csPin, HIGH);
     }
-    else{
+    else
+    {
         pinMode(csPinBin1, OUTPUT);
         pinMode(csPinBin2, OUTPUT);
         pinMode(csPinBin3, OUTPUT);
@@ -21,11 +23,12 @@ void ADC108S102::init()
     }
 }
 
-DecoderAddress ADC108S102::getAddressForLowPin(uint8_t pin) {
-
+DecoderAddress ADC108S102::getAddressForLowPin(uint8_t pin)
+{
     DecoderAddress addr;
 
-    if (pin > 7) {
+    if (pin > 7)
+    {
         return addr;
     }
 
@@ -41,9 +44,9 @@ DecoderAddress ADC108S102::getAddressForLowPin(uint8_t pin) {
  *
  * @param channel The channel number to read (0-7).
  */
-int16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
+int16_t ADC108S102::read(uint8_t channel, bool MOT_ADC, bool ADC_Mode)
 {
-    int result_raw=0;
+    int result_raw = 0;
     if (channel > 7)
         return 0; // Invalid channel
 
@@ -51,12 +54,14 @@ int16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 
     int16_t result = 0;
 
-    if(!useBinExp){
+    if (!useBinExp)
+    {
         digitalWriteFast(csPin, LOW);
         result = _spi->transfer16(comandlist[channel]);
         digitalWriteFast(csPin, HIGH);
     }
-    else{
+    else
+    {
         digitalWrite(csPinBin1, getAddressForLowPin(csPort).A0);
         digitalWrite(csPinBin2, getAddressForLowPin(csPort).A1);
         digitalWrite(csPinBin3, getAddressForLowPin(csPort).A2);
@@ -68,31 +73,40 @@ int16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 
     _spi->endTransaction();
 
-    result_raw = map(result,0,4060,0,3300);
+    result_raw = map(result, 0, 4060, 0, 3300);
 
-    if(MOT_ADC && ADC_Mode){
-        if(result_raw > 1700){
+    if (MOT_ADC && ADC_Mode)
+    {
+        if (result_raw > 1700)
+        {
             result = (result_raw - 1650) * (6000 - 0) / (3300 - 1650) + 0;
         }
-        else if(result_raw < 1600){
-            result = ((result_raw - 1650) * (6000 - 0) / (0 - 1650) + 0)*-1;
+        else if (result_raw < 1600)
+        {
+            result = ((result_raw - 1650) * (6000 - 0) / (0 - 1650) + 0) * -1;
         }
-        else{
+        else
+        {
             result = 0;
         }
     }
-    else if(MOT_ADC && !ADC_Mode){
-        if(result_raw > 1650){
-            result = map(result_raw,1650,3300,0,6000);
+    else if (MOT_ADC && !ADC_Mode)
+    {
+        if (result_raw > 1650)
+        {
+            result = map(result_raw, 1650, 3300, 0, 6000);
         }
-        else if(result_raw <= 1650){
-            result = map(result_raw,1650,0,0,6000);
+        else if (result_raw <= 1650)
+        {
+            result = map(result_raw, 1650, 0, 0, 6000);
         }
-        else{
+        else
+        {
             result = 0;
         }
     }
-    else{
+    else
+    {
         result = result_raw;
     }
 
@@ -106,10 +120,12 @@ int16_t ADC108S102::read(uint8_t channel,bool MOT_ADC,bool ADC_Mode)
 void ADC108S102::read(uint16_t (&values)[8])
 {
     _spi->beginTransaction(SPISettings(14000000, MSBFIRST, SPI_MODE3));
-    if(!useBinExp){
+    if (!useBinExp)
+    {
         digitalWriteFast(csPin, LOW);
     }
-    else{
+    else
+    {
         digitalWrite(csPinBin1, getAddressForLowPin(csPort).A0);
         digitalWrite(csPinBin2, getAddressForLowPin(csPort).A1);
         digitalWrite(csPinBin3, getAddressForLowPin(csPort).A2);
@@ -118,10 +134,12 @@ void ADC108S102::read(uint16_t (&values)[8])
     {
         values[i] = _spi->transfer16(comandlist[i]);
     }
-    if(!useBinExp){
+    if (!useBinExp)
+    {
         digitalWriteFast(csPin, HIGH);
     }
-    else{
+    else
+    {
         digitalWrite(csPinBin1, getAddressForLowPin(7).A0);
         digitalWrite(csPinBin2, getAddressForLowPin(7).A1);
         digitalWrite(csPinBin3, getAddressForLowPin(7).A2);

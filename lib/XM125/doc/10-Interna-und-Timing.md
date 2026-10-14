@@ -269,7 +269,7 @@ Weitere Stellschrauben, wenn es noch schneller sein muss:
   eine Roboter-Regelschleife heißt das: **Kalibrierung nur in `setup()` bzw.
   in klar definierten Pausen** — und ein Wiederanlaufversuch für einen toten
   Sensor gedrosselt, siehe `RADAR_REINIT_INTERVAL_MS` in
-  [params.h](../../include/params.h).
+  [params_radar.h](../../include/params/params_radar.h).
 - **Nicht ISR-tauglich.** Die Methoden nutzen `Wire` und `millis()`/`delay()`
   — Aufrufe aus einem Interrupt-Handler sind nicht zulässig.
 - **Keine Bus-Arbitrierung zwischen Instanzen.** Mehrere `XM125*`-Objekte am

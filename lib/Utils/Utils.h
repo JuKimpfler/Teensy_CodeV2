@@ -1,11 +1,11 @@
 #pragma once
 #include <Arduino.h>
 
-class Utilslib
+class Utils
 {
-    public:
-        bool Range(float Value , float min , float max); // is in Range
-        float AMap( float Angle ); // Angle maping to +- 180°
+public:
+    bool inRange(float Value, float min, float max); // is in Range
+    float wrapAngle(float Angle);                    // Angle maping to +- 180°
 };
 
-extern Utilslib Util;
+extern Utils Util;

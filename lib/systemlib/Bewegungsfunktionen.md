@@ -50,7 +50,7 @@ Die Position kommt aus `calculatePosition()` (Odometrie + Radar, siehe Kalibrier
 
 | Größe | Einheit / Bedeutung |
 |---|---|
-| Position X, Y | cm, Feldkoordinaten. X = kurze Achse (0 … `POS_FIELD_X_CM`), Y = lange Achse (0 … `POS_FIELD_Y_CM`) |
+| Position X, Y | cm, Feldkoordinaten. X = kurze Achse (0 … `FIELD_X_CM`), Y = lange Achse (0 … `FIELD_Y_CM`) |
 | Speed | Prozent, 0 … 100 |
 | Andrehwinkel | Grad, `int16_t`, Soll-Heading des Roboters (gleiches System wie der BNO, ±180°) |
 | Fahrtrichtung | Grad, 0° = in +Y-Richtung, positive Winkel drehen gegen den Uhrzeigersinn (+X entspricht −90°) |
@@ -135,7 +135,7 @@ Wiederholte Aufrufe mit unveränderten Werten setzen den Verlauf fort. `Andrehwi
 
 ## 5. Speed-Pattern
 
-Die Nummern stehen als `#define SPattern_…` in `params.h`. Ein unbekanntes Pattern fährt konstant mit `MaxSpeed`.
+Die Nummern stehen als `enum SPattern` in `params/params_motion.h`. Ein unbekanntes Pattern fährt konstant mit `MaxSpeed`.
 
 | Nr. | Name | Verlauf f(p) | Verhalten |
 |---|---|---|---|
@@ -251,7 +251,7 @@ Nach dem letzten Punkt: `ArrayFinished`, bei `loop = true` stattdessen weiter be
 
 ## 7. Pfadplanung (`moveToPointAvoid`)
 
-Fährt zu einem Ziel und weicht dabei Ball und Partner aus. Der A*-Pathfinder (`lib/pathfinder`) plant auf einem Raster von 90 × 120 Zellen (eine Zelle ≈ 2 cm), die Gewichte stehen in `weights.cpp` (255 = gesperrt).
+Fährt zu einem Ziel und weicht dabei Ball und Partner aus. Der A*-Pathfinder ([`lib/Pathfinder`](../Pathfinder/Pathfinder.md)) plant auf einem Raster von 90 × 120 Zellen (eine Zelle ≈ 2 cm), die Gewichte stehen in `params/params_pathmap.h` (255 = gesperrt).
 
 ### Funktionen
 
@@ -275,19 +275,19 @@ uint32_t givePathTimeUs();     // Rechenzeit der letzten Planung [µs]
 ### Ablauf
 
 1. **A\*** plant von der aktuellen Position zum Ziel, mit Ball und Partner als Hindernis.
-2. Der Zellpfad wird **vereinfacht**: von jedem Punkt so weit voraus, wie eine freie Gerade möglich ist (höchstens `PF_LOS_MAX_CELLS` Zellen). Die Gerade läuft nie durch teurere Zellen als der A\*-Weg.
+2. Der Zellpfad wird **vereinfacht**: von jedem Punkt so weit voraus, wie eine freie Gerade möglich ist (höchstens `PATH_LOS_MAX_CELLS` Zellen). Die Gerade läuft nie durch teurere Zellen als der A\*-Weg.
 3. Die Wegpunkte werden zu **ArrayPoints** und vom [Punkt-Array](#6-punkt-array-routen) gefahren. Der letzte Punkt ist das exakte Ziel, nicht die Zellmitte.
-4. Das **Speed-Pattern gilt für die ganze Strecke:** Zwischenpunkte fahren konstant mit dem Tempo, das das Pattern an dieser Stelle der Strecke hat, und werden ohne Halt durchfahren (`PF_PASS_CM`). Erst das letzte Teilstück fährt das Pattern selbst, mit Zielkreis und Winkel.
+4. Das **Speed-Pattern gilt für die ganze Strecke:** Zwischenpunkte fahren konstant mit dem Tempo, das das Pattern an dieser Stelle der Strecke hat, und werden ohne Halt durchfahren (`PATH_PASS_CM`). Erst das letzte Teilstück fährt das Pattern selbst, mit Zielkreis und Winkel.
 
 ### Wann wird neu geplant?
 
 | Auslöser | Verhalten |
 |---|---|
 | Neues Ziel, Pattern, MaxSpeed oder MinSpeed | Sofort, das Pattern beginnt neu |
-| Hindernis hat sich um mehr als `PF_OBST_MOVE_CM` (8 cm) bewegt oder ist neu / weg | Sofort |
-| Zyklisch alle `PF_REPLAN_MS` (300 ms), solange der Roboter unterwegs ist | Das Pattern läuft dabei durch und startet nicht neu |
+| Hindernis hat sich um mehr als `PATH_OBST_MOVE_CM` (8 cm) bewegt oder ist neu / weg | Sofort |
+| Zyklisch alle `PATH_REPLAN_MS` (300 ms), solange der Roboter unterwegs ist | Das Pattern läuft dabei durch und startet nicht neu |
 | Am Ziel angekommen | Keine Neuplanung |
-| Planung gescheitert | Nächster Versuch erst nach `PF_REPLAN_FAIL_MS` (1000 ms) |
+| Planung gescheitert | Nächster Versuch erst nach `PATH_REPLAN_FAIL_MS` (1000 ms) |
 
 `Andrehwinkel` darf sich ändern, ohne dass neu geplant wird.
 
@@ -299,14 +299,13 @@ Der Reihe nach wird versucht:
 2. ohne Ball (das Ziel liegt oft im Ballbereich),
 3. ohne Hindernisse (der Start liegt im Sperrbereich).
 
-Scheitert auch das, gilt `PF_FALLBACK_DIRECT`: `1` = geradeaus per `moveToPoint()` fahren, `0` = stehen bleiben und den Winkel halten. `givePathFound()` ist dann `false`.
+Scheitert auch das, gilt `PATH_FALLBACK_DIRECT`: `1` = geradeaus per `moveToPoint()` fahren, `0` = stehen bleiben und den Winkel halten. `givePathFound()` ist dann `false`.
 
 ### Einbinden ins Projekt
 
-1. `lib/pathfinder/` aus dem Pathfinding-Projekt nach `lib/` kopieren.
-2. `weights.cpp` nach `src/` legen. Aus `include/` wird nichts kompiliert. Nicht zusätzlich per `#include` einbinden.
-3. Die Compiler-Flags `-O2` und `build_type = release` übernehmen.
-4. Ohne Bibliothek baut das Projekt trotzdem, `moveToPointAvoid()` fährt dann geradeaus. Mit `-DPF_AVAILABLE=1` oder `-DPF_AVAILABLE=0` in den `build_flags` kann man es erzwingen.
+Nichts zu tun: `lib/Pathfinder/` gehört zum Projekt, `systemlib::initialize()` ruft `AStar.begin()` auf. Raster,
+Kosten und Gewichtskarten stehen in `lib/include/params/` (`params_path.h`, `params_pathmap.h`). Ohne `-O2` wird die
+Suche deutlich langsamer, die Flags in `platformio.ini` also beibehalten.
 
 ### Rechenzeit
 
@@ -319,7 +318,7 @@ Gemessen auf dem Teensy (912 MHz, `-O2`), pro `findPath`-Aufruf:
 | 99 % | ≤ 18 ms |
 | Maximum | 35 ms |
 
-Bei 600 MHz mit etwa dem 1,5-Fachen rechnen. Scheitert der erste Versuch, kann es bis zu dreimal so lange dauern. Die Positionsfusion rechnet mit `micros()` und begrenzt `dt` auf 50 ms, ein Stillstand durch die Planung bleibt also ohne Folgen. Bei Bedarf `PF_REPLAN_MS` erhöhen.
+Bei 600 MHz mit etwa dem 1,5-Fachen rechnen. Scheitert der erste Versuch, kann es bis zu dreimal so lange dauern. Die Positionsfusion rechnet mit `micros()` und begrenzt `dt` auf 50 ms, ein Stillstand durch die Planung bleibt also ohne Folgen. Bei Bedarf `PATH_REPLAN_MS` erhöhen.
 
 ### Hinweise
 
@@ -328,27 +327,30 @@ Bei 600 MHz mit etwa dem 1,5-Fachen rechnen. Scheitert der erste Versuch, kann e
 
 ---
 
-## 8. Parameter in `params.h`
+## 8. Parameter
 
-Alle Werte sind optional, die Defaults stehen in `systemlib.cpp` (außer den `SPattern_*`-Nummern).
+Alle Werte stehen in `lib/include/params/` (`params_motion.h`, `params_path.h`), Übersicht in
+[include.md](../include/include.md). Die Zahlen nur dort ändern, diese Tabelle nennt den Stand beim Schreiben.
 
-| Define | Default | Bedeutung |
+| Name | Default | Bedeutung |
 |---|---|---|
-| `SPattern_Linear` … `SPattern_Pulse` | 0 … 18 | Pattern-Nummern, siehe Abschnitt 5 |
+| `SPattern_Linear` … `SPattern_Pulse` | 0 … 18 | Pattern-Nummern (`enum SPattern`), siehe Abschnitt 5 |
 | `MOVE_ARRIVE_CM` | 4.0 | Zielkreis: darin Speed 0 |
 | `MOVE_ARRIVE_HYST_CM` | 3.0 | Hysterese, ab der nachgefahren wird |
-| `MOVE_MAX_ACCEL_PCT_S` | 600 | Max. Speed-Zunahme in %/s, 0 = aus |
-| `MOVE_RESTART_GAP_MS` | 300 | Aufrufpause, ab der das Pattern neu startet |
-| `MOVE_TARGET_TOL_CM` | 0.0 | Zieländerung bis zu diesem Wert startet das Pattern nicht neu |
+| `MOVE_MAX_ACCEL_PCT_S` | 10000 | Max. Speed-Zunahme in %/s, 0 = aus |
+| `MOVE_RESTART_GAP_MS` | 200 | Aufrufpause, ab der das Pattern neu startet |
+| `MOVE_TARGET_TOL_CM` | 3.0 | Zieländerung bis zu diesem Wert startet das Pattern nicht neu |
+| `MOVE_WALL_MARGIN_CM` / `MOVE_WALL_SPEED_PCT` | 20.0 / 5 | `moveDir()`: näher als das an der Wand wird der Speed begrenzt |
 | `ARRAY_MAX_POINTS` | 16 | Max. Punkte in der Liste (ca. 14 Byte je Punkt) |
 | `ARRAY_HEADING_TOL_DEG` | 5.0 | Winkeltoleranz zum Weiterschalten, 0 = nicht prüfen |
-| `PF_REPLAN_MS` | 300 | Neuplanung solange unterwegs |
-| `PF_REPLAN_FAIL_MS` | 1000 | Neuplanung nach gescheiterter Planung |
-| `PF_OBST_MOVE_CM` | 8.0 | Hindernisbewegung, die sofort neu plant |
-| `PF_PASS_CM` | 12 | Durchfahrradius der Zwischenpunkte |
-| `PF_LOS_MAX_CELLS` | 80 | Vorausschau beim Vereinfachen (Zellen) |
-| `PF_FALLBACK_DIRECT` | 1 | Ohne Weg: 1 = geradeaus, 0 = stehen |
-| `PF_AVAILABLE` | automatisch | 1 = Pathfinder eingebunden, 0 = nicht |
+| `PATH_REPLAN_MS` | 300 | Neuplanung solange unterwegs |
+| `PATH_REPLAN_FAIL_MS` | 1000 | Neuplanung nach gescheiterter Planung |
+| `PATH_OBST_MOVE_CM` | 8.0 | Hindernisbewegung, die sofort neu plant |
+| `PATH_PASS_CM` | 12 | Durchfahrradius der Zwischenpunkte |
+| `PATH_LOS_MAX_CELLS` | 80 | Vorausschau beim Vereinfachen (Zellen) |
+| `PATH_FALLBACK_DIRECT` | `true` | Ohne Weg: `true` = geradeaus, `false` = stehen |
+
+Raster, Schrittkosten und Heap-Größe des A* (`PATH_GRID_*`, `PATH_COST_*`, `PATH_HEAP_CAPACITY`): [Pathfinder.md](../Pathfinder/Pathfinder.md).
 
 ---
 
@@ -440,8 +442,8 @@ Robot.startArray();
 | Array schaltet nicht weiter | Winkel liegt außerhalb `ARRAY_HEADING_TOL_DEG` (Heading-Regler läuft? `updateHeadingController()`), oder Zielkreis nicht erreicht (Hindernis, Wand). Zum Test Toleranz auf 0 setzen |
 | Array läuft nach dem Ende nicht neu | Gewollt. `startArray(true)` oder `loop = true` |
 | Array fährt gar nicht | Zustand ist `ArrayIdle`: `startArray()` fehlt. `updateArray()` nicht vergessen |
-| `moveToPointAvoid` fährt immer geradeaus | `PF_AVAILABLE` ist 0 (Bibliothek nicht gefunden), oder `givePathFound()` ist `false` (kein Weg, Fallback aktiv) |
-| Ruckeln alle 300 ms | Neuplanung dauert zu lange: `givePathTimeUs()` prüfen, `PF_REPLAN_MS` erhöhen, Ball/Partner-Position glätten |
+| `moveToPointAvoid` fährt immer geradeaus | `givePathFound()` ist `false` (kein Weg, Fallback `PATH_FALLBACK_DIRECT` aktiv) oder die Position ist unbekannt |
+| Ruckeln alle 300 ms | Neuplanung dauert zu lange: `givePathTimeUs()` prüfen, `PATH_REPLAN_MS` erhöhen, Ball/Partner-Position glätten |
 | Anlauf zu träge / zu ruppig | `MOVE_MAX_ACCEL_PCT_S` anpassen (0 = keine Begrenzung) |
 
 ---
@@ -452,5 +454,5 @@ Robot.startArray();
 - Zwischen den Punkten einer Route hält der Roboter an (Haltepunkte). Durchfahren ohne Halt gibt es nur bei Wegpunkten der Pfadplanung (`PassCm > 0`).
 - Es gibt keinen Timeout pro Punkt: Steckt der Roboter fest, schaltet die Liste nicht von selbst weiter.
 - Die Pfadplanung kennt nur Ball und einen weiteren Roboter. Ein zweiter Gegner wird nicht umfahren.
-- Eine Zelle des Pathfinder-Rasters ist ≈ 2 cm, die Abstände zu Hindernissen kommen aus der Gewichtskarte in `weights.cpp`.
+- Eine Zelle des Pathfinder-Rasters ist ≈ 2 cm, die Abstände zu Hindernissen kommen aus der Gewichtskarte in `params/params_pathmap.h`.
 - Die Genauigkeit der Fahrt hängt direkt von der Positionsbestimmung ab. Kalibrierung: siehe *Kalibrier-Checkliste Positionsbestimmung*.

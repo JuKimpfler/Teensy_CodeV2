@@ -31,7 +31,7 @@ voraus, dass der vorherige stimmt:
 |---|---|---|---|
 | 1 | [XM125_Calib_Module.cpp](../examples/XM125_Calib_Module.cpp) | Modul-interne Kalibrierung: läuft sie durch, wie lange dauert sie, hält sie im Warmbetrieb? (Teil A) | — (Diagnose) |
 | 2 | [XM125_Calib_Alignment.cpp](../examples/XM125_Calib_Alignment.cpp) | Mechanische Ausrichtung: Sensor auf maximale Echostärke drehen | Montage |
-| 3 | [XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp) | Empfindlichkeit: `signalQuality` × `thresholdSensitivity`, dazu `maxProfile` und `reflectorShape` | `RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY` in [params.h](../../include/params.h) |
+| 3 | [XM125_Calib_Sensitivity.cpp](../examples/XM125_Calib_Sensitivity.cpp) | Empfindlichkeit: `signalQuality` × `thresholdSensitivity`, dazu `maxProfile` und `reflectorShape` | `RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY` in [params_radar.h](../../include/params/params_radar.h) |
 | 4 | [XM125_Calib_Crosstalk.cpp](../examples/XM125_Calib_Crosstalk.cpp) | Übersprechen: stören sich die gleichzeitig messenden Sensoren? | Montage / Empfindlichkeit (kein Parameter) |
 
 Alle vier konfigurieren mit den Werten aus `params.h` und kalibrieren wie
@@ -463,15 +463,15 @@ bool setupRadar(XM125Distance& radar) {
 
 **Was daraus folgt:** Solange der Umrechnungsfaktor unbekannt ist, dürfen
 `getPeakDistanceMm()`-Werte nirgends als Distanz interpretiert werden. Die
-Positionsbibliothek rechnet aktuell mit einer **Annahme** um
-([lib/positioning/positioning.h](../../positioning/positioning.h)):
+Positionsbestimmung (`radarAxisMeasurements()` in
+[lib/systemlib/systemlib.cpp](../../systemlib/systemlib.cpp)) rechnet aktuell mit einer **Annahme** um:
 
 ```cpp
-distanz_cm = rawOffset_cm + raw * rawScale_cm;   // Default: 20.0 + raw * 0.902
+distanz_cm = DistRaw / 10.0f + POS_RADAR_OFFSET_CM;   // Rohwert wird wie Millimeter behandelt
 ```
 
-Die Defaults `20.0 cm` / `0.902 cm` entsprechen genau Hypothese **H1** unten
-(255 Counts spannen `startMm = 200 … endMm = 2500` auf) — **unbestätigt**.
+`POS_RADAR_OFFSET_CM` steht in `lib/include/params/params_position.h`. Ob der Rohwert wirklich
+Millimeter ist, zeigen die Messungen unten — **unbestätigt**.
 
 ## B.2 Schritt 0: erst das komplette 32-Bit-Wort ansehen
 
@@ -536,9 +536,9 @@ weder H1 noch H2 linear passen.
   keine Wand direkt hinter dem Reflektor innerhalb von `endMm`.
 - **Referenzebene festlegen und aufschreiben:** ab welchem Punkt wird
   gemessen — Antennenoberfläche des XM125? Vorderkante des Gehäuses? Das ist
-  später der `rawOffset`-Anteil. In der Positionsbibliothek entspricht das dem
-  Konfigurationswert `radarRingRadius_cm` (Sensorstirn → Roboterzentrum,
-  Default 9,0 cm) — beides nicht doppelt einrechnen!
+  später der `rawOffset`-Anteil. In `systemlib` entspricht das dem
+  Parameter `POS_RADAR_OFFSET_CM` (Sensorfläche → Roboterzentrum, siehe
+  `params_position.h`) — beides nicht doppelt einrechnen!
 - Sensor fest fixiert, **nicht** in der Hand halten.
 
 ## B.5 Messreihen
@@ -647,11 +647,11 @@ uint32_t XM125Distance::getPeakDistanceMm(uint8_t idx) const {
 **Nicht vergessen — zwei Stellen müssen zusammenpassen:**
 
 1. `getPeakDistanceMm()` in dieser Library.
-2. `Positioning::Config::rawOffset_cm` / `rawScale_cm` bzw.
-   `rawCountToCm()` in [lib/positioning](../../positioning/positioning.md).
-   Wird die Umrechnung hier eingebaut, sollte die Positionsbibliothek
-   entweder die neuen Werte übernehmen oder direkt `getPeakDistanceMm()`
-   verwenden, statt selbst zu skalieren — sonst wird zweimal skaliert.
+2. Die Umrechnung `DistRaw / 10.0f + POS_RADAR_OFFSET_CM` in
+   `radarAxisMeasurements()` ([lib/systemlib](../../systemlib/systemlib.md)).
+   Wird die Umrechnung hier eingebaut, muss `systemlib` entweder die neuen
+   Werte übernehmen oder direkt `getPeakDistanceMm()` verwenden, statt selbst
+   zu skalieren — sonst wird zweimal skaliert.
 3. Die Warnungen im Header und in dieser Doku entfernen bzw. durch die
    gemessenen Werte plus Messdatum ersetzen.
 
@@ -756,7 +756,7 @@ läuft monoton mit der Distanz mit?
 **3. Empfindlichkeit** — `XM125_Calib_Sensitivity`
 
 - [ ] Modus `s` bei 2,5 m gefahren
-- [ ] `RADAR_SIGNAL_QUALITY` / `RADAR_THRESHOLD_SENSITIVITY` in [params.h](../../include/params.h) eingetragen
+- [ ] `RADAR_SIGNAL_QUALITY` / `RADAR_THRESHOLD_SENSITIVITY` in [params_radar.h](../../include/params/params_radar.h) eingetragen
 - [ ] An einem zweiten Sensor gegengeprüft (Exemplarstreuung)
 
 **4. Übersprechen** — `XM125_Calib_Crosstalk`
@@ -772,5 +772,5 @@ läuft monoton mit der Distanz mit?
 - [ ] Reihe B (anderer Messbereich, `CAL_END_MM` ändern) → H1 vs. H2 entschieden
 - [ ] Regression gerechnet, Residuen geprüft
 - [ ] `getPeakDistanceMm()` angepasst, Warnungen im Header entfernt
-- [ ] `lib/positioning` (`rawOffset_cm`/`rawScale_cm`) konsistent nachgezogen
+- [ ] `radarAxisMeasurements()` in `systemlib` (`DistRaw / 10.0f`, `POS_RADAR_OFFSET_CM`) konsistent nachgezogen
 - [ ] Validierungsmessung an ungenutzten Distanzen bestanden

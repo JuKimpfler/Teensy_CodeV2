@@ -13,17 +13,17 @@ Dateien: `Utils.h`, `Utils.cpp`
 Keine. Die globale Instanz wird in `Utils.cpp` definiert:
 
 ```cpp
-Utilslib Util;
+Utils Util;
 ```
 
-und im Header als `extern Utilslib Util;` bekanntgemacht. Es muss also nichts
+und im Header als `extern Utils Util;` bekanntgemacht. Es muss also nichts
 instanziiert oder initialisiert werden – nur `#include <Utils.h>`.
 
 ---
 
 ## API
 
-### `bool Range(float Value, float min, float max)`
+### `bool inRange(float Value, float min, float max)`
 
 Bereichsprüfung, Grenzen **inklusive**:
 
@@ -34,7 +34,7 @@ return (Value >= min && Value <= max);
 Verwendet z.B. in `systemlib::setDBGChannel()`, um die freien Debug-Kanäle
 0–20 abzusichern.
 
-### `float AMap(float Angle)`
+### `float wrapAngle(float Angle)`
 
 Bildet einen Winkel auf **±180°** ab:
 
@@ -45,16 +45,16 @@ return fmod(Angle + 180.0f, 360.0f) - 180.0f;
 Damit werden im ganzen Projekt Winkeldifferenzen normalisiert, z.B.:
 
 ```cpp
-BNO_eulerZ   = Util.AMap(BNO.eulHeading());              // 0..360 → ±180
-BNO_OrbitDir = Util.AMap(BNO_eulerZ - BNO_calibration);  // Differenz normalisieren
-IR_Angle     = Util.AMap(IR_rawAngle - BNO_OrbitDir);    // Ball ins Roboter-KS
+BNO_eulerZ   = Util.wrapAngle(BNO.eulHeading());              // 0..360 → ±180
+BNO_OrbitDir = Util.wrapAngle(BNO_eulerZ - BNO_calibration);  // Differenz normalisieren
+IR_Angle     = Util.wrapAngle(IR_rawAngle - BNO_OrbitDir);    // Ball ins Roboter-KS
 ```
 
 > **Achtung – funktioniert nur für `Angle >= -180`:** `fmod` in C übernimmt
 > das Vorzeichen des Dividenden. Für `Angle < -180` bleibt der Wert deshalb
 > unverändert stehen, statt gewrappt zu werden:
 >
-> | Eingabe | `AMap()` liefert | korrekt wäre |
+> | Eingabe | `wrapAngle()` liefert | korrekt wäre |
 > |---|---|---|
 > | `340` | `-20` | `-20` ✓ |
 > | `200` | `-160` | `-160` ✓ |
@@ -78,9 +78,9 @@ IR_Angle     = Util.AMap(IR_rawAngle - BNO_OrbitDir);    // Ball ins Roboter-KS
 #include <Utils.h>
 
 void loop() {
-    float diff = Util.AMap(soll - ist);      // kürzester Drehweg, ±180°
+    float diff = Util.wrapAngle(soll - ist);      // kürzester Drehweg, ±180°
 
-    if (Util.Range(diff, -5.0f, 5.0f)) {
+    if (Util.inRange(diff, -5.0f, 5.0f)) {
         // ausgerichtet
     }
 }

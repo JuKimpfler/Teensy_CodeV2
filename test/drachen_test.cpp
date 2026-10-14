@@ -10,9 +10,9 @@ TCA9534DW EXP_SW1(&Wire, 0x22);
 
 BNO055 BNO(0x28, &Wire);
 
-ADC108S102 ADC_MOT(&SPI1,32);
-ADC108S102 ADC_IR1(&SPI1,30);
-ADC108S102 ADC_IR2(&SPI1,31);
+ADC108S102 ADC_MOT(&SPI1, 32);
+ADC108S102 ADC_IR1(&SPI1, 30);
+ADC108S102 ADC_IR2(&SPI1, 31);
 
 void setup()
 {
@@ -21,42 +21,49 @@ void setup()
     Wire.begin();
     SPI1.begin();
     SPI.begin();
-    INA219_Main.begin();
+    INA219_Main.begin(Wire1);
 
-    BNO.init();
+    BNO.begin();
 
-    ADC_MOT.init();
-    ADC_IR1.init();
-    ADC_IR2.init();
+    ADC_MOT.begin();
+    ADC_IR1.begin();
+    ADC_IR2.begin();
 
-    EXP_MOT.setup(false);
-    EXP_SW1.setup(true);
+    EXP_MOT.begin(false);
+    EXP_SW1.begin(true);
 
-    
+
     //Motor1.Enable = true;
     //sys.setMotorData(2,Motor1);
 }
 
 void loop()
 {
-  if(EXP_SW1.readPin(1)){analogWrite(6,map(Util.AMap(BNO.eulHeading()),-180,180,0,255));}else{analogWrite(6,0);}
-  EXP_MOT.writePin(4,EXP_SW1.readPin(0));// Enable
-  EXP_MOT.writePin(5,!digitalRead(10));// richtung
-  Serial.print(map(Util.AMap(BNO.eulHeading()),-180,180,0,255));
-  Serial.print(" , ist 0:");
-  Serial.print(ADC_MOT.read(0));
-  Serial.print(" , ist 1:");
-  Serial.print(ADC_MOT.read(1));
-  Serial.print(" , ist 2:");
-  Serial.print(ADC_MOT.read(2));
-  Serial.print(" , ist 3:");
-  Serial.print(ADC_MOT.read(3));
-  Serial.print(" , ist 4:");
-  Serial.print(ADC_MOT.read(4,true,true));
-  Serial.print(" , ist 5:");
-  Serial.print(ADC_MOT.read(5,true,false));
-  Serial.print(" , ist 6:");
-  Serial.print(ADC_MOT.read(6));
-  Serial.print(" , ist 7:");
-  Serial.println(ADC_MOT.read(7));
+    if (EXP_SW1.readPin(1))
+    {
+        analogWrite(6, map(Util.wrapAngle(BNO.eulHeading()), -180, 180, 0, 255));
+    }
+    else
+    {
+        analogWrite(6, 0);
+    }
+    EXP_MOT.writePin(4, EXP_SW1.readPin(0)); // Enable
+    EXP_MOT.writePin(5, !digitalRead(10));   // richtung
+    Serial.print(map(Util.wrapAngle(BNO.eulHeading()), -180, 180, 0, 255));
+    Serial.print(" , ist 0:");
+    Serial.print(ADC_MOT.read(0));
+    Serial.print(" , ist 1:");
+    Serial.print(ADC_MOT.read(1));
+    Serial.print(" , ist 2:");
+    Serial.print(ADC_MOT.read(2));
+    Serial.print(" , ist 3:");
+    Serial.print(ADC_MOT.read(3));
+    Serial.print(" , ist 4:");
+    Serial.print(ADC_MOT.read(4, true, true));
+    Serial.print(" , ist 5:");
+    Serial.print(ADC_MOT.read(5, true, false));
+    Serial.print(" , ist 6:");
+    Serial.print(ADC_MOT.read(6));
+    Serial.print(" , ist 7:");
+    Serial.println(ADC_MOT.read(7));
 }

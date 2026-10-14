@@ -25,10 +25,11 @@ float z = 0;
 
 elapsedMillis statusTimer;
 
-void setup() {
+void setup()
+{
     Serial.begin(115200);
 
-    PDS.begin();   // startet UART_DBG und meldet die Kanalnamen an die GUI
+    PDS.begin(); // startet UART_DBG und meldet die Kanalnamen an die GUI
 
     // Erscheint in der Fusszeile der GUI: welcher Stand laeuft hier?
     String Version = "v" + String(BUILD_VERSION) +
@@ -44,7 +45,8 @@ void setup() {
     PDS.log("Template gestartet");
 }
 
-void loop() {
+void loop()
+{
     x += 0.1f;
     y += 0.2f;
     z += 0.3f;
@@ -55,11 +57,12 @@ void loop() {
 
     // Eine Zeile Klartext-Diagnose ueber USB-Serial (Zykluszeit, Paketzahl,
     // Dauer von update(), Zustand der Verbindung).
-    if (statusTimer >= 1000) {
+    if (statusTimer >= 1000)
+    {
         statusTimer = 0;
         PDS.printStatus();
     }
 
-    PDS.update();   // genau einmal pro loop(); blockiert nie
+    PDS.update(); // genau einmal pro loop(); blockiert nie
     delay(10);
 }

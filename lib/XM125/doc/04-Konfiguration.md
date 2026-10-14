@@ -66,7 +66,7 @@ Struct-Definition: [XM125Distance.h](../XM125Distance.h) (`XM125DistanceConfig`,
 
 Der Roboter ist auf **eine gerade Holzwand in bis zu 2,5 m Abstand**
 abgestimmt. Gesetzt wird das in `systemlib::setupRadarSens()`, die Zahlen
-selbst stehen in [params.h](../../include/params.h):
+selbst stehen in [params_radar.h](../../include/params/params_radar.h):
 
 ```cpp
 radar.config.startMm                       = RADAR_START_MM;              // 200

@@ -14,6 +14,7 @@
 #include "SPI.h"
 #include <fancyBTN.h>
 #include <RadarArray.h>
+#include <Pathfinder.h>
 
 #include <commlib.h>
 #include <PDS.h>
@@ -27,7 +28,7 @@ struct MotorData
 {
     uint8_t ID;
 
-    // Param 
+    // Param
     float Speed;
     bool Dir;
     bool Enable;
@@ -43,38 +44,42 @@ struct MotorData
 };
 
 /// Ergebnis von systemlib::calculatePosition() — Feldposition mit Guetemass.
-struct PositionData {
+struct PositionData
+{
     float X;
     float Y;
     float Certainty;
-    bool  XValid;
-    bool  YValid;
-    bool  AtGoal;
+    bool XValid;
+    bool YValid;
+    bool AtGoal;
 };
 
-struct RobotVelocity {
+struct RobotVelocity
+{
     float vx_field; // cm/s
     float vy_field; // cm/s
 };
 
 /// Ein Zielpunkt der Punkt-Liste, siehe systemlib::setPointArray().
-struct ArrayPoint {
-    uint16_t X;            ///< Ziel X [cm]
-    uint16_t Y;            ///< Ziel Y [cm]
-    int16_t  Andrehwinkel; ///< Soll-Heading [Grad]
-    uint8_t  SpeedPattern; ///< SPattern_* aus params.h
-    uint8_t  MaxSpeed;     ///< Speed [%] bei Pattern-Wert 1
-    uint8_t  MinSpeed;     ///< Speed [%] bei Pattern-Wert 0
-    uint16_t HoldMs;       ///< Wartezeit nach Erreichen des Punkts [ms]
-    uint8_t  PassCm;       ///< >0: Durchfahrpunkt, gilt ab diesem Abstand [cm] als erreicht (kein Halt); 0 = anhalten
+struct ArrayPoint
+{
+    uint16_t X;           ///< Ziel X [cm]
+    uint16_t Y;           ///< Ziel Y [cm]
+    int16_t Andrehwinkel; ///< Soll-Heading [Grad]
+    uint8_t SpeedPattern; ///< SPattern_* aus params.h
+    uint8_t MaxSpeed;     ///< Speed [%] bei Pattern-Wert 1
+    uint8_t MinSpeed;     ///< Speed [%] bei Pattern-Wert 0
+    uint16_t HoldMs;      ///< Wartezeit nach Erreichen des Punkts [ms]
+    uint8_t PassCm;       ///< >0: Durchfahrpunkt, gilt ab diesem Abstand [cm] als erreicht (kein Halt); 0 = anhalten
 };
 
 /// Zustand der Punkt-Liste, siehe systemlib::updateArray().
-enum ArrayState : uint8_t {
-    ArrayIdle = 0,  ///< nicht gestartet / leer
-    ArrayRunning,   ///< faehrt die Punkte ab
-    ArrayPaused,    ///< angehalten, Fortschritt bleibt
-    ArrayFinished   ///< letzter Punkt erreicht
+enum ArrayState : uint8_t
+{
+    ArrayIdle = 0, ///< nicht gestartet / leer
+    ArrayRunning,  ///< faehrt die Punkte ab
+    ArrayPaused,   ///< angehalten, Fortschritt bleibt
+    ArrayFinished  ///< letzter Punkt erreicht
 };
 
 class systemlib
@@ -88,6 +93,9 @@ private:
     float Akku_I = 0.0f;
     float Motor_V = 0.0f;
     float Motor_I = 0.0f;
+    float Drib_I = 0.0f;            ///< Dribbler-Strom [mA], 10 Hz
+    bool _motorPowerEnabled = true; ///< VMOT_EN; false = Motorversorgung aus, alle Antriebe stehen
+    float CPU_Temp = 0.0f;          ///< Chiptemperatur [Grad C], 1 Hz
     float BNO_calibration = 0.0f;
     float BNO_eulerZ = 0.0f;
     float BNO_OrbitDir = 0.0f;
@@ -120,9 +128,6 @@ private:
     float ADRC_Out = 0;
     float PID_Out = 0;
 
-    float feld_x = POS_FIELD_X_CM; ///< Feldbreite [cm], siehe params.h
-    float feld_y = POS_FIELD_Y_CM; ///< Feldlaenge [cm], siehe params.h
-
     uint8_t fancyBTNstates[5] = {0};
     /* -------------- System -------------- */
     uint16_t cycleTime = 0;
@@ -144,13 +149,9 @@ private:
     void updateMotors(void);
 
     /* -------------- Position -------------- */
-    float calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSize,
-                           float offsetLow, float offsetHigh,
-                           float lastPos, float &certainty);
     float goalOffset(float x_cm, float &sureness) const;
 
 public:
-
     /// Alle Radarsensoren. Zugriff ueber die Einbauposition: Radar[RadarVo].Dist
     RadarArray Radar;
 
@@ -163,8 +164,8 @@ public:
     ADRCConfig cfgA;
     PIDConfig cfgP;
 
-    uint16_t line_array[48];
-    bool line_bool_array[48];
+    uint16_t line_array[LINE_NUM_SENSORS];
+    bool line_bool_array[LINE_NUM_SENSORS];
 
     /// Letztes Ergebnis von calculatePosition(), wird in readSensors() aktualisiert.
     PositionData Position;
@@ -189,35 +190,35 @@ public:
     MotorData giveMotorData(uint8_t ID);
     void setupHeadingController(bool useADRC = false);
     void resetHeadingController(void);
-    void moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andrehwinkel);
+    void moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed, int16_t Andrehwinkel);
     void moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel);
-    void resetMoveProfile(void);             ///< naechster moveToPoint()-Aufruf startet das Speed-Pattern von vorn
-    bool giveMoveArrived(void) const;        ///< true = Ziel von moveToPoint() erreicht (Zielkreis)
-    float giveMoveProgress(void) const;      ///< Fortschritt 0..1 des aktuellen Speed-Patterns
+    void resetMoveProfile(void);        ///< naechster moveToPoint()-Aufruf startet das Speed-Pattern von vorn
+    bool giveMoveArrived(void) const;   ///< true = Ziel von moveToPoint() erreicht (Zielkreis)
+    float giveMoveProgress(void) const; ///< Fortschritt 0..1 des aktuellen Speed-Patterns
 
     /* -------------- Punkt-Array -------------- */
     bool setPointArray(const ArrayPoint *points, uint8_t count, bool loop = false); ///< Liste ersetzen (unveraendert = kein Neustart)
     template <size_t N>
     bool setPointArray(const ArrayPoint (&points)[N], bool loop = false) { return setPointArray(points, (uint8_t)N, loop); } ///< Anzahl automatisch
     bool addPointToArray(uint16_t X, uint16_t Y, int16_t Andrehwinkel, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, uint16_t HoldMs = 0);
-    bool addPointToArray(const ArrayPoint &point);                                  ///< Punkt hinten anhaengen
-    void resetArray(void);                                                          ///< Liste leeren, Zustand Idle
-    void startArray(bool restart = false);                                          ///< beim ersten Punkt starten (laeuft sie schon: nichts)
-    void pauseArray(void);                                                          ///< anhalten
-    void resumeArray(void);                                                         ///< nach pauseArray() fortsetzen
-    void updateArray(void);                                                         ///< jeden Zyklus aufrufen
+    bool addPointToArray(const ArrayPoint &point); ///< Punkt hinten anhaengen
+    void resetArray(void);                         ///< Liste leeren, Zustand Idle
+    void startArray(bool restart = false);         ///< beim ersten Punkt starten (laeuft sie schon: nichts)
+    void pauseArray(void);                         ///< anhalten
+    void resumeArray(void);                        ///< nach pauseArray() fortsetzen
+    void updateArray(void);                        ///< jeden Zyklus aufrufen
     ArrayState giveArrayState(void) const;
-    uint8_t giveArrayIndex(void) const;                                             ///< aktueller Zielpunkt (0-basiert)
-    uint8_t giveArrayCount(void) const;                                             ///< Anzahl Punkte
+    uint8_t giveArrayIndex(void) const; ///< aktueller Zielpunkt (0-basiert)
+    uint8_t giveArrayCount(void) const; ///< Anzahl Punkte
 
     /* -------------- Pfadplanung (A*) -------------- */
     void setPathObstacles(int16_t ballX, int16_t ballY, int16_t robotX, int16_t robotY); ///< Hindernisse [cm], -1 = keins
     void moveToPointAvoid(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel);
-    void resetPathPlan(void);                                                       ///< Planung, Punkt-Array und Fahrprofil verwerfen
-    bool givePathFound(void) const;                                                 ///< A* hat einen Weg gefunden
-    uint8_t givePathWaypoints(void) const;                                          ///< Anzahl Wegpunkte der Route
-    uint32_t givePathTimeUs(void) const;                                            ///< Rechenzeit der letzten Planung [us]
-    void moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel);
+    void resetPathPlan(void);              ///< Planung, Punkt-Array und Fahrprofil verwerfen
+    bool givePathFound(void) const;        ///< A* hat einen Weg gefunden
+    uint8_t givePathWaypoints(void) const; ///< Anzahl Wegpunkte der Route
+    uint32_t givePathTimeUs(void) const;   ///< Rechenzeit der letzten Planung [us]
+    void moveDir(int16_t Dir, uint8_t Speed, float Andrehwinkel);
     void setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break);
     void setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break);
     void setOmniWheelVek(float vx, float vy, float omega);
@@ -226,11 +227,11 @@ public:
     /* -------------- Calculate -------------- */
     void updateLine();
     void updateHeadingController(void);
-    PositionData calculatePosition(uint32_t current_time_ms, 
-                                           float vx_field, 
-                                           float vy_field, 
-                                           bool use_radar = true, 
-                                           bool use_odometry = true);
+    PositionData calculatePosition(uint32_t current_time_ms,
+                                   float vx_field,
+                                   float vy_field,
+                                   bool use_radar = true,
+                                   bool use_odometry = true);
     void getOmniWheelVek(float wVL, float wVR, float wHL, float wHR, float &vx, float &vy, float &omega);
     float convertMotorRpmToWheelSpeedCmS(float motor_rpm);
     RobotVelocity calculateFieldVelocityFromMotorRpm(const float motor_rpm[4], float heading_deg);
@@ -240,25 +241,47 @@ public:
     uint16_t giveCycleTime(void) const { return cycleTime; };           // Zyklische Messung der Laufzeit in ms
     uint16_t giveCycleTime_us(void) const { return cycleTime_us; };     // Zyklische Messung der Laufzeit in us
     RobotDataCom giveOtherRobotData(void) const { return otherRobot; }; // Daten des anderen Roboter
+    float giveCpuTemp(void) const { return CPU_Temp; }                  ///< Chiptemperatur [Grad C], 1 Hz nachgefuehrt
     float giveMainVoltage(void);
     float giveMotorVoltage(void);
     float giveMainCurrent(void);
     float giveMotorCurrent(void);
+    float giveDribblerCurrent(void);
+    void setMotorPower(bool on) { _motorPowerEnabled = on; } ///< Motorversorgung (VMOT_EN) und Freigabe aller Antriebe
+    bool giveMotorPower(void) const { return _motorPowerEnabled; }
     float giveBallAngle(void) const { return IR_Angle; };                                              // TODO: Implementieren
     float giveBallDistance(void) const { return IR_Distance; };                                        // TODO: Implementieren
     float giveRawBallAngle(void) const { return IR_rawAngle; };                                        // TODO: Implementieren
     float giveRawBallDistance(void) const { return IR_rawDistance; };                                  // TODO: Implementieren
     uint16_t giveRawSensorData(uint8_t sensorNumber) const { return IR_rawSensorData[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
-    void giveRawSensorData(uint16_t (&rawSensorData)[16]) const {for (uint8_t i = 0; i < 16; i++){rawSensorData[i] = IR_rawSensorData[i];}}; // currently disabled -> change in readIR() to enable it
-    void giveTSSPData(bool (&TSSPData)[8]) const {for (uint8_t i = 0; i < 8; i++){TSSPData[i] = IR_TSSP[i];}};                                                                               // currently disabled -> change in readIR() to enable it
+    void giveRawSensorData(uint16_t (&rawSensorData)[16]) const
+    {
+        for (uint8_t i = 0; i < 16; i++)
+        {
+            rawSensorData[i] = IR_rawSensorData[i];
+        }
+    }; // currently disabled -> change in readIR() to enable it
+    void giveTSSPData(bool (&TSSPData)[8]) const
+    {
+        for (uint8_t i = 0; i < 8; i++)
+        {
+            TSSPData[i] = IR_TSSP[i];
+        }
+    }; // currently disabled -> change in readIR() to enable it
     bool giveTSSPData(uint8_t sensorNumber) const { return IR_TSSP[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
-    float giveHeadingController(void); // BNO has to be setup allready
-    void giveButtonStates(uint8_t (&buttonStates)[5]) const {for (uint8_t i = 0; i < 5; i++){buttonStates[i] = fancyBTNstates[i];}}; // currently disabled -> change in readExpanders() to enable it
-    RadarData giveRadar(uint8_t pos) const { return Radar[pos]; };       // Radar-Messwerte, pos = RadarVo/Li/Hi/Re
-    bool giveRadarCon(uint8_t pos) const { return Radar.giveCon(pos); }; // antwortet der Radarsensor?
+    float giveHeadingController(void);                                               // BNO has to be setup allready
+    void giveButtonStates(uint8_t (&buttonStates)[5]) const
+    {
+        for (uint8_t i = 0; i < 5; i++)
+        {
+            buttonStates[i] = fancyBTNstates[i];
+        }
+    }; // currently disabled -> change in readExpanders() to enable it
+    RadarData giveRadar(uint8_t pos) const { return Radar[pos]; };           // Radar-Messwerte, pos = RadarVo/Li/Hi/Re
+    bool giveRadarCon(uint8_t pos) const { return Radar.giveCon(pos); };     // antwortet der Radarsensor?
     uint32_t giveRadarAge(uint8_t pos) const { return Radar.giveAge(pos); }; // Alter des Radarwerts in ms
-    PositionData givePosition(void) const { return Position; };          // zuletzt berechnete Feldposition + Certainty
-    float givePositionCertainty(void) const { return Position.Certainty; }; // 0 = unbrauchbar ... 1 = sicher
+    PositionData givePosition(void) const { return Position; };              // zuletzt berechnete Feldposition + Certainty
+    float givePositionCertainty(void) const { return Position.Certainty; };  // 0 = unbrauchbar ... 1 = sicher
     bool giveExpander(uint8_t expnum, uint8_t portnum);
     bool giveExpSwitch(uint8_t switchNumber) const { return SWI[switchNumber]; };
     bool giveExpStartSwitch(void) const { return startSwitch; };

@@ -16,54 +16,54 @@ SRF08Sensor SRF08_li(SRF08_ADDR(0xE8), SRF08_RANGE_2M, SRF08_GAIN_MID);
 CamC cam1;
 CamC cam2;
 
-void setup(){
-  Wire1.begin();
-  Serial.begin(115200);
-  SPI.begin();
-  pmw.begin();
+void setup()
+{
+    Wire1.begin();
+    Serial.begin(115200);
+    SPI.begin();
+    pmw.begin();
 
-  cam1.init(Serial6,115200);
-  cam2.init(Serial7,115200);
+    cam1.init(Serial6, 115200);
+    cam2.init(Serial7, 115200);
 
-  // -- US -----
-  SRF08_vo.setEMAAlpha(0.25f);
-  SRF08_hi.setEMAAlpha(0.25f);
-  SRF08_re.setEMAAlpha(0.25f);
-  SRF08_li.setEMAAlpha(0.25f);
+    // -- US -----
+    SRF08_vo.setEMAAlpha(0.25f);
+    SRF08_hi.setEMAAlpha(0.25f);
+    SRF08_re.setEMAAlpha(0.25f);
+    SRF08_li.setEMAAlpha(0.25f);
 
-  SRF08_vo.setJumpThreshold(50);
-  SRF08_hi.setJumpThreshold(50);
-  SRF08_re.setJumpThreshold(50);
-  SRF08_li.setJumpThreshold(50);
+    SRF08_vo.setJumpThreshold(50);
+    SRF08_hi.setJumpThreshold(50);
+    SRF08_re.setJumpThreshold(50);
+    SRF08_li.setJumpThreshold(50);
 
-  SRF08_vo.begin(Wire1);
-  SRF08_hi.begin(Wire1);
-  SRF08_re.begin(Wire1);
-  SRF08_li.begin(Wire1);
+    SRF08_vo.begin(Wire1);
+    SRF08_hi.begin(Wire1);
+    SRF08_re.begin(Wire1);
+    SRF08_li.begin(Wire1);
 
-  SRF08_vo.startRanging();
-  SRF08_hi.startRanging();
-  SRF08_re.startRanging();
-  SRF08_li.startRanging();
+    SRF08_vo.startRanging();
+    SRF08_hi.startRanging();
+    SRF08_re.startRanging();
+    SRF08_li.startRanging();
 }
 
 void loop()
 {
-  cam1.Update(); // vordere Cam um bekannten Blopp1 auf feld zu erkennen.
-  cam2.Update(); // hintere Cam um bekannten Blopp2 auf feld zu erkennen.
+    cam1.Update(); // vordere Cam um bekannten Blopp1 auf feld zu erkennen.
+    cam2.Update(); // hintere Cam um bekannten Blopp2 auf feld zu erkennen.
 
-  PMW3389_DATA mouseData = pmw.readBurst(); // Daten des Odometry sensors.
+    PMW3389_DATA mouseData = pmw.readBurst(); // Daten des Odometry sensors.
 
-  SRF08_vo.update();
-  SRF08_vo.getDistance();
+    SRF08_vo.update();
+    SRF08_vo.getDistance();
 
-  SRF08_hi.update();
-  SRF08_hi.getDistance();
+    SRF08_hi.update();
+    SRF08_hi.getDistance();
 
-  SRF08_re.update();
-  SRF08_re.getDistance();
+    SRF08_re.update();
+    SRF08_re.getDistance();
 
-  SRF08_li.update();
-  SRF08_li.getDistance();
-
+    SRF08_li.update();
+    SRF08_li.getDistance();
 }

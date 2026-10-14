@@ -1,205 +1,138 @@
 # include – Zentrale Projektkonfiguration
 
-Keine Bibliothek im eigentlichen Sinn, sondern die **zentrale
-Konfigurationsstelle** des Projekts. Beide Header sind reine Definitionen und
-werden von praktisch allen anderen Bibliotheken eingebunden.
+Keine Bibliothek im eigentlichen Sinn, sondern die **einzige Stelle für Pins und
+Parameter**. Bibliotheken binden nur `params.h` / `enum.h` ein und legen keine
+eigenen Kopien an. Namensschema und Einheiten: [Coding_Rules.md](../../docs/Coding_Rules.md).
 
-Dateien: `enum.h` (Pinbelegung), `params.h` (Bus-/Protokollparameter)
+```
+lib/include/
+├── enum.h               Pinbelegung, Motor-IDs
+├── params.h             Sammel-Header: bindet alle params_*.h ein
+└── params/
+    ├── params_system.h    Busse, Adressen, Debug-Modus, Linien-Schwellen, Kurs-Regler (HDG_)
+    ├── params_radar.h     XM125-Radarsensoren (RADAR_)
+    ├── params_field.h     Feld- und Torgeometrie (FIELD_)
+    ├── params_position.h  Odometrie, Radar-Validierung, Fusion (ODO_, POS_, FUS_)
+    ├── params_motion.h    Speed-Pattern, moveToPoint, Wandabstand, Punkt-Array (MOVE_, ARRAY_)
+    ├── params_path.h      Pfadplanung und A*-Raster (PATH_)
+    └── params_pathmap.h   Gewichtskarten des A* (PATH_WEIGHTS_), nur von Pathfinder.cpp eingebunden
+```
 
-> **Änderungen hier wirken sich auf das ganze Projekt aus.** Pins, Adressen
-> und Paketgrößen sind an genau einer Stelle definiert – Bibliotheken sollen
-> keine eigenen Kopien anlegen.
+> **Änderungen hier wirken sich auf das ganze Projekt aus.** Was ein Mensch
+> einstellt oder was die Verkabelung festlegt, steht hier. Register- und
+> Protokollkonstanten eines Chips gehören dagegen in dessen Treiber.
+> `lib/PDS/params_PDS.h` gehört zur PDS-Bibliothek (wird per `tools/sync_pds.py`
+> kopiert) und bleibt deshalb dort.
 
 ---
 
-## `enum.h` – Pinbelegung und Hardware-IDs
+## `enum.h` – Pins und Hardware-IDs (Platine V2.0)
 
-### Schnittstellen
+Quelle ist der Schaltplan *2vs2-Lightweight-Main V2.0* (Blatt 1, 4, 5, 9). Eine Compile-Zeit-Prüfung
+gegen die Schaltplanwerte steht in `test/Pinbelegung_Check.cpp` (bauen genügt).
 
-| Define | Wert | Bedeutung |
-|---|---|---|
-| `USBC_UART` | `Serial` | USB-Serial für Konsolenausgaben |
-| `UART_DBG` | `Serial3` | Debug-UART für das [Power Debug System](../PDS/PDS.md) |
-| `LED_LENGTH` | `19` | Anzahl LEDs im RGB-Ring |
+**Serielle Schnittstellen**
 
-### Motor-IDs
+| Makro | Port | Pins | Zweck |
+|---|---|---|---|
+| `USBC_UART` | `Serial` | USB | Konsole |
+| `UART_DBG` | `Serial1` | 0 / 1 | PDS. Zusätzlich als **build_flag** `-DUART_DBG=Serial1`, weil `PDS.cpp` `enum.h` nicht sieht |
+| `UART_CAM1` | `Serial2` | 7 / 8 | Kamera 1 |
+| `UART_DIO` | `Serial3` | 14 / 15 | Schuss (`UART_DIO_TX/RX`) |
+| `UART_ESP` | `Serial6` | 24 / 25 | Link zum ESP32-S3 (`SUBCPU_TX/RX`) |
+| `UART_CAM2` | `Serial7` | 28 / 29 | Kamera 2 |
 
-| Define | Wert | Motor |
-|---|---|---|
-| `MotorVL_ID` | 0 | vorne links |
-| `MotorVR_ID` | 1 | vorne rechts |
-| `MotorHL_ID` | 2 | hinten links |
-| `MotorHR_ID` | 3 | hinten rechts |
-| `MotorDR_ID` | 4 | Dribbler |
+**Motoren** – Motor 1 = VL, Motor 2 = HL, Motor 3 = VR, Motor 4 = HR (Angabe des Teams):
 
-### `enum PinOut` – Teensy-4.0-Pins
+| Motor | ID | PWM-Pin | Motor-ADC `_AP1` / `_AP2` | Expander (Enable · Richtung) |
+|---|---|---|---|---|
+| `MotorVL` vorne links (Motor 1) | 1 | 3 | `IN0` / `IN1` | 0x22: P0 · P1 |
+| `MotorHL` hinten links (Motor 2) | 2 | 4 | `IN2` / `IN3` | 0x22: P3 · P4 |
+| `MotorVR` vorne rechts (Motor 3) | 0 | 5 | `IN4` / `IN5` | 0x20: P0 · P1 |
+| `MotorHR` hinten rechts (Motor 4) | 3 | 6 | `IN6` / `IN7` | 0x20: P3 · P4 |
+| `MotorDR` Dribbler | 4 | 2 | Pins 27 / 26 (analog) | Enable: Pin 20; Richtung: 0x22 P6 |
 
-**PWM-Ausgänge (direkt am Teensy):**
+> **Annahme, in ESCON Studio zu prüfen:** Je Motor hängen `DO1` (→ ESCON DI2), `DIO3` und `DIO4` am
+> Expander. Der Code nimmt `DO1` = Enable und `DIO3` = Richtung; `DIO4` bleibt Eingang. Ändert sich das, nur die
+> `_BIT`-Konstanten in `enum.h` ändern. `_AP1` = Drehzahl, `_AP2` = Strom gilt wie bisher.
 
-| Konstante | Pin |
-|---|---|
-| `MotorVL_PWM` | 4 |
-| `MotorVR_PWM` | 5 |
-| `MotorHL_PWM` | 6 |
-| `MotorHR_PWM` | 9 |
-| `MotorDR_PWM` | 33 |
-
-**Motor-Steuerbits am Portexpander** (Bitpositionen, **keine** Teensy-Pins –
-siehe [TCA9534DW](../TCA9534DW/TCA9534DW.md)):
-
-| Konstante | Bit | Bedeutung |
-|---|---|---|
-| `MotorVL_P1` / `_P2` | 0 / 1 | Richtung / Enable vorne links |
-| `MotorVR_P1` / `_P2` | 2 / 3 | Richtung / Enable vorne rechts |
-| `MotorHL_P1` / `_P2` | 4 / 5 | Richtung / Enable hinten links |
-| `MotorHR_P1` / `_P2` | 6 / 7 | Richtung / Enable hinten rechts |
-
-**Motor-ADC-Kanäle** (Kanalnummern am
-[ADC108S102](../ADC108S102/ADC108S102.md), gleiche Zahlenwerte wie `_P1/_P2`):
-
-| Konstante | Kanal | Bedeutung |
-|---|---|---|
-| `MotorVL_AP1` / `_AP2` | 0 / 1 | Drehzahl / Strom vorne links |
-| `MotorVR_AP1` / `_AP2` | 2 / 3 | Drehzahl / Strom vorne rechts |
-| `MotorHL_AP1` / `_AP2` | 4 / 5 | Drehzahl / Strom hinten links |
-| `MotorHR_AP1` / `_AP2` | 6 / 7 | Drehzahl / Strom hinten rechts |
-
-**Sonstige Pins:**
+**Weitere Pins**
 
 | Konstante | Pin | Bedeutung |
 |---|---|---|
-| `KICKER_PORT` | 18 | Schussmechanik |
-| `START_SWITCH` | 10 | Startschalter |
-| `LIGHT_BARRIER` | 23 | Lichtschranke (Ball im Dribbler), analog gelesen |
-| `RGB_DATA_3V3` | 20 | LED-Datenleitung |
-| `EMPTY_27` | 27 | frei |
-| `ADC108S102_Motor_CS` | 32 | Chip-Select Motor-ADC |
+| `KICKER_PORT` | 9 | Schussmechanik |
+| `SPI_CS_INTERCON` / `SPI_MOSI` / `SPI_MISO` / `SPI_SCK` | 10 / 11 / 12 / 13 | Bus `SPI` (nicht `SPI1`) |
+| `I2C_SCL_3V3` / `I2C_SDA_3V3` | 16 / 17 | Teensy-Bus `Wire1` |
+| `I2C_SDA_ESP` / `I2C_SCL_ESP` | 18 / 19 | `Wire`: ESP-Bus, nur mit Jumpern `SDA_Jumper`/`SCL_Jumper` |
+| `BLDC_DO1` | 20 | Dribbler-Enable (Ausgang) |
+| `ROBO_ID` | 21 | Roboter-ID (Jumper JP4) |
+| `RGB_DATA_3V3` | 22 | LED-Datenleitung |
+| `LIGHT_BARRIER` | 23 | Lichtschranke (analog, `LDR_IN`) |
+| `BLDC_AO2` / `BLDC_AO1` | 26 / 27 | Dribbler-Rückmeldung (analog, A12 / A13) |
+| `ADC108S102_Motor_CS` | 30 | Chip-Select Motor-ADC |
+| `LINE_DEC_A` / `_B` / `_C` | 31 / 32 / 33 | Dekoder der Linien-Platine, A = niedrigstwertiges Bit |
 
-**SPI:**
+Damit sind alle 34 Pins belegt. `LED_LENGTH` = 19.
 
-| Konstante | Pin |
-|---|---|
-| `SPI_MOSI` / `SPI_MISO` / `SPI_SCK` | 11 / 12 / 13 |
-| `SPI_DIO0` … `SPI_DIO4` | 19, 31, 30, 21, 22 |
+**I²C-Adressen und Expander** (Bit n = Pin Pn):
 
-**I²C:** `I2C_SCL_3V3` = 16, `I2C_SDA_3V3` = 17 (das ist `Wire1` auf dem
-Teensy 4.0).
-
-**UARTs:**
-
-| Konstante | Pin | Verwendung |
+| Chip | Adresse | P0 · P1 · P2 · P3 · P4 · P5 · P6 · P7 |
 |---|---|---|
-| `TNS_TX_PIXY_RX` / `TNS_RX_PIXY_TX` | 14 / 15 | Kamera ([Cam](../Cam/Cam.md)) |
-| `UART1_TNS_TX` / `_RX` | 24 / 25 | Teensy↔Teensy (frei) |
-| `UART2_TNS_TX` / `_RX` | 28 / 29 | Teensy↔Teensy (frei) |
+| IC9 `Exp_MotorA` | 0x22 | M1 DO1 · M1 DIO3 · M1 DIO4 · M2 DO1 · M2 DIO3 · M2 DIO4 · BLDC DIO1 · BLDC DIO2 |
+| IC7 `Exp_MotorB` | 0x20 | M3 DO1 · M3 DIO3 · M3 DIO4 · M4 DO1 · M4 DIO3 · M4 DIO4 · SWITCH1 · BUTTON1 |
+| IC8 `Exp_System` | 0x23 | VDRIB_EN · VMOT_EN · LIGHT_BARRIER_EN · LINE_EN_T · UART_DIO1 · I2C_INTERCON_3V3_EN · – · – |
+
+INA219: 0x40 (Akku, 5 mΩ), 0x41 (Motorversorgung, 5 mΩ), 0x45 (Dribbler, 10 mΩ).
+
+Pegel: `VMOT_EN` und `VDRIB_EN` hoch = Versorgung an; `LIGHT_BARRIER_EN` und `I2C_INTERCON_3V3_EN` niedrig = an (P-FET).
+Alle vier sind ohne Treiber standardmäßig „an" (Pull-Up bzw. Pull-Down am Gate). `LINE_EN_T` ist undefiniert, siehe
+`LINE_EN_LEVEL` in `params_system.h`.
 
 ---
 
-## `params.h` – Busse, Adressen, Protokollparameter
+## `params/` – Parameter
 
-### I²C-Zuordnung
+Alle Werte sind `static constexpr` (typisiert, prüfbar). Ausnahmen: die
+`I2C_*`-Aliase und `DPDS_Mode`, weil sie Bezeichner bzw. Compile-Schalter sind.
+Die Zahlen stehen **nur in den Headern** – diese Tabelle nennt die Gruppen:
 
-```cpp
-#define I2C_BNO   Wire
-#define I2C_IR    Wire
-#define I2C_SW    Wire
-#define I2C_US    Wire
-#define I2C_RADAR Wire
-```
+| Datei | Präfix | Inhalt | Verwendet in |
+|---|---|---|---|
+| `params_system.h` | `I2C_`, `BNO_`, `LINE_`, `HDG_`, `MOTOR_EXP_` | Bus-Zuordnung und -Takte, Adresse, Linien-Schwellen, Gains des Kurs-Reglers (PID und ADRC), Auffrischung des Motor-Expanders | `systemlib` |
+| `params_radar.h` | `RADAR_` | Adressen, Reichweite, Empfindlichkeit, Messrunden, Ausreißerfilter | `RadarArray` |
+| `params_field.h` | `FIELD_` | Feldbreite/-länge, Tor (Breite, Tiefe, Kantenband) | Position, Fahrfunktionen, Pfad |
+| `params_position.h` | `ODO_`, `POS_`, `FUS_` | Rad-Odometrie, Plausibilität und Signalstärke der Radarwerte, Kalman-Filter | `calculatePosition()` |
+| `params_motion.h` | `SPattern_`, `MOVE_`, `ARRAY_` | Speed-Pattern (`enum SPattern`), Zielkreis, Anlaufbegrenzung, Wandabstand, Punktliste | `moveToPoint()`, Punkt-Array |
+| `params_path.h` | `PATH_` | Neuplanung, Durchfahrradius, Fallback; Raster, Schrittkosten, Heap des A* | `moveToPointAvoid()`, [Pathfinder](../Pathfinder/Pathfinder.md) |
+| `params_pathmap.h` | `PATH_WEIGHTS_` | Gewichtskarte des Feldes und Masken für Ball/Roboter (nicht in `params.h` enthalten) | [Pathfinder](../Pathfinder/Pathfinder.md) |
 
-Alle Aliase zeigen aktuell auf `Wire`. Die INA219 und drei der vier
-Portexpander werden in `systemlib.cpp` allerdings **direkt** auf `Wire1`
-gelegt – die Aufteilung ist also nicht vollständig über diese Defines
-gesteuert.
+### Debug-Modus
 
-Ein Sensor lässt sich auf den anderen Bus umziehen, indem hier das Alias
-geändert wird (z.B. `#define I2C_US Wire1`).
+`DPDS_Mode` ist `D_Mode_Test` (PDS + serielle Ausgaben) oder `D_Mode_Game`
+(Build ohne Debug-Signale). Umschalten per `build_flags`:
+`-DDPDS_Mode=D_Mode_Game`. Ohne Flag gilt `D_Mode_Test`.
 
-| Define | Wert | Bedeutung |
-|---|---|---|
-| `BNO_ADDRESS` | `0x28` | I²C-Adresse des [BNO055](../BNO055/BNO055.md) |
+### Radar abstimmen
 
-### Radar (XM125)
-
-| Konstante | Wert | Bedeutung |
-|---|---|---|
-| `RADAR_NUM_SENSORS` | `4` | Anzahl [XM125](../XM125/doc/README.md)-Module |
-| `RADAR_SENSOR_ADDRS` | `0x51`…`0x54` | I²C-Adressen, hardwareseitig eingestellt |
-| `RADAR_WAKE_PIN` / `RADAR_INT_PIN` | `-1` | `WAKE_UP`/`MCU_INT` bewusst unverkabelt |
-
-**Abstimmung auf eine gerade Holzwand bis 2,5 m** – diese vier Werte sind das
-Ergebnis der Kalibrierung und die einzige Stelle, an der nachjustiert wird:
-
-| Konstante | Wert | Bedeutung |
-|---|---|---|
-| `RADAR_START_MM` | `200` | untere Bereichsgrenze; näher liegt der Roboter selbst |
-| `RADAR_END_MM` | `2700` | obere Bereichsgrenze, 200 mm Reserve über dem Ziel von 2500 mm |
-| `RADAR_SIGNAL_QUALITY` | `25000` | 25.0 statt Default 15.0 – mehr SNR für den schwachen Holz-Reflex |
-| `RADAR_THRESHOLD_SENSITIVITY` | `750` | 0.75 statt Default 0.50 – CFAR lässt schwache Wand-Peaks durch |
-| `RADAR_MEASURE_TIMEOUT_MS` | `3000` | PROFILE5 + hohe Signalqualität braucht länger als der 1000-ms-Default; geht per `setMeasureTimeout()` in die Library |
-| `RADAR_PEAKS_TO_FETCH` | `1` | Wie viele Peaks je Messung wirklich aus dem Sensor geholt werden. Jeder Peak kostet zwei Registerlesezugriffe, ausgewertet wird nur Peak 0 |
-| `RADAR_REINIT_INTERVAL_MS` | `2000` | Mindestabstand zwischen zwei Wiederanlaufversuchen für einen toten Sensor — die Neuinitialisierung blockiert bis ~2 s |
-
-Alle Sensoren messen **gleichzeitig**; eine Gruppengröße gibt es nicht mehr.
-`systemlib::readRadar()` stößt eine Runde bei allen Sensoren an und wartet nie
-auf ein Ergebnis, siehe [02-Distance-Detector.md](../XM125/doc/02-Distance-Detector.md).
-
-Verwendet in `systemlib::setupRadarSens()`. Hintergrund und Messverfahren:
-[04-Konfiguration.md](../XM125/doc/04-Konfiguration.md#in-diesem-projekt-verwendete-werte),
-Nachmessen mit [XM125_Calib_Sensitivity.cpp](../XM125/examples/XM125_Calib_Sensitivity.cpp)
-(`RADAR_SIGNAL_QUALITY`, `RADAR_THRESHOLD_SENSITIVITY`) und
-[XM125_Calib_Crosstalk.cpp](../XM125/examples/XM125_Calib_Crosstalk.cpp)
-(stören sich die gleichzeitig messenden Sensoren?); Übersicht aller Kalibrierskripte in
-[07-Kalibrierung.md](../XM125/doc/07-Kalibrierung.md#ein-skript-je-kalibriermethode).
-
-### Debug-UART
-
-| Konstante | Wert | Bedeutung |
-|---|---|---|
-| `UART_DBG` | `Serial3` | wird gesetzt, falls nicht schon aus `enum.h` definiert |
-| `UART_DBG_BAUD` | `1 000 000` | 1 Mbps |
-
-### Parameter-Downlink (GUI → Teensy)
-
-**Slow-Kanal**, ~2 Hz:
-
-| Konstante | Wert |
-|---|---|
-| `PARAM_SLOW_MAGIC` | `0xCAFEFEED` |
-| `PARAM_SLOW_FLOAT_COUNT` | `50` |
-| `PARAM_SLOW_BOOL_COUNT` | `50` |
-| `PARAM_SLOW_PACKET_BYTES` | `258` |
-| `PARAM_SLOW_TIMEOUT_MS` | `1000` |
-
-**Fast-Kanal**, ~100 Hz (z.B. Joystick):
-
-| Konstante | Wert |
-|---|---|
-| `PARAM_FAST_MAGIC` | `0xFA57DA7A` |
-| `PARAM_FAST_FLOAT_COUNT` | `5` |
-| `PARAM_FAST_PACKET_BYTES` | `28` |
-| `PARAM_FAST_TIMEOUT_MS` | `150` |
-
-`PARAM_HEADER_BYTES` = `8` (Magic 4 Byte + Sequenznummer 4 Byte), für beide
-Pakettypen gleich.
-
-**Timeouts:** Slow entspricht 2 verpassten Zyklen. Fast ist bewusst
-großzügiger als 2 Zyklen (150 ms statt 20 ms), weil bei 100 Hz über WLAN sonst
-dauernd Fehlalarm ausgelöst würde – **am Feld ggf. nachjustieren**.
-
-Details zum Protokoll: [PDS.md](../PDS/README.md)
+Die Abstimmung (`RADAR_START_MM` … `RADAR_THRESHOLD_SENSITIVITY`) ist das
+Ergebnis der Kalibrierung und die einzige Stelle zum Nachjustieren. Nachmessen:
+[XM125_Calib_Sensitivity.cpp](../XM125/examples/XM125_Calib_Sensitivity.cpp),
+[XM125_Calib_Crosstalk.cpp](../XM125/examples/XM125_Calib_Crosstalk.cpp), Übersicht in
+[07-Kalibrierung.md](../XM125/doc/07-Kalibrierung.md). Alle Sensoren messen
+gleichzeitig; `RadarArray::update()` wartet nie auf ein Ergebnis.
 
 ---
 
 ## `platformio.ini` – Build-Flags
 
-Ergänzend zu diesen Headern werden im Projekt-Root Build-Flags gesetzt:
+| Flag | Bedeutung |
+|---|---|
+| `-DUSB_SERIAL` | USB als serielle Schnittstelle |
+| `-O2` / `-Wall` | Optimierung / Warnungen |
+| `-fno-math-errno` | `sqrtf()` als FPU-Befehl, siehe [Laufzeit_Optimierung.md](../../docs/Laufzeit_Optimierung.md) |
+| `-DACTIVE_CHANNELS=200` | Anzahl PDS-Kanäle |
+| `-DPDS_AUTO_CHANNEL_BASE=32` | Kanäle 0..31 gehören `systemlib::setupPDS()` |
+| `-DPDS_MAX_UNITS=48` | Einheiten-Tabelle von PDS |
+| `-DDPDS_Mode=…` | Debug-Modus, siehe oben |
 
-| Flag | Wert | Bedeutung |
-|---|---|---|
-| `-DUSB_SERIAL` | – | USB als serielle Schnittstelle |
-| `-O2` | – | Optimierungsstufe |
-| `-DACTIVE_CHANNELS` | `200` | Anzahl aktiver Debug-Kanäle |
-
-`monitor_speed = 115200`, `upload_protocol = teensy-cli`,
-Board `teensy40`.
+`monitor_speed = 115200`, Board `teensy40`, **`board_build.f_cpu = 912000000L`** (Übertakten, Begründung und Test in [Laufzeit_Optimierung.md](../../docs/Laufzeit_Optimierung.md#3-cpu-takt)).

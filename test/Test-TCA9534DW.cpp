@@ -4,13 +4,15 @@
 
 TCA9534DW portExpander(&Wire1, 0x20); // Create an instance of the TCA9534DW class with the I2C address 0x20
 
-void setup() {
+void setup()
+{
     Serial.begin(115200);
-    Wire1.begin(); // Initialize I2C communication important for the port expander
-    portExpander.setup(true, true, true, true, false, false, false, false); // Initialize the port expander with the first four pins as outputs and the last four pins as inputs
+    Wire1.begin();                                                          // Initialize I2C communication important for the port expander
+    portExpander.begin(true, true, true, true, false, false, false, false); // Initialize the port expander with the first four pins as outputs and the last four pins as inputs
 }
 
-void loop() {
+void loop()
+{
     // Example usage of the port expander
     portExpander.writePin(0, true); // Set pin 0 high
     delay(1000);
