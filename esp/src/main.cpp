@@ -35,7 +35,7 @@
 #endif
 
 static StreamLinkPort linkPort(Serial1);
-static LinkEsp link;
+static LinkEsp LinkToEsp;
 
 #if ESP_HAS_BNO
 static BNO055 bno(BNO_ADDRESS, &Wire);
@@ -116,7 +116,7 @@ static void servoWrite(uint16_t us)
 static void handleCommands()
 {
     CmdMsg c;
-    while (link.takeCmd(c))
+    while (LinkToEsp.takeCmd(c))
     {
         switch (c.Cmd)
         {
@@ -138,7 +138,7 @@ static void handleCommands()
         }
     }
     ActMsg a;
-    while (link.takeAct(a))
+    while (LinkToEsp.takeAct(a))
     {
         if (a.Kind == 1)
             servoWrite(a.Val1);
@@ -163,7 +163,7 @@ static void sendImu(uint32_t t)
     m.HeadingX16 = heading;
     m.GyroZX16 = gyro;
     m.Calib = calibStat;
-    link.send(LinkImu, m);
+    LinkToEsp.send(LinkImu, m);
 }
 #endif
 
@@ -186,7 +186,7 @@ static void sendRadarIfNew()
         if (d.Peaks > 0)
             m.PeakBits |= (uint8_t)(1u << k);
     }
-    link.send(LinkRadar, m);
+    LinkToEsp.send(LinkRadar, m);
 }
 #endif
 
@@ -197,7 +197,7 @@ static void sendIr(uint32_t t)
     m.TimeUs = t;
     m.AngleRaw = (int16_t)lroundf(irRing.read_ball_angle() * 180.0f); // zurueck auf den Register-Rohwert
     m.Dist = irRing.read_ball_distance();
-    link.send(LinkIr, m);
+    LinkToEsp.send(LinkIr, m);
 }
 #endif
 
@@ -214,7 +214,7 @@ static void sendInput(uint32_t t, bool force)
     {
         InputMsg m;
         m.Bits = switch2Last ? 1 : 0;
-        link.send(LinkInput, m);
+        LinkToEsp.send(LinkInput, m);
         nextInputUs = t + LINK_INPUT_REFRESH_MS * 1000u;
     }
 }
@@ -225,7 +225,7 @@ static void sendHealth(uint32_t t)
     h.UptimeMs = t / 1000u;
     h.MaxLoopUs = (uint16_t)min<uint32_t>(maxLoopUs, 65535u);
     h.I2cErrors = i2cErrors;
-    h.RxErrors = (uint16_t)min<uint32_t>(link.rxErrors(), 65535u);
+    h.RxErrors = (uint16_t)min<uint32_t>(LinkToEsp.rxErrors(), 65535u);
     h.FreeHeap = ESP.getFreeHeap();
     h.Flags = 0;
 #if ESP_HAS_BNO
@@ -237,7 +237,7 @@ static void sendHealth(uint32_t t)
     if (radarCount > 0)
         h.Flags |= 0x02;
 #endif
-    link.send(LinkHealth, h);
+    LinkToEsp.send(LinkHealth, h);
     maxLoopUs = 0;
 }
 
@@ -248,8 +248,8 @@ void setup()
 
     Serial1.setRxBufferSize(1024);
     Serial1.begin(LINK_BAUD, SERIAL_8N1, ESP_PIN_LINK_RX, ESP_PIN_LINK_TX);
-    link.begin(&linkPort, LINK_PROTOCOL_VERSION, LINK_PARAMS_HASH, 1000u / LINK_IMU_PERIOD_MS);
-    link.poll(nowUs()); // HELLO sofort senden, noch bevor die Sensoren hochfahren (Radar-Start dauert Sekunden)
+    LinkToEsp.begin(&linkPort, LINK_PROTOCOL_VERSION, LINK_PARAMS_HASH, 1000u / LINK_IMU_PERIOD_MS);
+    LinkToEsp.poll(nowUs()); // HELLO sofort senden, noch bevor die Sensoren hochfahren (Radar-Start dauert Sekunden)
 
 #if ESP_USES_I2C
     Wire.begin(ESP_PIN_SDA, ESP_PIN_SCL);
@@ -286,7 +286,7 @@ void loop()
     if (loopUs > maxLoopUs)
         maxLoopUs = loopUs;
 
-    link.poll(t);
+    LinkToEsp.poll(t);
     handleCommands();
 
     // Der BNO055 hat Vorrang: sein Takt bestimmt die Qualitaet des Winkels
