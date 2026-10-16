@@ -6,7 +6,8 @@ eigenen Kopien an. Namensschema und Einheiten: [Coding_Rules.md](../../docs/Codi
 
 ```
 lib/include/
-├── enum.h               Pinbelegung, Motor-IDs
+├── enum.h               Teensy-Pins, UART-Makros, Expander-Bits, I²C-Adressen
+├── enum_esp.h           Pins des ESP32-S3 (XIAO-Namen D0 … D10)
 ├── params.h             Sammel-Header: bindet alle params_*.h ein
 └── params/
     ├── params_system.h    Busse, Adressen, Debug-Modus, Linien-Schwellen, Kurs-Regler (HDG_)
@@ -15,6 +16,8 @@ lib/include/
     ├── params_position.h  Odometrie, Radar-Validierung, Fusion (ODO_, POS_, FUS_)
     ├── params_motion.h    Speed-Pattern, moveToPoint, Wandabstand, Punkt-Array (MOVE_, ARRAY_)
     ├── params_path.h      Pfadplanung und A*-Raster (PATH_)
+    ├── params_sources.h   DEBUG-FLAG: Sensoren am Teensy oder am ESP (SENSOR_SOURCE, HEADING_/RADAR_/IR_SOURCE)
+    ├── params_link.h      Link Teensy ↔ ESP32-S3 (LINK_)
     └── params_pathmap.h   Gewichtskarten des A* (PATH_WEIGHTS_), nur von Pathfinder.cpp eingebunden
 ```
 
@@ -44,17 +47,18 @@ gegen die Schaltplanwerte steht in `test/Pinbelegung_Check.cpp` (bauen genügt).
 
 **Motoren** – Motor 1 = VL, Motor 2 = HL, Motor 3 = VR, Motor 4 = HR (Angabe des Teams):
 
-| Motor | ID | PWM-Pin | Motor-ADC `_AP1` / `_AP2` | Expander (Enable · Richtung) |
+| Motor | ID | PWM-Pin | Motor-ADC `_AP1` / `_AP2` | Expander (Richtung · Enable · Bremse) |
 |---|---|---|---|---|
-| `MotorVL` vorne links (Motor 1) | 1 | 3 | `IN0` / `IN1` | 0x22: P0 · P1 |
-| `MotorHL` hinten links (Motor 2) | 2 | 4 | `IN2` / `IN3` | 0x22: P3 · P4 |
-| `MotorVR` vorne rechts (Motor 3) | 0 | 5 | `IN4` / `IN5` | 0x20: P0 · P1 |
-| `MotorHR` hinten rechts (Motor 4) | 3 | 6 | `IN6` / `IN7` | 0x20: P3 · P4 |
-| `MotorDR` Dribbler | 4 | 2 | Pins 27 / 26 (analog) | Enable: Pin 20; Richtung: 0x22 P6 |
+| `MotorVL` vorne links (Motor 1) | 1 | 3 | `IN0` / `IN1` | 0x22: P0 · P1 · P2 |
+| `MotorHL` hinten links (Motor 2) | 2 | 4 | `IN2` / `IN3` | 0x22: P3 · P4 · P5 |
+| `MotorVR` vorne rechts (Motor 3) | 0 | 5 | `IN4` / `IN5` | 0x20: P0 · P1 · P2 |
+| `MotorHR` hinten rechts (Motor 4) | 3 | 6 | `IN6` / `IN7` | 0x20: P3 · P4 · P5 |
+| `MotorDR` Dribbler | 4 | 2 | Pins 27 / 26 (analog) | Richtung: Pin 20; Enable · Bremse: 0x22 P6 · P7 |
 
-> **Annahme, in ESCON Studio zu prüfen:** Je Motor hängen `DO1` (→ ESCON DI2), `DIO3` und `DIO4` am
-> Expander. Der Code nimmt `DO1` = Enable und `DIO3` = Richtung; `DIO4` bleibt Eingang. Ändert sich das, nur die
-> `_BIT`-Konstanten in `enum.h` ändern. `_AP1` = Drehzahl, `_AP2` = Strom gilt wie bisher.
+> **ESCON-Belegung (Angabe des Teams):** `DO1` (→ ESCON DI2) = Richtung, `DIO3` = Enable, `DIO4` = Bremse. Die Pegel sind
+> **Annahmen** (Richtungsbit 0 bei `Dir = true` wie bisher, Enable hoch = an, Bremse hoch = Bremse an) und am Roboter zu prüfen.
+> Geändert wird nur in `enum.h` (`_BIT`-Konstanten) und in `systemlib::updateMotors()`. `_AP1` = Drehzahl, `_AP2` = Strom ist weiter
+> eine Annahme (ESCON-Ausgänge `AO1`/`AO2`).
 
 **Weitere Pins**
 
@@ -64,7 +68,7 @@ gegen die Schaltplanwerte steht in `test/Pinbelegung_Check.cpp` (bauen genügt).
 | `SPI_CS_INTERCON` / `SPI_MOSI` / `SPI_MISO` / `SPI_SCK` | 10 / 11 / 12 / 13 | Bus `SPI` (nicht `SPI1`) |
 | `I2C_SCL_3V3` / `I2C_SDA_3V3` | 16 / 17 | Teensy-Bus `Wire1` |
 | `I2C_SDA_ESP` / `I2C_SCL_ESP` | 18 / 19 | `Wire`: ESP-Bus, nur mit Jumpern `SDA_Jumper`/`SCL_Jumper` |
-| `BLDC_DO1` | 20 | Dribbler-Enable (Ausgang) |
+| `BLDC_DO1` | 20 | Dribbler-Richtung (Ausgang, ESCON DI2) |
 | `ROBO_ID` | 21 | Roboter-ID (Jumper JP4) |
 | `RGB_DATA_3V3` | 22 | LED-Datenleitung |
 | `LIGHT_BARRIER` | 23 | Lichtschranke (analog, `LDR_IN`) |
@@ -78,8 +82,8 @@ Damit sind alle 34 Pins belegt. `LED_LENGTH` = 19.
 
 | Chip | Adresse | P0 · P1 · P2 · P3 · P4 · P5 · P6 · P7 |
 |---|---|---|
-| IC9 `Exp_MotorA` | 0x22 | M1 DO1 · M1 DIO3 · M1 DIO4 · M2 DO1 · M2 DIO3 · M2 DIO4 · BLDC DIO1 · BLDC DIO2 |
-| IC7 `Exp_MotorB` | 0x20 | M3 DO1 · M3 DIO3 · M3 DIO4 · M4 DO1 · M4 DIO3 · M4 DIO4 · SWITCH1 · BUTTON1 |
+| IC9 `Exp_MotorA` | 0x22 | M1 Richtung · M1 Enable · M1 Bremse · M2 Richtung · M2 Enable · M2 Bremse · Dribbler Enable · Dribbler Bremse |
+| IC7 `Exp_MotorB` | 0x20 | M3 Richtung · M3 Enable · M3 Bremse · M4 Richtung · M4 Enable · M4 Bremse · SWITCH1 · BUTTON1 |
 | IC8 `Exp_System` | 0x23 | VDRIB_EN · VMOT_EN · LIGHT_BARRIER_EN · LINE_EN_T · UART_DIO1 · I2C_INTERCON_3V3_EN · – · – |
 
 INA219: 0x40 (Akku, 5 mΩ), 0x41 (Motorversorgung, 5 mΩ), 0x45 (Dribbler, 10 mΩ).
@@ -104,6 +108,8 @@ Die Zahlen stehen **nur in den Headern** – diese Tabelle nennt die Gruppen:
 | `params_position.h` | `ODO_`, `POS_`, `FUS_` | Rad-Odometrie, Plausibilität und Signalstärke der Radarwerte, Kalman-Filter | `calculatePosition()` |
 | `params_motion.h` | `SPattern_`, `MOVE_`, `ARRAY_` | Speed-Pattern (`enum SPattern`), Zielkreis, Anlaufbegrenzung, Wandabstand, Punktliste | `moveToPoint()`, Punkt-Array |
 | `params_path.h` | `PATH_` | Neuplanung, Durchfahrradius, Fallback; Raster, Schrittkosten, Heap des A* | `moveToPointAvoid()`, [Pathfinder](../Pathfinder/Pathfinder.md) |
+| `params_sources.h` | `SENSOR_SOURCE`, `HEADING_/RADAR_/IR_SOURCE` | **Debug-Flag:** BNO055, Radar, IR-Ring am Teensy (0) oder am ESP (1); Wert muss in beiden `platformio.ini` gleich sein | [SensorLink](../SensorLink/SensorLink.md) |
+| `params_link.h` | `LINK_` | Baudrate, Zeitlimits, Pausen, Parameter-Prüfsumme | Link | [Link](../Link/Link.md), [SensorLink](../SensorLink/SensorLink.md), ESP-Firmware |
 | `params_pathmap.h` | `PATH_WEIGHTS_` | Gewichtskarte des Feldes und Masken für Ball/Roboter (nicht in `params.h` enthalten) | [Pathfinder](../Pathfinder/Pathfinder.md) |
 
 ### Debug-Modus
@@ -131,8 +137,9 @@ gleichzeitig; `RadarArray::update()` wartet nie auf ein Ergebnis.
 | `-O2` / `-Wall` | Optimierung / Warnungen |
 | `-fno-math-errno` | `sqrtf()` als FPU-Befehl, siehe [Laufzeit_Optimierung.md](../../docs/Laufzeit_Optimierung.md) |
 | `-DACTIVE_CHANNELS=200` | Anzahl PDS-Kanäle |
-| `-DPDS_AUTO_CHANNEL_BASE=32` | Kanäle 0..31 gehören `systemlib::setupPDS()` |
+| `-DPDS_AUTO_CHANNEL_BASE=40` | Kanäle 0..37 gehören `systemlib::setupPDS()` |
 | `-DPDS_MAX_UNITS=48` | Einheiten-Tabelle von PDS |
 | `-DDPDS_Mode=…` | Debug-Modus, siehe oben |
+| `-DSENSOR_SOURCE=0\|1` (und einzeln `HEADING_/RADAR_/IR_SOURCE`) | Sensoren am Teensy oder am ESP, **auch in `esp/platformio.ini`** |
 
 `monitor_speed = 115200`, Board `teensy40`, **`board_build.f_cpu = 912000000L`** (Übertakten, Begründung und Test in [Laufzeit_Optimierung.md](../../docs/Laufzeit_Optimierung.md#3-cpu-takt)).

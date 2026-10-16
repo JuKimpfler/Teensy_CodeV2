@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "params_sources.h"
 
 /**
  * params_system.h  --  Busse, Adressen, Debug-Modus, Regelzyklus
@@ -12,10 +13,21 @@
 // Alle Aliase zeigen aktuell auf Wire. Ein Sensor zieht auf den anderen Bus
 // um, indem hier das Alias geaendert wird (z.B. #define I2C_US Wire1).
 #define I2C_TNS Wire1 // Teensy-Bus (SDA/SCL_TNS_3V3, Pins 16/17): Port-Expander, INA219
-#define I2C_BNO Wire  // ESP-Bus (SDA/SCL_ESP_3V3, Pins 18/19), nur mit geschlossenen Jumpern SDA_Jumper/SCL_Jumper
-#define I2C_IR Wire   // wie I2C_BNO; steckt der IR-Ring am Teensy-Intercon J13, hier Wire1 eintragen
+// ESP-Bus (SDA/SCL_ESP_3V3) am Teensy: Wire (Pins 18/19), nur mit geschlossenen Jumpern SDA_Jumper/SCL_Jumper.
+// Gilt nur fuer Geraete mit Quelle Teensy (params_sources.h). Steckt ein Geraet am Teensy-Stecker J13: Wire1 eintragen
+// (per build_flag -DI2C_RADAR=Wire1 usw.) und I2C_WIRE1_CLOCK_HZ auf 100000 setzen.
+#ifndef I2C_BNO
+#define I2C_BNO Wire
+#endif
+#ifndef I2C_IR
+#define I2C_IR Wire
+#endif
+#ifndef I2C_US
 #define I2C_US Wire
-#define I2C_RADAR Wire // wie I2C_IR; am Teensy-Bus (Wire1) laeuft das Radar nur mit 100 kHz, siehe I2C_WIRE1_CLOCK_HZ
+#endif
+#ifndef I2C_RADAR
+#define I2C_RADAR Wire
+#endif
 
 static constexpr uint8_t BNO_ADDRESS = 0x28; ///< I2C-Adresse des BNO055
 

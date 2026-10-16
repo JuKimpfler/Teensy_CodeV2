@@ -35,7 +35,8 @@
 - **Parameter:** nur in `lib/include/params/` (Übersicht: [include.md](../lib/include/include.md)).
   Keine `#define`/`constexpr`-Werte im `.cpp` oder in Klassen. Ausnahme: Register-
   und Protokollkonstanten eines Chips bleiben in dessen Treiber.
-- **Pins:** nur in `lib/include/enum.h`.
+- **Pins:** Teensy nur in `lib/include/enum.h`, ESP (XIAO-Namen D0 … D10) nur in `lib/include/enum_esp.h`.
+- **Debug-Flags** (`SENSOR_SOURCE`, `DPDS_Mode`, …) stehen in `params/` und sind in `platformio.ini` dokumentiert; Flags, die beide Firmwarestände betreffen, müssen in beiden `platformio.ini` gleich sein.
 
 ## Namen
 

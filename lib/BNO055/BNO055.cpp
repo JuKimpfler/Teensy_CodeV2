@@ -1,5 +1,7 @@
 #include "BNO055.h"
-#include "EEPROM.h"
+#ifdef CALIBRATION_ENABLED
+#include "EEPROM.h" // nur fuer die Kalibrierdaten im Teensy-EEPROM
+#endif
 
 // ? was bringt das
 //#include <vector>
@@ -132,6 +134,23 @@ uint8_t BNO055::systemError()
     cls->endTransmission();
     cls->requestFrom((int)addr, 1);
     return (uint8_t)(cls->read());
+}
+
+// Drehrate Z (0x18/0x19) und Euler-Winkel Heading (0x1A/0x1B) liegen hintereinander
+bool BNO055::readGyroZHeadingRaw(int16_t &gyroZ, int16_t &heading)
+{
+    cls->beginTransmission(addr);
+    cls->write(0x18);
+    if (cls->endTransmission(false) != 0)
+        return false;
+    if (cls->requestFrom((int)addr, 4) != 4)
+        return false;
+    uint8_t b[4];
+    for (uint8_t i = 0; i < 4; i++)
+        b[i] = cls->read();
+    gyroZ = (int16_t)(b[0] | (b[1] << 8));
+    heading = (int16_t)(b[2] | (b[3] << 8));
+    return true;
 }
 
 // Get Calibration Status

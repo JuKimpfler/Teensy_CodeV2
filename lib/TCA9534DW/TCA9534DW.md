@@ -78,8 +78,8 @@ Drei Expander am Teensy-Bus `Wire1` (siehe `systemlib.cpp`, Schaltplan Blatt 4):
 
 | Instanz | Adresse | Eingänge | Ausgänge |
 |---|---|---|---|
-| `Exp_MotorA` | `0x22` | `DIO4` Motor 1 und 2, `BLDC_DIO2` | Enable und Richtung Motor 1 (VL) und 2 (HL), Dribbler-Richtung |
-| `Exp_MotorB` | `0x20` | `SWITCH1` (P6), `BUTTON1` (P7), `DIO4` Motor 3 und 4 | Enable und Richtung Motor 3 (VR) und 4 (HR) |
+| `Exp_MotorA` | `0x22` | – | Richtung, Enable und Bremse von Motor 1 (VL) und 2 (HL); Enable und Bremse des Dribblers |
+| `Exp_MotorB` | `0x20` | `SWITCH1` (P6), `BUTTON1` (P7) | Richtung, Enable und Bremse von Motor 3 (VR) und 4 (HR) |
 | `Exp_System` | `0x23` | `UART_DIO1`, `LINE_EN_T` (solange nicht getrieben) | `VMOT_EN`, `VDRIB_EN`, `LIGHT_BARRIER_EN`, `I2C_INTERCON_3V3_EN` |
 
 Die Bitzuordnung steht in `enum.h` ([Tabelle](../include/include.md)); Bit n ist Pin Pn, es wird nicht gespiegelt.

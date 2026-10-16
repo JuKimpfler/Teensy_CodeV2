@@ -152,8 +152,14 @@ void RadarArray::update(void)
 
     if (!roundRunning)
     {
+        const uint32_t now = micros();
+        if (_roundActive)
+        {
+            _roundId++;
+            _roundMidUs = _roundStartUs + (uint32_t)(now - _roundStartUs) / 2u;
+        }
         if (_roundActive && !_roundFailed)
-            _lastRoundUs = micros() - _roundStartUs;
+            _lastRoundUs = now - _roundStartUs;
         _startRound();
     }
 }
@@ -276,4 +282,21 @@ void RadarArray::_retrySetup(uint8_t idx)
 
     _lastSetupMs[idx] = millis();
     _ready[idx] = _setupSens(idx);
+}
+
+void RadarArray::feedRemote(uint8_t pos, uint16_t dist, uint16_t distRaw, int32_t strength, bool peak, bool con, uint32_t timeMs)
+{
+    RadarData &d = _data[_clamp(pos)];
+    d.Dist = dist;
+    d.DistRaw = distRaw;
+    d.Strenght = strength;
+    d.Peaks = peak ? 1 : 0;
+    d.isCon = con;
+    d.Time = timeMs;
+}
+
+void RadarArray::markRemoteLost(void)
+{
+    for (uint8_t i = 0; i < RADAR_NUM_SENSORS; i++)
+        _data[i].isCon = false;
 }

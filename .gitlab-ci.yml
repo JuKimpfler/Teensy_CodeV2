@@ -7,6 +7,7 @@
 # Toolchain holt sich PlatformIO selbst und behaelt sie im Cache.
 
 stages:
+  - test
   - build
   - check
 
@@ -32,6 +33,16 @@ cache:
   paths:
     - .platformio/
 
+# Rechnertests der reinen Logik (Link-Protokoll, Zeitabgleich, Winkel). Kein PlatformIO noetig, deshalb eigener
+# kurzer Job ohne before_script.
+test:native:
+  stage: test
+  image: gcc:13
+  before_script: []
+  script:
+    - test/native/run.sh
+    - test/native/check_esp_syntax.sh
+
 build:teensy40:
   stage: build
   script:
@@ -51,4 +62,16 @@ check:cppcheck:
   stage: check
   script:
     - pio check -e teensy40 --skip-packages --fail-on-defect high
+  allow_failure: true
+
+# ESP32-S3-Firmware (esp/). Noch nicht auf Hardware gebaut: allow_failure, bis der erste Lauf sauber ist.
+build:esp32s3:
+  stage: build
+  script:
+    - pio run -d esp
+  artifacts:
+    name: "esp-firmware-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - esp/.pio/build/esp32s3/firmware.bin
+    expire_in: 4 weeks
   allow_failure: true

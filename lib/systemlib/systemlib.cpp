@@ -3,6 +3,13 @@
 /* -------------- Instanzen -------------- */
 
 BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
+// Zwei Busmaster am ESP-Bus (Teensy ueber die Jumper und ESP) stoeren sich: Quellen nicht mischen
+#if ((HEADING_SOURCE == SENSOR_SOURCE_TEENSY) || (RADAR_SOURCE == SENSOR_SOURCE_TEENSY) || (IR_SOURCE == SENSOR_SOURCE_TEENSY)) && SENSORS_ANY_ON_ESP && !defined(ALLOW_MIXED_SENSOR_SOURCES)
+#warning "Sensorquellen gemischt (HEADING_SOURCE/RADAR_SOURCE/IR_SOURCE): Teensy und ESP waeren am ESP-Bus beide Master. Nur gewollt, wenn die Teensy-Geraete am Teensy-Stecker J13 (Wire1) stecken: dann -DALLOW_MIXED_SENSOR_SOURCES setzen."
+#endif
+
+SensorLink EspLink; // Link zum ESP32-S3 (Winkel, Radar, IR-Ring, Tasten)
+StreamLinkPort EspLinkPort(UART_ESP);
 Pathfinder AStar; // ~130 kB: nur global anlegen. begin() in systemlib::initialize()
 // PowerDebugger PDS;
 
@@ -15,9 +22,11 @@ elapsedMillis lastvaliddata_Radar_Y;
 
 commlib communication;
 
+#if IR_SOURCE == IR_SOURCE_TEENSY
 I2C_bus i2cIR(I2C_IR);
 Device_handle ir_ring_handle = {i2cIR, I2C_target{0x0A}};
 IR_ring ir_ring(ir_ring_handle);
+#endif
 
 INA219 INA219_Main(INA_ADDR_MAIN);
 INA219 INA219_Motor(INA_ADDR_MOTOR);
@@ -72,15 +81,22 @@ uint8_t systemExpanderByte(bool motorPower, bool dribblerPower)
 }
 
 /// Ausgaberegister zuerst, dann die Richtung der Pins: so entsteht kein kurzer falscher Pegel an den ESCON-Eingaengen.
-/// Eingaenge (true): DIO4 der Motoren, DIO2 des Dribblers, SWITCH1, BUTTON1, UART_DIO1, ungenutzte Pins.
+/// Start im Stillstand: Enable aus, Bremse an. Eingaenge (true): SWITCH1, BUTTON1, UART_DIO1, ungenutzte Pins.
 void initExpanders(bool motorPower)
 {
-    Exp_MotorA.write(0xFF);
-    Exp_MotorB.write(0xFF);
+    uint8_t stopA = 0xFF;
+    uint8_t stopB = 0xFF;
+    setBit(stopA, MotorVL_EN_BIT, false);
+    setBit(stopA, MotorHL_EN_BIT, false);
+    setBit(stopA, MotorDR_EN_BIT, false);
+    setBit(stopB, MotorVR_EN_BIT, false);
+    setBit(stopB, MotorHR_EN_BIT, false);
+    Exp_MotorA.write(stopA);
+    Exp_MotorB.write(stopB);
     Exp_System.write(systemExpanderByte(motorPower, false));
 
-    Exp_MotorA.begin(false, false, true, false, false, true, false, true);
-    Exp_MotorB.begin(false, false, true, false, false, true, true, true);
+    Exp_MotorA.begin(false);                                                // alle acht Pins Ausgang
+    Exp_MotorB.begin(false, false, false, false, false, false, true, true); // P6/P7 = SWITCH1/BUTTON1
     Exp_System.begin(false, false, false, LINE_EN_LEVEL < 0, true, false, true, true);
 }
 } // namespace
@@ -91,8 +107,12 @@ void systemlib::initialize()
 {
     Wire1.begin();
     Wire1.setClock(I2C_WIRE1_CLOCK_HZ);
+#if (HEADING_SOURCE == SENSOR_SOURCE_TEENSY) || (RADAR_SOURCE == SENSOR_SOURCE_TEENSY) || (IR_SOURCE == SENSOR_SOURCE_TEENSY)
+    // Nur wenn der Teensy am ESP-Bus (Wire, Pins 18/19) selbst Sensoren liest. Sonst bleibt Wire unberuehrt,
+    // damit der Teensy den Bus des ESP nie treibt.
     Wire.begin();
     Wire.setClock(I2C_WIRE_CLOCK_HZ);
+#endif
 
     initExpanders(_motorPowerEnabled);
     readExpanders();
@@ -109,7 +129,25 @@ void systemlib::initialize()
     INA219_Motor.setMaxCurrentShunt(INA_MAX_CURRENT_A, INA_MOTOR_SHUNT_OHM);
     INA219_Drib.setMaxCurrentShunt(INA_MAX_CURRENT_A, INA_DRIB_SHUNT_OHM);
 
-    BNO.begin();
+    static uint8_t espRxBuffer[LINK_RX_BUFFER_BYTES]; // keine Flusssteuerung: grosser Empfangspuffer
+    static uint8_t espTxBuffer[256];
+    UART_ESP.addMemoryForRead(espRxBuffer, sizeof(espRxBuffer));
+    UART_ESP.addMemoryForWrite(espTxBuffer, sizeof(espTxBuffer));
+    UART_ESP.begin(LINK_BAUD);
+    EspLink.begin(&EspLinkPort, micros());
+#if SENSORS_ANY_ON_ESP
+    // Beim Start auf den ESP warten (Handshake), aber nicht ewig: danach laeuft der Roboter ohne dessen Sensoren weiter
+    // (kein Winkel: der Kursregler dreht nicht; kein Radar: die Fusion faellt auf die Odometrie zurueck).
+    while (!EspLink.giveHandshakeDone() && !EspLink.giveBootTimeout(micros()))
+    {
+        EspLink.update(micros());
+        delay(1);
+    }
+#endif
+
+#if HEADING_SOURCE == HEADING_SOURCE_DIRECT
+    BNO.begin(); // Uebergang: Teensy liest den BNO055 selbst (nur mit Jumpern am ESP-Bus, ESP darf dort nicht senden)
+#endif
     AStar.begin();
     calibBNO();
 
@@ -127,7 +165,9 @@ void systemlib::initialize()
     pinMode(BLDC_DO1, OUTPUT);
     digitalWrite(BLDC_DO1, LOW); // Dribbler gesperrt
 
+#if RADAR_SOURCE == RADAR_SOURCE_TEENSY
     Radar.begin(I2C_RADAR); // richtet alle Sensoren ein und startet die erste Messrunde
+#endif
 
     //ir_ring.read_gains(IR_Gains);
     //ir_ring.read_offsets(IR_Offsets);
@@ -157,8 +197,10 @@ void systemlib::readSensors(void)
     cycleTimer = 0;
     cycleTimer_us = 0;
 
+    EspLink.update(micros());
+    updateLinkDiagnostics();
     readBNO();
-    Radar.update();
+    readRadar();
 
 
     // Motordrehzahlen -> Feldgeschwindigkeit. Heading als Mittel ueber den Zyklus,
@@ -288,6 +330,13 @@ void systemlib::setupPDS(void)
     PDS.bind("Start", &startSwitch, 28);
     PDS.bind("CPU_Temp", &CPU_Temp, 29, "°C");
     PDS.bind("Dribbler_I", &Drib_I, 30, "mA");
+    PDS.bind("Heading_Alter", &Heading_Age_ms, 31, "ms");
+    PDS.bind("Link_Status", &Link_State, 32);
+    PDS.bind("ESP_Loop_max", &ESP_MaxLoop_us, 33, "us");
+    PDS.bind("ESP_I2C_Fehler", &ESP_I2cErr, 34);
+    PDS.bind("Link_CRC", &Link_CrcErr, 35);
+    PDS.bind("Link_Luecken", &Link_Lost, 36);
+    PDS.bind("Link_Laufzeit", &Link_Delay_us, 37, "us");
 
     // 26..31 bleiben frei fuer weitere Systemwerte.
 
@@ -642,7 +691,8 @@ static bool fusionUpdate(AxisFilter &f, const AxisMeas &m, float tiltFactor, uin
     const float R = sigma * sigma * tiltFactor;
 
     // Der Radarwert ist alt: er gehoert zur Position von vor ~Latenz, nicht zu "jetzt".
-    const uint32_t tMeas = (m.t > FUS_RADAR_LATENCY_MS) ? (m.t - FUS_RADAR_LATENCY_MS) : 0;
+    constexpr uint32_t latencyMs = (RADAR_SOURCE == RADAR_SOURCE_ESP) ? FUS_RADAR_LATENCY_LINK_MS : FUS_RADAR_LATENCY_MS;
+    const uint32_t tMeas = (m.t > latencyMs) ? (m.t - latencyMs) : 0;
     float xRef = f.x;
     if (!histLookup(f, tMeas, xRef))
         xRef = f.x;
@@ -906,7 +956,34 @@ PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_fie
 
 void systemlib::calibRadar()
 {
+#if RADAR_SOURCE == RADAR_SOURCE_TEENSY
     Radar.calib();
+#else
+    EspLink.sendCmd(LinkCmdRadarCalib); // der ESP kalibriert (blockiert dort rund eine Sekunde je Sensor)
+#endif
+}
+
+void systemlib::readRadar(void)
+{
+#if RADAR_SOURCE == RADAR_SOURCE_ESP
+    // Werte vom ESP: eine Runde ist komplett, wenn der ESP sie schickt. Die Zeit ist die Mitte der Messrunde.
+    const uint32_t nowUs = micros();
+    RadarMsg rm;
+    uint32_t localUs = 0;
+    if (EspLink.takeRadar(rm, localUs))
+    {
+        int32_t ageUs = (int32_t)(nowUs - localUs); // Zeitabgleich ungenau: nie in die Zukunft datieren
+        if (ageUs < 0)
+            ageUs = 0;
+        const uint32_t timeMs = millis() - (uint32_t)ageUs / 1000u;
+        for (uint8_t k = 0; k < RADAR_NUM_SENSORS; k++)
+            Radar.feedRemote(k, rm.Dist[k], rm.DistRaw[k], rm.Strength[k], (rm.PeakBits >> k) & 1u, (rm.ConBits >> k) & 1u, timeMs);
+    }
+    if (!EspLink.isUsable(nowUs))
+        Radar.markRemoteLost(); // Link ausgefallen: Werte altern, die Fusion faellt auf die Odometrie zurueck
+#else
+    Radar.update();
+#endif
 }
 
 /* -------------- ADC/Line -------------- */
@@ -1053,18 +1130,55 @@ void systemlib::updateLine()
 /* -------------- BNO -------------- */
 void systemlib::calibBNO(void)
 {
+#if HEADING_SOURCE == HEADING_SOURCE_LINK
+    // Der Winkel kommt vom ESP: gilt ab der naechsten gueltigen Messung, falls jetzt keine vorliegt
+    _headingCalibPending = true;
+    if (_headingValid)
+    {
+        BNO_calibration = BNO_eulerZ;
+        _headingCalibPending = false;
+    }
+#else
     BNO_calibration = BNO_eulerZ;
+#endif
 }
 
 void systemlib::readBNO(void)
 {
+#if HEADING_SOURCE == HEADING_SOURCE_LINK
+    const uint32_t nowUs = micros();
+    _headingValid = EspLink.giveHeadingValid(nowUs);
+    Heading_Age_ms = EspLink.giveHeadingAgeUs(nowUs) * 1e-3f;
+    if (_headingValid)
+    {
+        BNO_eulerZ = EspLink.giveHeading(nowUs); // 0 ... 360, mit der Drehrate auf jetzt weitergerechnet
+        if (_headingCalibPending)
+        {
+            BNO_calibration = BNO_eulerZ;
+            _headingCalibPending = false;
+        }
+        BNO_OrbitDir = Util.wrapAngle(BNO_eulerZ - BNO_calibration);
+    }
+#else
     BNO_eulerZ = BNO.eulHeading();
     BNO_OrbitDir = Util.wrapAngle(BNO_eulerZ - BNO_calibration);
+    _headingValid = true;
+#endif
 }
 
 /* -------------- IR -------------- */
 void systemlib::readIR(void)
 {
+#if IR_SOURCE == IR_SOURCE_ESP
+    // Die Werte kommen vom ESP; der Aufruf kostet keine Buszeit und darf jeden Zyklus laufen.
+    IrMsg im;
+    uint32_t localUs = 0;
+    if (EspLink.takeIr(im, localUs))
+    {
+        IR_rawAngle = (float)im.AngleRaw / 180.0f; // wie IR_ring::read_ball_angle()
+        IR_rawDistance = im.Dist;
+    }
+#else
     IR_rawAngle = ir_ring.read_ball_angle();
     IR_rawDistance = ir_ring.read_ball_distance();
 
@@ -1072,25 +1186,39 @@ void systemlib::readIR(void)
     ir_ring.read_raw_values(IR_rawSensorData);
     ir_ring.read_tssp(IR_TSSP);
 #endif
+#endif
 
     IR_Angle = Util.wrapAngle(IR_rawAngle - BNO_OrbitDir);
     IR_Distance = IR_rawDistance; // Hier muss noch Mathe hin
 }
 
+// Kalibrierung des IR-Rings: nur mit dem Ring am Teensy (IR_SOURCE_TEENSY). Am ESP laeuft sie ueber dessen Firmware.
 void systemlib::writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain)
 {
+#if IR_SOURCE == IR_SOURCE_TEENSY
     ir_ring.write_offset(sensorNumber, offset);
     ir_ring.write_gain(sensorNumber, gain);
+#else
+    (void)sensorNumber;
+    (void)offset;
+    (void)gain;
+#endif
 }
 
 void systemlib::writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16])
 {
+#if IR_SOURCE == IR_SOURCE_TEENSY
     ir_ring.write_offsets(offsets);
     ir_ring.write_gains(gains);
+#else
+    (void)offsets;
+    (void)gains;
+#endif
 }
 
 void systemlib::calibIR(void)
 {
+#if IR_SOURCE == IR_SOURCE_TEENSY
     ir_ring.read_raw_values(IR_rawSensorData); // only needed if disabled in readIR()
 
     for (int i = 0; i < 16; i++)
@@ -1104,6 +1232,7 @@ void systemlib::calibIR(void)
 
     ir_ring.write_offsets(IR_Offsets);
     ir_ring.write_gains(IR_Gains);
+#endif
 }
 
 /* ---------- Communication -----------*/
@@ -1134,6 +1263,39 @@ float systemlib::giveMotorVoltage(void)
 float systemlib::giveMainCurrent(void)
 {
     return (float)INA219_Main.getCurrent_mA();
+}
+
+SensorLink &systemlib::giveEspLink(void)
+{
+    return EspLink;
+}
+
+LinkState systemlib::giveLinkState(void) const
+{
+    const uint32_t nowUs = micros();
+    if (EspLink.giveParamsMismatch())
+        return LinkStateMismatch;
+#if !SENSORS_ANY_ON_ESP
+    if (!EspLink.giveHandshakeDone())
+        return LinkStateNotUsed;
+#endif
+    return EspLink.isUsable(nowUs) ? LinkStateOk : LinkStateNoEsp;
+}
+
+bool systemlib::giveSwitch2(void) const
+{
+    return EspLink.giveSwitch2();
+}
+
+void systemlib::updateLinkDiagnostics(void)
+{
+    Link_State = (float)giveLinkState();
+    const HealthMsg &hl = EspLink.giveHealth();
+    ESP_MaxLoop_us = hl.MaxLoopUs;
+    ESP_I2cErr = hl.I2cErrors;
+    Link_CrcErr = (float)EspLink.giveCrcErrors();
+    Link_Lost = (float)EspLink.giveLostFrames();
+    Link_Delay_us = (float)EspLink.giveClockDelayUs();
 }
 
 float systemlib::giveDribblerCurrent(void)
@@ -1271,21 +1433,26 @@ void systemlib::updateMotors(void)
     analogWrite(MotorHR_PWM, abs(MoDataHR.Speed) * 2.55);
     analogWrite(MotorHL_PWM, abs(MoDataHL.Speed) * 2.55);
     analogWrite(MotorDR_PWM, abs(MoDataDR.Speed) * 2.55);
-    digitalWrite(BLDC_DO1, MoDataDR.Enable);
+    digitalWrite(BLDC_DO1, !MoDataDR.Dir); // Dribbler-Richtung (ESCON DI2), wie bei den Motoren: 0 bei Dir = true
 
-    // Ausgabebytes der Expander (Bit n = Pin Pn). Eingangspins bleiben auf 1, ihr Wert ist ohne Wirkung.
-    // Richtungsbit ist 0 bei Dir = true (wie bisher), Enable-Bit ist 1 bei Enable.
+    // Ausgabebytes der Expander (Bit n = Pin Pn). Eingangspins (SWITCH1, BUTTON1) bleiben auf 1, ihr Wert ist ohne Wirkung.
+    // Richtung (DI2) 0 bei Dir = true, Enable (DIO3) 1 bei Enable, Bremse (DIO4) 1 bei Break.
     uint8_t outA = 0xFF;
     uint8_t outB = 0xFF;
     setBit(outA, MotorVL_DIR_BIT, !MoDataVL.Dir);
     setBit(outA, MotorVL_EN_BIT, MoDataVL.Enable);
+    setBit(outA, MotorVL_BRK_BIT, MoDataVL.Break);
     setBit(outA, MotorHL_DIR_BIT, !MoDataHL.Dir);
     setBit(outA, MotorHL_EN_BIT, MoDataHL.Enable);
-    setBit(outA, MotorDR_DIR_BIT, !MoDataDR.Dir);
+    setBit(outA, MotorHL_BRK_BIT, MoDataHL.Break);
+    setBit(outA, MotorDR_EN_BIT, MoDataDR.Enable);
+    setBit(outA, MotorDR_BRK_BIT, MoDataDR.Break);
     setBit(outB, MotorVR_DIR_BIT, !MoDataVR.Dir);
     setBit(outB, MotorVR_EN_BIT, MoDataVR.Enable);
+    setBit(outB, MotorVR_BRK_BIT, MoDataVR.Break);
     setBit(outB, MotorHR_DIR_BIT, !MoDataHR.Dir);
     setBit(outB, MotorHR_EN_BIT, MoDataHR.Enable);
+    setBit(outB, MotorHR_BRK_BIT, MoDataHR.Break);
     const uint8_t outC = systemExpanderByte(_motorPowerEnabled, MoDataDR.Enable);
 
     // Die Bytes aendern sich nur bei Richtungs-/Enable-Wechseln. Schreiben nur dann, plus eine
@@ -1491,6 +1658,15 @@ void systemlib::updateHeadingController()
 {
     float dt = (micros() - lastMicrosContrl) * 1e-6f; // us -> s
     lastMicrosContrl = micros();
+
+    if (!_headingValid)
+    {
+        // Kein gueltiger Winkel (Link ausgefallen): nicht drehen, Regler auf den letzten Winkel setzen
+        ADRC_Out = 0;
+        PID_Out = 0;
+        resetHeadingController();
+        return;
+    }
 
     if (_useADRC)
     {

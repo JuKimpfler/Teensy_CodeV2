@@ -51,6 +51,7 @@ Bus_error I2C_bus::start_transmission(const Bus_target &target, Transfer_directi
 
 Bus_error I2C_bus::stop_transmission(const Bus_target &target, Transfer_direction dir) const
 {
+    (void)target; // Arduino-Wire braucht das Ziel beim Beenden nicht
     if (dir == Transfer_direction::read)
         return Bus_error::ok;
 

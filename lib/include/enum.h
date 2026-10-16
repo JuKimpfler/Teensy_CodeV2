@@ -54,7 +54,7 @@ enum PinOut
     I2C_SDA_ESP = 18,
     I2C_SCL_ESP = 19,
 
-    BLDC_DO1 = 20, // Dribbler-Enable (ESCON DI2), Ausgang
+    BLDC_DO1 = 20, // Dribbler-Richtung (ESCON DI2), Ausgang; Enable und Bremse: Expander 0x22 P6/P7
     ROBO_ID = 21,  // Roboter-ID (Jumper JP4, 10k Pull-Up)
     RGB_DATA_3V3 = 22,
     LIGHT_BARRIER = 23, // LDR_IN, analog
@@ -92,34 +92,36 @@ enum I2cAddress : uint8_t
 };
 
 /* -------------- Port-Expander: Bit n = Pin Pn --------------
- * Je Motor haengen drei Expander-Pins am ESCON: DO1 (-> DI2), DIO3, DIO4.
- * ANNAHME (in ESCON Studio pruefen): DO1 = Enable, DIO3 = Richtung, DIO4 = unbenutzt (bleibt Eingang).
- * Nur diese Zuordnung aendern, wenn die ESCON-Konfiguration anders ist. */
+ * Je Motor haengen drei Expander-Pins am ESCON (Angabe des Teams):
+ *   DO1  -> ESCON DI2  = Richtung
+ *   DIO3 -> ESCON DIO3 = Enable
+ *   DIO4 -> ESCON DIO4 = Bremse (Break)
+ * Pegel (Annahme, am Roboter pruefen): Richtungsbit 0 bei Dir = true, Enable hoch = an, Bremse hoch = Bremse an. */
 
-// Expander 0x22 (IC9): Motor 1 (VL), Motor 2 (HL), Dribbler
+// Expander 0x22 (IC9): Motor 1 (VL), Motor 2 (HL), Dribbler (Enable, Bremse)
 enum ExpMotorA : uint8_t
 {
-    MotorVL_EN_BIT = 0,   // MO1_DO1
-    MotorVL_DIR_BIT = 1,  // MO1_DIO3
-    MotorVL_DIO4_BIT = 2, // MO1_DIO4
-    MotorHL_EN_BIT = 3,   // MO2_DO1
-    MotorHL_DIR_BIT = 4,  // MO2_DIO3
-    MotorHL_DIO4_BIT = 5, // MO2_DIO4
-    MotorDR_DIR_BIT = 6,  // BLDC_DIO1
-    MotorDR_DIO2_BIT = 7  // BLDC_DIO2
+    MotorVL_DIR_BIT = 0, // MO1_DO1
+    MotorVL_EN_BIT = 1,  // MO1_DIO3
+    MotorVL_BRK_BIT = 2, // MO1_DIO4
+    MotorHL_DIR_BIT = 3, // MO2_DO1
+    MotorHL_EN_BIT = 4,  // MO2_DIO3
+    MotorHL_BRK_BIT = 5, // MO2_DIO4
+    MotorDR_EN_BIT = 6,  // BLDC_DIO1
+    MotorDR_BRK_BIT = 7  // BLDC_DIO2
 };
 
 // Expander 0x20 (IC7): Motor 3 (VR), Motor 4 (HR), Schalter
 enum ExpMotorB : uint8_t
 {
-    MotorVR_EN_BIT = 0,   // MO3_DO1
-    MotorVR_DIR_BIT = 1,  // MO3_DIO3
-    MotorVR_DIO4_BIT = 2, // MO3_DIO4
-    MotorHR_EN_BIT = 3,   // MO4_DO1
-    MotorHR_DIR_BIT = 4,  // MO4_DIO3
-    MotorHR_DIO4_BIT = 5, // MO4_DIO4
-    SWITCH1_BIT = 6,      // Schalter, hoch = EIN
-    BUTTON1_BIT = 7       // Taster, niedrig = gedrueckt
+    MotorVR_DIR_BIT = 0, // MO3_DO1
+    MotorVR_EN_BIT = 1,  // MO3_DIO3
+    MotorVR_BRK_BIT = 2, // MO3_DIO4
+    MotorHR_DIR_BIT = 3, // MO4_DO1
+    MotorHR_EN_BIT = 4,  // MO4_DIO3
+    MotorHR_BRK_BIT = 5, // MO4_DIO4
+    SWITCH1_BIT = 6,     // Schalter, hoch = EIN
+    BUTTON1_BIT = 7      // Taster, niedrig = gedrueckt
 };
 
 // Expander 0x23 (IC8): Leistungsschalter und Freigaben

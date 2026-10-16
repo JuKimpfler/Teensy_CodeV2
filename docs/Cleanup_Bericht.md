@@ -5,7 +5,7 @@ Alles mit `arm-none-eabi-g++` 13.2 gegen den Teensy-4-Core gebaut – **nicht** 
 
 | Prüfung | Ergebnis |
 |---|---|
-| Alle 45 Quelldateien in `lib/`, `src/`, `test/` (inkl. Beispiele) übersetzen | 0 Fehler, 0 Warnungen (vorher: 1 Fehler, 5 Warnungen) |
+| Alle 47 Quelldateien in `lib/`, `src/`, `test/` (inkl. Beispiele) übersetzen | 0 Fehler, 0 Warnungen (vorher: 1 Fehler, 5 Warnungen) |
 | Echter Link-Test: Teensy-Core + alle Libs + `src/MotorControll_Test.cpp`, Archiv-Linking wie PlatformIO | Firmware linkt: 63 kB Code, 26 kB Daten, 195 kB BSS (davon `AStar` 132 kB) |
 | `static_assert`-Wertetest: jeder verschobene/umbenannte Parameter hat den alten Wert (über 100 Konstanten) | bestanden |
 | Formatieren ändert den erzeugten Code nicht (Objektvergleich vor/nach `clang-format`) | 22 von 22 identisch |
@@ -33,13 +33,13 @@ VL = Motor 1, HL = Motor 2, VR = Motor 3, HR = Motor 4). Die Pinliste des Teams 
 - `enum.h` neu: Pins, UART-Makros (`UART_DBG` = `Serial1`, `UART_CAM1/2`, `UART_DIO`, `UART_ESP`), Expander-Bits, I²C-Adressen.
   `UART_DBG` kommt zusätzlich als **build_flag** (`-DUART_DBG=Serial1`), weil `PDS.cpp` `enum.h` nicht sieht; ohne das Flag nähme `params_PDS.h` `Serial3`.
 - `systemlib`: drei Expander (`Exp_MotorA` 0x22, `Exp_MotorB` 0x20, `Exp_System` 0x23) statt vier, Motor-ADC auf `SPI` (CS 30),
-  Linien-ADCs `(&SPI, 31, 32, 33, n)`, drei INA219 mit Shunt (5 mΩ, 5 mΩ, 10 mΩ), Dribbler (PWM Pin 2, Enable Pin 20, Richtung Expander), `VMOT_EN`/`VDRIB_EN`/Lichtschranken-LED/`I2C_INTERCON_3V3_EN` werden gesetzt.
+  Linien-ADCs `(&SPI, 31, 32, 33, n)`, drei INA219 mit Shunt (5 mΩ, 5 mΩ, 10 mΩ), Dribbler (PWM Pin 2, Richtung Pin 20, Enable und Bremse Expander), `VMOT_EN`/`VDRIB_EN`/Lichtschranken-LED/`I2C_INTERCON_3V3_EN` werden gesetzt.
 - Neu in der API: `setMotorPower()`/`giveMotorPower()` (schaltet `VMOT_EN`), `giveDribblerCurrent()`, PDS-Kanal 30 `Dribbler_I`.
 - `TCA9534DW`: Ausgaberegister getrennt vom Eingangs-Zwischenspeicher, damit Schreiben die Schalterzustände nicht überschreibt.
 - `test/Pinbelegung_Check.cpp`: Compile-Zeit-Prüfung aller Pins, ADC-Kanäle, Expander-Bits und Adressen gegen den Schaltplan (Gegenprobe mit absichtlich falschem Pin schlägt an).
 
 **Annahmen, die du am Roboter bestätigen musst** (je eine Stelle in `enum.h`/`params_system.h`):
-1. ESCON-Belegung je Motor: `DO1` (→ DI2) = Enable, `DIO3` = Richtung, `DIO4` bleibt Eingang. Falsch angenommen → Motoren laufen nicht oder drehen falsch herum.
+1. ESCON-Belegung je Motor (Angabe des Teams): `DO1` (→ DI2) = Richtung, `DIO3` = Enable, `DIO4` = Bremse. **Die Pegel sind Annahmen**: Richtungsbit 0 bei `Dir = true` (wie bisher), Enable hoch = an, Bremse hoch = Bremse an. Falsch angenommen → Motoren laufen nicht, drehen falsch herum oder bremsen im Lauf. Die Bremse wird jetzt ausgegeben (`MotorData.Break`, stand bisher nur im Speicher), im Stillstand ist sie an.
 2. `_AP1` = Drehzahl, `_AP2` = Strom (ESCON-Ausgänge `AO1`/`AO2`), wie im alten Code.
 3. Startschalter = `SWITCH1` (Expander 0x20, P6, hoch = EIN). `BUTTON1` speist `BTN1`.
 4. `LINE_EN_T` wird nicht getrieben (`LINE_EN_LEVEL = -1`); die Polarität steht nur auf dem Schaltplan der Linien-Platine.
@@ -47,8 +47,40 @@ VL = Motor 1, HL = Motor 2, VR = Motor 3, HR = Motor 4). Die Pinliste des Teams 
 
 **Verhalten gegenüber v3, das sich ändert:** Der Schalter, der die Motoren sperrte (`SWI[1]`), existiert auf V2.0 nicht;
 dafür gibt es `setMotorPower()`. `SWI[1..4]` und die RCJ-Eingänge (`giveRCJ`, `giveRCJpresent`) sind immer `false`; `giveStart()` liefert `SWITCH1`.
-Der Dribbler wird jetzt angesteuert (vorher schrieb `updateMotors()` keine Dribbler-PWM). `Cam::begin()` verlangt den Port.
+Der Dribbler wird jetzt angesteuert (vorher schrieb `updateMotors()` keine Dribbler-PWM): Richtung Pin 20, Enable und Bremse Expander 0x22. Auch die Bremse der Motoren (`Break`) wird jetzt ausgegeben. `Cam::begin()` verlangt den Port.
 `giveExpander(0/1/2, pin)` meint jetzt 0x20 / 0x22 / 0x23.
+
+## ESP32-S3 und Link (Phase 2 bis 4 des Plans)
+- **Neu:** `lib/Link` (Protokoll, Parser, Zeitabgleich, Winkelverfolgung, `LinkEsp`), `lib/SensorLink` (Teensy-Seite), `esp/` (PlatformIO-Projekt
+  `env:esp32s3` und Firmware: BNO055 → Link), `lib/include/enum_esp.h` (XIAO-Pins), `params/params_link.h` (inkl. Parameter-Prüfsumme).
+- **Teensy:** `systemlib` startet den Link (`UART_ESP` = `Serial6`, 2 Mbaud), `readBNO()` kann den Winkel über den Link beziehen
+  (`HEADING_SOURCE`, Standard weiterhin `HEADING_SOURCE_DIRECT`). Ohne gültigen Winkel dreht der Kursregler nicht. Neuer PDS-Kanal 31 `Heading_Alter`.
+- `BNO055`: `readGyroZHeadingRaw()` (Drehrate und Winkel in einer I²C-Transaktion), EEPROM-Include nur noch mit `CALIBRATION_ENABLED` (sonst ESP-untauglich).
+- **Rechnertests** (`test/native/run.sh`, g++ mit ASan/UBSan): 459 Prüfungen, 0 Fehler. Darunter 3 Mio. Zufallsbytes (kein falscher Rahmen),
+  20 000 Rahmen mit Bitfehlern (0 verfälscht), Zeitabgleich mit Zählerüberlauf, Vorzeichen-Lernen, Simulation ESP ↔ Teensy mit ESP-Neustart,
+  Linkausfall und Störungen (Winkelfehler 0,02 … 0,08 ° RMS, Winkelalter ≤ 9,9 ms).
+- **CI:** Jobs `test:native` und `build:esp32s3` (Letzterer `allow_failure`, bis ein erster Lauf auf echter Toolchain sauber ist).
+
+**Nicht geprüft:** Die ESP-Firmware ist nur gegen ein grobes Abbild des Arduino-ESP32-Cores auf Syntax geprüft (`test/native/check_esp_syntax.sh`),
+nicht mit der echten Toolchain gebaut und nicht auf Hardware. Echte UART- und Zeitgenauigkeit sind ungemessen.
+
+**Wichtig beim Einschalten von `HEADING_SOURCE_LINK`:** Die Jumper `SDA_Jumper`/`SCL_Jumper` müssen offen sein (der ESP ist dann Master am ESP-Bus).
+Radar und IR-Ring dürfen bis Phase 5 nicht am ESP-Bus stecken; am Teensy-Bus (`Wire1`) laufen sie nur bei 100 kHz (`I2C_WIRE1_CLOCK_HZ`).
+
+## ESP: Radar, IR-Ring, Tasten, Aktoren, Ausfallverhalten (Phase 5, 7, 8, 9)
+Ein Maus-Sensor wird nicht benötigt (Phase 6 entfällt, `LinkMouse` aus dem Protokoll entfernt, `PMW3389` bleibt ungenutzt im Repo).
+- **Debug-Flag `SENSOR_SOURCE`** (`lib/include/params/params_sources.h`, build_flag in beiden `platformio.ini`): BNO055, Radar und IR-Ring am Teensy (0, Standard) oder am ESP (1);
+  einzeln über `HEADING_SOURCE`, `RADAR_SOURCE`, `IR_SOURCE`. Die Quellen stecken in der HELLO-Prüfsumme: ein Unterschied zwischen den Firmwarestaenden wird gemeldet, die ESP-Daten dann nicht benutzt.
+  Gemischte Quellen (zwei Busmaster am ESP-Bus) erzeugen eine Compiler-Warnung.
+- **ESP-Firmware** liest je nach Flag BNO055, vier Radare (`RadarArray`, eine Nachricht je Messrunde, Zeitstempel = Rundenmitte) und den IR-Ring; sie fasst den Bus bei Quelle Teensy nicht an.
+  `SWITCH2`, Servo (LEDC, beide Core-APIs) und Piezo laufen immer am ESP (`setServo()`, `playPiezo()`, `giveSwitch2()` am Teensy).
+- **Teensy:** `readRadar()`/`readIR()` übernehmen die Werte vom Link (`RadarArray::feedRemote()`), ohne Buszeit. Die Fusion nutzt `FUS_RADAR_LATENCY_LINK_MS` (0) statt der 30-ms-Schätzung.
+  Ohne Link werden die Sensoren als nicht verbunden markiert und die Werte altern (Rückfall auf Odometrie); Parameter-Abweichung → ESP-Daten werden nicht benutzt. Beim Start wartet der Teensy höchstens `LINK_BOOT_TIMEOUT_MS` auf den ESP.
+  `Wire` wird nur initialisiert, wenn der Teensy selbst Sensoren am ESP-Bus liest.
+- **Diagnose:** `giveLinkState()`, PDS-Kanäle 32 – 37 (Zustand, ESP-Schleifenzeit, I²C-Fehler, CRC, Lücken, Laufzeit); `PDS_AUTO_CHANNEL_BASE` ist jetzt 40.
+- **Abnahme:** `docs/Inbetriebnahme_ESP.md` – Schritte mit Kriterium, Fehlerfällen und Platz für Messwerte (Zykluszeit, Buslast, Temperatur).
+- **Geprüft (Rechner):** 466 Prüfungen im Link-Test (plus 14 im RadarArray-Test) (Radar 99 Runden, IR 499 Messungen, Zeitfehler 150 µs), RadarArray-Simulation (Rundenzähler, Mitte der Runde, 1,0 Statusabfragen je Zyklus statt 3,7),
+  Teensy-Build in fünf Flag-Kombinationen, ESP-Syntaxlauf in vier Kombinationen und beiden LEDC-APIs. **Nicht geprüft:** echter ESP-Build, Hardware, Zeitmessung am Roboter.
 
 ## Laufzeit und Takt (Details: `docs/Laufzeit_Optimierung.md`)
 - **CPU-Takt 912 MHz** (`board_build.f_cpu`), vorher Standard 600 MHz. Übertakten, auf dieser Platine **nicht** dauergetestet. `CPU_Temp` steht in PDS-Kanal 29.

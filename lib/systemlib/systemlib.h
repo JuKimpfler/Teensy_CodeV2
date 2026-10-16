@@ -15,6 +15,7 @@
 #include <fancyBTN.h>
 #include <RadarArray.h>
 #include <Pathfinder.h>
+#include <SensorLink.h>
 
 #include <commlib.h>
 #include <PDS.h>
@@ -82,6 +83,15 @@ enum ArrayState : uint8_t
     ArrayFinished  ///< letzter Punkt erreicht
 };
 
+/// Zustand des Links zum ESP32-S3
+enum LinkState : uint8_t
+{
+    LinkStateOk = 0,       ///< ESP lebt, Handshake fertig, Parameter passen
+    LinkStateNoEsp = 1,    ///< ESP meldet sich nicht (oder nicht mehr)
+    LinkStateMismatch = 2, ///< Version oder Parameter-Pruefsumme passen nicht: ESP-Daten werden nicht benutzt
+    LinkStateNotUsed = 3   ///< kein Geraet am ESP (Quelle Teensy) und kein ESP gesehen
+};
+
 class systemlib
 {
 private:
@@ -93,9 +103,18 @@ private:
     float Akku_I = 0.0f;
     float Motor_V = 0.0f;
     float Motor_I = 0.0f;
-    float Drib_I = 0.0f;            ///< Dribbler-Strom [mA], 10 Hz
-    bool _motorPowerEnabled = true; ///< VMOT_EN; false = Motorversorgung aus, alle Antriebe stehen
-    float CPU_Temp = 0.0f;          ///< Chiptemperatur [Grad C], 1 Hz
+    float Drib_I = 0.0f;               ///< Dribbler-Strom [mA], 10 Hz
+    bool _headingValid = true;         ///< Winkel liegt vor (Link lebt bzw. BNO055 direkt gelesen)
+    bool _headingCalibPending = false; ///< Nullpunkt wird bei der naechsten gueltigen Winkelmessung gesetzt
+    float Link_State = 0.0f;           ///< LinkState als Zahl (PDS)
+    float ESP_MaxLoop_us = 0.0f;       ///< groesste Schleifenzeit des ESP [us]
+    float ESP_I2cErr = 0.0f;           ///< I2C-Fehler des ESP
+    float Link_CrcErr = 0.0f;          ///< CRC-Fehler am Teensy
+    float Link_Lost = 0.0f;            ///< verlorene Rahmen (Luecken der Sequenznummer)
+    float Link_Delay_us = 0.0f;        ///< Laufzeit des besten Zeitabgleichs [us]
+    float Heading_Age_ms = 0.0f;       ///< Alter der Winkelmessung [ms] (Quelle Link)
+    bool _motorPowerEnabled = true;    ///< VMOT_EN; false = Motorversorgung aus, alle Antriebe stehen
+    float CPU_Temp = 0.0f;             ///< Chiptemperatur [Grad C], 1 Hz
     float BNO_calibration = 0.0f;
     float BNO_eulerZ = 0.0f;
     float BNO_OrbitDir = 0.0f;
@@ -138,6 +157,8 @@ private:
     /* -------------- Sensor Funktion -------------- */
     void readBNO(void);
     void readIR(void);
+    void readRadar(void); ///< Quelle Teensy: Radar.update(); Quelle ESP: Werte vom Link uebernehmen
+    void updateLinkDiagnostics(void);
     void readExpanders(void);
 
     /* -------------- Debug -------------- */
@@ -249,6 +270,12 @@ public:
     float giveDribblerCurrent(void);
     void setMotorPower(bool on) { _motorPowerEnabled = on; } ///< Motorversorgung (VMOT_EN) und Freigabe aller Antriebe
     bool giveMotorPower(void) const { return _motorPowerEnabled; }
+    bool giveHeadingValid(void) const { return _headingValid; } ///< false: kein Winkel, der Kursregler dreht nicht
+    LinkState giveLinkState(void) const;                        ///< Zustand des ESP-Links
+    bool giveSwitch2(void) const;                               ///< SWITCH2 am ESP (nur mit laufendem Link)
+    bool setServo(uint16_t microseconds) { return giveEspLink().sendServo(microseconds); }
+    bool playPiezo(uint16_t hz, uint16_t ms) { return giveEspLink().sendPiezo(hz, ms); }
+    SensorLink &giveEspLink(void);                                                                     ///< Zustand des Links zum ESP32-S3
     float giveBallAngle(void) const { return IR_Angle; };                                              // TODO: Implementieren
     float giveBallDistance(void) const { return IR_Distance; };                                        // TODO: Implementieren
     float giveRawBallAngle(void) const { return IR_rawAngle; };                                        // TODO: Implementieren

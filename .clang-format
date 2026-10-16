@@ -1,0 +1,25 @@
+# Einheitlicher Stil fuer alle Firmware-Dateien (lib/, src/, test/).
+# lib/PDS ist ausgenommen: die Bibliothek wird per tools/sync_pds.py aus
+# Robotic_PDS kopiert und wuerde bei jedem Sync wieder ueberschrieben.
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 0              # keine Zeilen umbrechen, nur Einrueckung/Klammern vereinheitlichen
+BreakBeforeBraces: Allman
+AccessModifierOffset: -4    # public:/private: buendig mit "class"
+NamespaceIndentation: None
+IndentCaseLabels: false
+PointerAlignment: Right
+SortIncludes: Never         # Reihenfolge der Includes ist bei Arduino-Bibliotheken wichtig
+ReflowComments: false       # Kommentarkaesten (Box-Zeichen) nicht anfassen
+AlignTrailingComments: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2
+SpaceBeforeParens: ControlStatements
+FixNamespaceComments: false

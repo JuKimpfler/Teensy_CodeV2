@@ -105,6 +105,17 @@ public:
     /// Anzahl der verbauten Sensoren (RADAR_NUM_SENSORS).
     uint8_t giveCount(void) const { return RADAR_NUM_SENSORS; }
 
+    /// Zaehler: erhoeht sich, wenn eine Messrunde komplett ist (neue Werte in operator[]). Fuer die ESP-Firmware.
+    uint32_t giveRoundId(void) const { return _roundId; }
+    /// Mitte der zuletzt abgeschlossenen Runde (micros()): der Zeitpunkt, auf den sich die Werte beziehen.
+    uint32_t giveRoundMidUs(void) const { return _roundMidUs; }
+
+    /* -------------- Quelle ESP (Teensy): Werte vom Link einspeisen -------------- */
+    /// Einen Sensor mit den Werten vom ESP belegen. timeMs = Messzeit in millis() des Teensy.
+    void feedRemote(uint8_t pos, uint16_t dist, uint16_t distRaw, int32_t strength, bool peak, bool con, uint32_t timeMs);
+    /// Alle Sensoren als nicht verbunden markieren (Link ausgefallen); die Werte altern dann von selbst.
+    void markRemoteLost(void);
+
     /// Direktzugriff auf den Treiber — nur fuer Sonderfaelle (Temperatur, Diagnose).
     XM125Distance &giveSensor(uint8_t pos) { return _sensors[_clamp(pos)]; }
 
@@ -121,6 +132,8 @@ private:
     bool _roundFailed = false;  ///< in der laufenden Runde ist mindestens eine Messung fehlgeschlagen
     uint32_t _roundStartUs = 0; ///< Beginn der laufenden Runde
     uint32_t _lastRoundUs = 0;  ///< Dauer der letzten fehlerfreien Runde (0 = noch unbekannt)
+    uint32_t _roundId = 0;      ///< Anzahl abgeschlossener Runden
+    uint32_t _roundMidUs = 0;   ///< Mitte der letzten abgeschlossenen Runde
 
     TwoWire *_wire = &I2C_RADAR;
 

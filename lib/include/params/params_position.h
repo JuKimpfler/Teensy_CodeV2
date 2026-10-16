@@ -78,6 +78,7 @@ static constexpr float FUS_CERT_SLOPE = 0.3f; ///< Position.Certainty = 1 / (1 +
 // Radar[..].Time landet. Der Filter vergleicht ihn deshalb mit der Position
 // von damals (Historie), nicht mit der von jetzt.
 static constexpr uint32_t FUS_RADAR_LATENCY_MS = 30;
+static constexpr uint32_t FUS_RADAR_LATENCY_LINK_MS = 0; ///< Quelle ESP: der Zeitstempel ist schon die Mitte der Messrunde, keine Schaetzung noetig
 // Motoren: Analogausgang des Maxon-Treibers + ADC hinken der echten Drehzahl
 // hinterher. Wird ueber die gemessene Beschleunigung ausgeglichen.
 static constexpr float FUS_MOTOR_LAG_MS = 20.0f;

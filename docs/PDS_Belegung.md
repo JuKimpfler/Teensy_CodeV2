@@ -17,8 +17,8 @@ python tools/sync_pds.py
 
 | Bereich | Wer | Wie |
 |---|---|---|
-| **0 – 30** | `systemlib::setupPDS()` | fest verdrahtet, siehe unten |
-| 31 | frei | Reserve für weitere Systemwerte |
+| **0 – 37** | `systemlib::setupPDS()` | fest verdrahtet, siehe unten |
+| – | – | Kanäle 32 – 37 siehe unten, ab 40 automatisch für Sketches |
 | **32 – 193** | der Sketch | automatisch über `PDS.plot()` / `PDS.track()` |
 | 194 – 199 | `PDS.enableSelfDiagnostics()` | optional, belegt die letzten 6 Kanäle |
 
@@ -27,14 +27,14 @@ Dass der Sketch erst bei 32 anfängt, macht `-DPDS_AUTO_CHANNEL_BASE=32` in
 `PDS.plot()` im Sketch bei Kanal 0 anfangen und die Systemwerte
 überschreiben.**
 
-Die festen Nummern 0–30 sind kein Selbstzweck: die Overlays in
+Die festen Nummern 0–37 sind kein Selbstzweck: die Overlays in
 [`lib/PDS/channel_config.h`](../lib/PDS/channel_config.h) (Feld-Draufsicht,
 Akkuanzeige, Wertetabelle) zeigen auf Kanal**nummern**, nicht auf Namen. Wer
 hier etwas verschiebt, muss `channel_config.h` nachziehen.
 
 ---
 
-## Read – Systemkanäle 0 – 30
+## Read – Systemkanäle 0 – 37
 
 Gebunden in `systemlib::setupPDS()`
 ([systemlib.cpp](../lib/systemlib/systemlib.cpp)). `PDS.bind()` merkt sich nur
@@ -73,7 +73,13 @@ den Zeiger, die Werte holt die Bibliothek danach selbst 100×/s ab.
 | `28` | Start | – | `startSwitch` |
 | `29` | CPU_Temp | °C | `giveCpuTemp()`, 1 Hz nachgeführt. Dauerhaft über ~80 °C: Takt senken (`board_build.f_cpu` in `platformio.ini`); bei 90 °C hält der Chip an |
 | `30` | Dribbler_I | mA | `giveDribblerCurrent()`, INA219 0x45, 10 Hz |
-| `31` | *frei* | | Reserve für systemlib |
+| `31` | Heading_Alter | ms | `Heading_Age_ms`: Alter der Winkelmessung vom ESP-Link (nur mit `HEADING_SOURCE_LINK`) |
+| `32` | Link_Status | – | `LinkState`: 0 ok, 1 ESP meldet sich nicht, 2 Parameter/Version passen nicht, 3 nicht benutzt |
+| `33` | ESP_Loop_max | µs | größte Schleifenzeit des ESP seit der letzten Statusmeldung |
+| `34` | ESP_I2C_Fehler | – | I²C-Fehler des ESP (BNO055) |
+| `35` | Link_CRC | – | CRC-/Längenfehler am Teensy |
+| `36` | Link_Luecken | – | verlorene Rahmen (Lücken der Sequenznummer) |
+| `37` | Link_Laufzeit | µs | Laufzeit des besten Zeitabgleichs (Rundlauf) |
 
 > **Radar:** `Dist` ist der Rohwert des XM125 in „Counts", **nicht**
 > Millimeter – siehe [RadarArray.h](../lib/RadarArray/RadarArray.h).

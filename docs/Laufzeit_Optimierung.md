@@ -72,3 +72,17 @@ löst der Temperaturalarm aus bzw. der Chip hält an.
 2. `CPU_Temp` (PDS 29) 10 Minuten unter Last.
 3. Radar: `Pos_certanty_x/y` (PDS 18/19) und die Aktualisierungsrate der Positionswerte sollen unverändert bleiben.
 4. `Wire1`: Schalter und Akkuwerte (PDS 1–4) dürfen nicht springen.
+
+## 6. Sensorquelle ESP (Platine V2.0)
+
+Mit `-DSENSOR_SOURCE=1` (siehe [params_sources.h](../lib/include/params/params_sources.h)) liest der ESP32-S3 BNO055, Radar und IR-Ring.
+Modell (nicht gemessen, gleiche Annahmen wie oben):
+
+| Bus | Posten | Zeit je Teensy-Zyklus |
+|---|---|---|
+| Teensy `Wire1` (400 kHz) | ein Expander-Lesevorgang (`SWITCH1`, `BUTTON1`) | ≈ 0,09 ms |
+| Teensy `Wire` | nichts: der Teensy fasst den ESP-Bus nicht an | 0 |
+| ESP-Bus (100 kHz), vom ESP getragen | BNO055 ≈ 6 %, Radar ≈ 28 %, IR-Ring ≈ 9 % | ≈ 43 % Buslast am ESP, nicht am Teensy |
+
+Der Teensy übernimmt Winkel, Radar und IR ohne Buszugriff (`UART`-Interrupt und ein paar Mikrosekunden Parsing). Die gemessene Buslast und die Zykluszeit gehören
+in [Inbetriebnahme_ESP.md](Inbetriebnahme_ESP.md), Abschnitt 3 und 4.

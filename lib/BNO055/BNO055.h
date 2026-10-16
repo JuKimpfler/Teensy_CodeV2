@@ -81,6 +81,9 @@ public:
 #endif
     int16_t calibData[11];
     uint8_t calibStatus();
+    /// Drehrate Z und Winkel in EINER I2C-Transaktion lesen (Register 0x18 ... 0x1B). Rohwerte: 1/16 Grad/s und 1/16 Grad.
+    /// false bei einem Busfehler; die Ausgaben bleiben dann unveraendert.
+    bool readGyroZHeadingRaw(int16_t &gyroZ, int16_t &heading);
     e_bnoSysStatus systemStatus();
     uint8_t requestSystemStatus();
     uint8_t systemError();
