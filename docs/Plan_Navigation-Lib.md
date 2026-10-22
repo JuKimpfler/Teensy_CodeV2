@@ -1,6 +1,6 @@
 # Plan: Positionierung und Pfadplanung als externe Lib
 
-Stand: Planung. Umgesetzt ist bisher nur der A* (`lib/Pathfinder`, siehe unten); Positionierung und `MotionProfile` sind noch Plan.
+Stand: Umgesetzt sind der A* (`lib/Pathfinder`), `lib/RoutePlanner` und `lib/MotionProfile` (Schritte 0, 4 und 5). Offen ist die **Positionierung** (Schritte 2 und 3) und der Umzug aller vier Klassen in ein eigenes Repo `Robotic_Navigation` (Schritte 1 und 6).
 
 ## 1. Ausgangslage
 
@@ -13,14 +13,15 @@ Roboter-Hardware verwoben.
 | Kalman-Fusion (`AxisFilter`, `fusionPredict/Update`, Historie) | systemlib.cpp | ~150 Z. | nur Zahlen |
 | `calculatePosition()` | systemlib.cpp | ~200 Z. | `Radar[]`, `giveOrbitDir()`, `motorSampleUs` (global aus `updateMotors()`), `PDS.Channel()`, `Util.wrapAngle`, `lastvaliddata_*` |
 | Odometrie (`calculateFieldVelocityFromMotorRpm`) | systemlib.cpp | ~40 Z. | Motor-Reihenfolge VL/VR/HL/HR |
-| Speed-Pattern, `moveToPoint`, Punkt-Array | systemlib.cpp | ~450 Z. | `Position`, `setOmniWheelDir`, Heading-Regler |
-| Pfadplanung (Route, Vereinfachen, Neuplanung) | systemlib.cpp | ~300 Z. | `Position`, Punkt-Array, `moveToPoint` |
+| Speed-Pattern, `moveToPoint`, Punkt-Array | **erledigt:** `lib/MotionProfile` (Klasse, `MotionInput`/`MotionCommand` statt Zugriff auf `Position` und die Motoren) | ~480 Z. | keine |
+| Pfadplanung (Route, Vereinfachen, Neuplanung) | **erledigt:** `lib/RoutePlanner` (Klasse, liefert nur Geometrie) | ~190 Z. | nur `Pathfinder` |
 | A* selbst | **erledigt:** `lib/Pathfinder` (Klasse, Gewichtskarten in `params_pathmap.h`) | ~420 Z. | keine, nur Zellen und `params.h` |
 
 Probleme, die der Schnitt lösen soll:
 - ~~A* fehlte im Repo~~ – ist jetzt als `lib/Pathfinder` integriert, die stille Rückfallebene `PATH_AVAILABLE` gibt es nicht mehr.
 - **Versteckter Zustand:** `static`-Variablen in `calculatePosition()`, anonyme Namespaces
-  (`filtX`, `mv`, `pa`, `pf`). Zwei Instanzen oder ein Unit-Test sind unmöglich, ein Reset geht nur teilweise.
+  (`filtX`). Zwei Instanzen oder ein Unit-Test sind unmöglich, ein Reset geht nur teilweise.
+  ~~`mv`, `pa`, `pf`~~ – sind jetzt Member von `MotionProfile` bzw. `RoutePlanner`.
 - **Nicht testbar ohne Roboter:** reine Mathematik hängt an `PDS`, `millis()` und `BNO`.
 - **Datenübergabe über Globals:** `motorSampleUs` verbindet `updateMotors()` und die Fusion unsichtbar.
 

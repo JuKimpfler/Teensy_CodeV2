@@ -16,11 +16,11 @@ Dateien: `systemlib.h`, `systemlib.cpp`
 Hauptprogramm (src/)
         │
         ▼
-   systemlib  ──────────────────────────────────────────────┐
-        │                                                    │
-   ┌────┴─────┬──────────┬──────────┬──────────┬─────────┐   │
-   ▼          ▼          ▼          ▼          ▼         ▼   ▼
- BNO055     IR-Ring    SRF08     INA219   TCA9534DW  ADC108S102
+   systemlib ──────────────────────► MotionProfile ──► RoutePlanner ──► Pathfinder
+        │     Position, Winkel          Fahrbefehl       Geometrie        A*
+   ┌────┴─────┬──────────┬───────────┬────────────┬────────────┐
+   ▼          ▼          ▼           ▼            ▼            ▼
+ BNO055     IR-Ring   RadarArray   INA219    TCA9534DW   ADC108S102
                                                               │
                          PID / ADRC ◄── Heading   PDS ◄── Debug
                                         commlib ◄── Partnerroboter
@@ -372,6 +372,23 @@ Antriebsmotoren vom `ADC_Motor`.
 | `void updateHeadingController()` | wird von `readSensors()` aufgerufen |
 | `PositionData calculatePosition()` | Feldposition + Certainty aus den Radarwerten, wird von `readSensors()` aufgerufen |
 | `float giveHeadingController()` | Stellgröße −1…+1 |
+
+### Fahren
+
+Die Fahrlogik liegt in [`MotionProfile`](../MotionProfile/MotionProfile.md)
+(Speed-Pattern, Zielanfahrt, Punkt-Liste) und
+[`RoutePlanner`](../RoutePlanner/RoutePlanner.md) (Pfadplanung in cm).
+Beide kennen weder Sensoren noch Motoren: `systemlib` gibt ihnen Position,
+Winkel und Zeit (`MotionInput`) und setzt den zurückgegebenen `MotionCommand`
+über `setOmniWheelDir()` in Raddrehzahlen um.
+
+Die bisherigen Aufrufe bleiben unverändert – `moveToPoint()`, `setPointArray()`,
+`updateArray()`, `moveToPointAvoid()` und alle `give*()` dazu sind in `systemlib`
+dünne Weiterleitungen. Wer die Klassen direkt braucht: `sys.Profile` und
+`sys.Planner`.
+
+In `systemlib` bleiben `setOmniWheelDir()` / `setOmniWheelVek()` (Omni-Kinematik),
+`moveDir()` und der Kursregler – das ist Roboter-Wissen, keine Geometrie.
 
 ### Debug (PDS)
 

@@ -15,6 +15,8 @@
 #include <fancyBTN.h>
 #include <RadarArray.h>
 #include <Pathfinder.h>
+#include <MotionProfile.h>
+#include <RoutePlanner.h>
 #include <SensorLink.h>
 
 #include <commlib.h>
@@ -61,27 +63,7 @@ struct RobotVelocity
     float vy_field; // cm/s
 };
 
-/// Ein Zielpunkt der Punkt-Liste, siehe systemlib::setPointArray().
-struct ArrayPoint
-{
-    uint16_t X;           ///< Ziel X [cm]
-    uint16_t Y;           ///< Ziel Y [cm]
-    int16_t Andrehwinkel; ///< Soll-Heading [Grad]
-    uint8_t SpeedPattern; ///< SPattern_* aus params.h
-    uint8_t MaxSpeed;     ///< Speed [%] bei Pattern-Wert 1
-    uint8_t MinSpeed;     ///< Speed [%] bei Pattern-Wert 0
-    uint16_t HoldMs;      ///< Wartezeit nach Erreichen des Punkts [ms]
-    uint8_t PassCm;       ///< >0: Durchfahrpunkt, gilt ab diesem Abstand [cm] als erreicht (kein Halt); 0 = anhalten
-};
-
-/// Zustand der Punkt-Liste, siehe systemlib::updateArray().
-enum ArrayState : uint8_t
-{
-    ArrayIdle = 0, ///< nicht gestartet / leer
-    ArrayRunning,  ///< faehrt die Punkte ab
-    ArrayPaused,   ///< angehalten, Fortschritt bleibt
-    ArrayFinished  ///< letzter Punkt erreicht
-};
+// ArrayPoint und ArrayState stehen in lib/MotionProfile/MotionProfile.h
 
 /// Zustand des Links zum ESP32-S3
 enum LinkState : uint8_t
@@ -172,7 +154,17 @@ private:
     /* -------------- Position -------------- */
     float goalOffset(float x_cm, float &sureness) const;
 
+    /* -------------- Fahren -------------- */
+    MotionInput giveMotionInput(void) const;            ///< Position, Winkel und Zeit dieses Zyklus
+    void applyMotionCommand(const MotionCommand &cmd);  ///< Fahrbefehl -> Kursregler und Raeder
+
 public:
+    /// Zielanfahrt, Speed-Pattern und Punkt-Liste, siehe lib/MotionProfile/MotionProfile.md
+    MotionProfile Profile;
+
+    /// Pfadplanung auf cm-Ebene ueber AStar, siehe lib/RoutePlanner/RoutePlanner.md
+    RoutePlanner Planner;
+
     /// Alle Radarsensoren. Zugriff ueber die Einbauposition: Radar[RadarVo].Dist
     RadarArray Radar;
 

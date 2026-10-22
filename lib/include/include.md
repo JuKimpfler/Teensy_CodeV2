@@ -14,7 +14,7 @@ lib/include/
     ├── params_radar.h     XM125-Radarsensoren (RADAR_)
     ├── params_field.h     Feld- und Torgeometrie (FIELD_)
     ├── params_position.h  Odometrie, Radar-Validierung, Fusion (ODO_, POS_, FUS_)
-    ├── params_motion.h    Speed-Pattern, moveToPoint, Wandabstand, Punkt-Array (MOVE_, ARRAY_)
+    ├── params_motion.h    Speed-Pattern, moveToPoint, Wandabstand, Punkt-Liste (MOVE_, ARRAY_)
     ├── params_path.h      Pfadplanung und A*-Raster (PATH_)
     ├── params_sources.h   DEBUG-FLAG: Sensoren am Teensy oder am ESP (SENSOR_SOURCE, HEADING_/RADAR_/IR_SOURCE)
     ├── params_link.h      Link Teensy ↔ ESP32-S3 (LINK_)
@@ -106,7 +106,7 @@ Die Zahlen stehen **nur in den Headern** – diese Tabelle nennt die Gruppen:
 | `params_radar.h` | `RADAR_` | Adressen, Reichweite, Empfindlichkeit, Messrunden, Ausreißerfilter | `RadarArray` |
 | `params_field.h` | `FIELD_` | Feldbreite/-länge, Tor (Breite, Tiefe, Kantenband) | Position, Fahrfunktionen, Pfad |
 | `params_position.h` | `ODO_`, `POS_`, `FUS_` | Rad-Odometrie, Plausibilität und Signalstärke der Radarwerte, Kalman-Filter | `calculatePosition()` |
-| `params_motion.h` | `SPattern_`, `MOVE_`, `ARRAY_` | Speed-Pattern (`enum SPattern`), Zielkreis, Anlaufbegrenzung, Wandabstand, Punktliste | `moveToPoint()`, Punkt-Array |
+| `params_motion.h` | `SPattern_`, `MOVE_`, `ARRAY_` | Speed-Pattern (`enum SPattern`), Zielkreis, Anlaufbegrenzung, Wandabstand, Punktliste | [`MotionProfile`](../MotionProfile/MotionProfile.md) |
 | `params_path.h` | `PATH_` | Neuplanung, Durchfahrradius, Fallback; Raster, Schrittkosten, Heap des A* | `moveToPointAvoid()`, [Pathfinder](../Pathfinder/Pathfinder.md) |
 | `params_sources.h` | `SENSOR_SOURCE`, `HEADING_/RADAR_/IR_SOURCE` | **Debug-Flag:** BNO055, Radar, IR-Ring am Teensy (0) oder am ESP (1); Wert muss in beiden `platformio.ini` gleich sein | [SensorLink](../SensorLink/SensorLink.md) |
 | `params_link.h` | `LINK_` | Baudrate, Zeitlimits, Pausen, Parameter-Prüfsumme | Link | [Link](../Link/Link.md), [SensorLink](../SensorLink/SensorLink.md), ESP-Firmware |

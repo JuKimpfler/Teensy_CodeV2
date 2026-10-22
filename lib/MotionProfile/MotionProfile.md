@@ -1,18 +1,36 @@
-# Bewegungsfunktionen (`systemlib`)
+# MotionProfile – Zielanfahrt, Speed-Pattern und Punkt-Liste
 
 Dokumentation aller Funktionen, mit denen der Roboter zu Punkten, über Routen und um Hindernisse herum fährt.
-Alle Funktionen sind Teil der Klasse `systemlib` und werden **zyklisch** aufgerufen (jeden Programmdurchlauf).
+Sie werden **zyklisch** aufgerufen (jeden Programmdurchlauf).
+
+Dateien: `MotionProfile.h`, `MotionProfile.cpp`
+
+`MotionProfile` rechnet nur. Die Klasse kennt weder `systemlib` noch Sensoren,
+Motoren oder Regler: sie bekommt je Zyklus Position, Winkel und Zeit
+(`MotionInput`) und liefert zurück, wohin und wie schnell gefahren werden soll
+(`MotionCommand`). Umgesetzt wird das von `systemlib`. Damit lässt sich die
+Fahrlogik am Rechner prüfen, ohne Roboter.
+
+```cpp
+MotionInput   in = {millis(), micros(), Position.X, Position.Y, posValid, heading};
+MotionCommand c  = Profile.moveToPoint(in, 90, 150, SPattern_Linear, 80, 25, 0);
+if (c.Active) setOmniWheelDir(c.DirectionDeg, c.SpeedPct, omega);
+```
+
+Im Hauptprogramm macht das `systemlib` für dich – die bisherigen Aufrufe
+(`Robot.moveToPoint(...)`, `Robot.setPointArray(...)`, …) gibt es unverändert
+weiter. Wer die Klasse direkt braucht, erreicht sie als `Robot.Profile`.
 
 **Inhalt**
 
 1. [Überblick](#1-überblick)
 2. [Koordinaten, Einheiten, Voraussetzungen](#2-koordinaten-einheiten-voraussetzungen)
-3. [Grundfunktionen (bestehend)](#3-grundfunktionen-bestehend)
+3. [Grundfunktionen](#3-grundfunktionen)
 4. [`moveToPoint` mit Speed-Pattern](#4-movetopoint-mit-speed-pattern)
 5. [Speed-Pattern](#5-speed-pattern)
 6. [Punkt-Array (Routen)](#6-punkt-array-routen)
 7. [Pfadplanung (`moveToPointAvoid`)](#7-pfadplanung-movetopointavoid)
-8. [Parameter in `params.h`](#8-parameter-in-paramsh)
+8. [Parameter](#8-parameter)
 9. [Beispiele](#9-beispiele)
 10. [Fehlersuche](#10-fehlersuche)
 11. [Stand und Grenzen](#11-stand-und-grenzen)
@@ -24,17 +42,26 @@ Alle Funktionen sind Teil der Klasse `systemlib` und werden **zyklisch** aufgeru
 Die Funktionen bauen aufeinander auf. Jede höhere Schicht benutzt die darunterliegende:
 
 ```
-moveToPointAvoid()      Pfadplanung: A* um Ball und Partner herum
-        │  erzeugt Wegpunkte
+RoutePlanner                 A* um Ball und Partner herum (lib/RoutePlanner)
+        │  liefert Wegpunkte in cm, reine Geometrie
         ▼
-Punkt-Array             setPointArray / startArray / updateArray ...
+MotionProfile::setRoute()    macht daraus Punkte mit Tempo
+        │
+Punkt-Liste                  setPointArray / startArray / updateArray ...
         │  fährt Punkt für Punkt, schaltet weiter
         ▼
-moveToPoint()           ein Ziel, Speed-Pattern, Zielkreis, Winkel
-        │
+moveToPoint()                ein Ziel, Speed-Pattern, Zielkreis, Winkel
+        │  liefert einen MotionCommand
         ▼
-setOmniWheelDir()       Richtung + Speed + Drehung → 4 Motoren
+systemlib::setOmniWheelDir() Richtung + Speed + Drehung → 4 Motoren
 ```
+
+| Lib | Aufgabe |
+|---|---|
+| [`Pathfinder`](../Pathfinder/Pathfinder.md) | A* auf Zellen |
+| [`RoutePlanner`](../RoutePlanner/RoutePlanner.md) | Zellen ↔ cm, Hindernisse, Neuplanung |
+| `MotionProfile` | Speed-Pattern, Zielkreis, Punkt-Liste |
+| [`systemlib`](../systemlib/systemlib.md) | Position und Winkel liefern, Fahrbefehl auf die Räder geben |
 
 | Ebene | Wann nutzen |
 |---|---|
@@ -42,7 +69,27 @@ setOmniWheelDir()       Richtung + Speed + Drehung → 4 Motoren
 | Punkt-Array | Feste Route aus mehreren Punkten (Eckenfahrt, Aufstellung, Patrouille) |
 | `moveToPointAvoid` | Ein Ziel, aber Ball oder Partner können im Weg sein |
 
-Die Position kommt aus `calculatePosition()` (Odometrie + Radar, siehe Kalibrier-Checkliste).
+Die Position kommt aus `systemlib::calculatePosition()` (Odometrie + Radar, siehe Kalibrier-Checkliste).
+
+### Ein- und Ausgabe
+
+```cpp
+struct MotionInput        // was MotionProfile je Zyklus bekommt
+{
+    uint32_t NowMs, NowUs;  // millis(), micros()
+    float    X, Y;          // Feldposition [cm]
+    bool     PosValid;      // false = Position unbekannt
+    float    HeadingDeg;    // Istwinkel [Grad, ±180 CW]
+};
+
+struct MotionCommand      // was dabei herauskommt
+{
+    bool     Active;        // false = kein Fahrbefehl, Motoren nicht anfassen
+    float    DirectionDeg;  // Fahrtrichtung im Feld [Grad, ±180 CW]
+    uint8_t  SpeedPct;      // 0 … 100 %
+    int16_t  Andrehwinkel;  // Soll-Ausrichtung [Grad] für den Kursregler
+};
+```
 
 ---
 
@@ -59,21 +106,23 @@ Die Position kommt aus `calculatePosition()` (Odometrie + Radar, siehe Kalibrier
 **Voraussetzungen, die immer erfüllt sein müssen**
 
 - `readSensors()` läuft jeden Zyklus (liefert `Position`).
-- `updateHeadingController()` läuft jeden Zyklus (Heading-Regler), wie bisher.
-- `Position.X` oder `Position.Y` = **−1** bedeutet „Position verloren“. Alle Bewegungsfunktionen halten dann an und regeln nur den Winkel weiter.
+- `updateHeadingController()` läuft jeden Zyklus (Heading-Regler) – `readSensors()` erledigt das.
+- `Position.X` oder `Position.Y` = **−1** bedeutet „Position verloren“ (`MotionInput.PosValid = false`). Alle Fahrfunktionen halten dann an und regeln nur den Winkel weiter.
 
 ---
 
-## 3. Grundfunktionen (bestehend)
+## 3. Grundfunktionen
 
-Diese Funktionen gab es schon, die neuen bauen darauf auf.
+Die unterste Ebene. `setOmniWheelDir`/`setOmniWheelVek` und der Kursregler
+bleiben in `systemlib` – sie hängen an Motoren und IMU, sind also Roboter-Wissen
+und keine Geometrie.
 
 | Funktion | Zweck |
 |---|---|
 | `setOmniWheelDir(Richtung°, Speed%, omega)` | Fährt in eine **Feldrichtung** (der Roboter wird um das aktuelle Heading zurückgerechnet), `omega` = Drehanteil vom Heading-Regler |
 | `setOmniWheelVek(vx, vy, omega)` | Wie oben, aber mit Geschwindigkeitsvektor im Roboter-Frame |
-| `moveDir(Richtung, Speed, Andrehwinkel)` | Fährt in eine Richtung; näher als 20 cm an der Wand wird der Speed auf 5 % begrenzt |
-| `moveToPoint(X, Y, Speed, Andrehwinkel)` | Alte 4-Argument-Variante: Speed nimmt linear mit dem Abstand ab (voller Speed ab 40 cm), unter 5 cm Stopp |
+| `moveDir(Richtung, Speed, Andrehwinkel)` | Fährt in eine Richtung; näher als `MOVE_WALL_MARGIN_CM` an der Wand wird der Speed auf `MOVE_WALL_SPEED_PCT` begrenzt (`MotionProfile::isNearWall`) |
+| `moveToPoint(X, Y, Speed, Andrehwinkel)` | Einfache 4-Argument-Variante (`MotionProfile::moveToPointSimple`): Speed nimmt linear mit dem Abstand ab (voller Speed ab `MOVE_SLOWDOWN_CM`), unter `MOVE_SIMPLE_STOP_CM` Stopp |
 | `setHeading(rad)`, `giveHeadingController()` | Soll-Winkel setzen, Reglerausgang lesen |
 
 ---
@@ -253,6 +302,10 @@ Nach dem letzten Punkt: `ArrayFinished`, bei `loop = true` stattdessen weiter be
 
 Fährt zu einem Ziel und weicht dabei Ball und Partner aus. Der A*-Pathfinder ([`lib/Pathfinder`](../Pathfinder/Pathfinder.md)) plant auf einem Raster von 90 × 120 Zellen (eine Zelle ≈ 2 cm), die Gewichte stehen in `params/params_pathmap.h` (255 = gesperrt).
 
+Dieser Abschnitt beschreibt die Sicht aus dem Hauptprogramm. Wer die Planung selbst
+benutzen oder ändern will: [`lib/RoutePlanner`](../RoutePlanner/RoutePlanner.md) – dort
+steht, wann neu geplant wird und wie aus dem Zellpfad Wegpunkte in cm werden.
+
 ### Funktionen
 
 ```cpp
@@ -340,6 +393,8 @@ Alle Werte stehen in `lib/include/params/` (`params_motion.h`, `params_path.h`),
 | `MOVE_MAX_ACCEL_PCT_S` | 10000 | Max. Speed-Zunahme in %/s, 0 = aus |
 | `MOVE_RESTART_GAP_MS` | 200 | Aufrufpause, ab der das Pattern neu startet |
 | `MOVE_TARGET_TOL_CM` | 3.0 | Zieländerung bis zu diesem Wert startet das Pattern nicht neu |
+| `MOVE_SLOWDOWN_CM` | 40.0 | Einfaches `moveToPoint`: ab diesem Abstand voller Speed |
+| `MOVE_SIMPLE_STOP_CM` | 5.0 | Einfaches `moveToPoint`: näher am Ziel Speed 0 |
 | `MOVE_WALL_MARGIN_CM` / `MOVE_WALL_SPEED_PCT` | 20.0 / 5 | `moveDir()`: näher als das an der Wand wird der Speed begrenzt |
 | `ARRAY_MAX_POINTS` | 16 | Max. Punkte in der Liste (ca. 14 Byte je Punkt) |
 | `ARRAY_HEADING_TOL_DEG` | 5.0 | Winkeltoleranz zum Weiterschalten, 0 = nicht prüfen |

@@ -149,6 +149,8 @@ void systemlib::initialize()
     BNO.begin(); // Uebergang: Teensy liest den BNO055 selbst (nur mit Jumpern am ESP-Bus, ESP darf dort nicht senden)
 #endif
     AStar.begin();
+    Profile.begin();
+    Planner.begin(AStar);
     calibBNO();
 
 #if DPDS_Mode == D_Mode_Test
@@ -1690,684 +1692,87 @@ bool systemlib::giveStart(void)
     }
 }
 
+/* ========================================================================
+ * Fahren: Adapter zu MotionProfile und RoutePlanner
+ *
+ * Die Fahrlogik liegt in lib/MotionProfile (Speed-Pattern, Zielanfahrt,
+ * Punkt-Liste) und lib/RoutePlanner (A* auf cm-Ebene). Beide kennen weder
+ * Sensoren noch Motoren: systemlib gibt ihnen Position, Winkel und Zeit und
+ * setzt den zurueckgegebenen Fahrbefehl ueber setOmniWheelDir() um.
+ *
+ * Der Kursregler bleibt hier -- er ist Roboter-Wissen (HDG_*), keine Geometrie.
+ * ===================================================================== */
+
+/// Position, Winkel und Zeit dieses Zyklus, so wie MotionProfile sie braucht.
+MotionInput systemlib::giveMotionInput(void) const
+{
+    MotionInput in;
+    in.NowMs = millis();
+    in.NowUs = micros();
+    in.X = Position.X;
+    in.Y = Position.Y;
+    in.PosValid = (Position.X >= 0.0f && Position.Y >= 0.0f);
+    in.HeadingDeg = giveOrbitDir();
+    return in;
+}
+
+/// Fahrbefehl ausfuehren: Sollwinkel an den Kursregler, Richtung und Tempo an die Raeder.
+void systemlib::applyMotionCommand(const MotionCommand &cmd)
+{
+    if (!cmd.Active)
+    {
+        return; // Punkt-Liste ist Idle: die Motoren gehoeren der uebrigen Logik
+    }
+
+    setHeading(cmd.Andrehwinkel * DEG_TO_RAD);
+    setOmniWheelDir(cmd.DirectionDeg, cmd.SpeedPct, giveHeadingController() * 100);
+}
+
 void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed, int16_t Andrehwinkel)
 {
-    float dx = X - Position.X;
-    float dy = Y - Position.Y;
-
-    float distanzCm = sqrtf(dy * dy + dx * dx);
-    Speed = Speed * constrain(distanzCm / 40.0f, 0.0f, 1.0f); // 0 = am Ziel, 1 = 40cm oder mehr entfernt
-
-    if (abs(distanzCm) < 5)
-    {
-        Speed = 0;
-    }
-
-    setHeading(Andrehwinkel * DEG_TO_RAD);
-    setOmniWheelDir(Util.wrapAngle(atan2f(-dx, dy) * (180.0f / PI)), Speed, giveHeadingController() * 100);
+    applyMotionCommand(Profile.moveToPointSimple(giveMotionInput(), X, Y, Speed, Andrehwinkel));
 }
 
-namespace
-{
-struct MoveState
-{
-    bool active = false;
-    bool arrived = false;
-    bool correcting = false; // nach dem Wegschieben: Feinkorrektur mit MinSpeed
-    float tx = 0.0f, ty = 0.0f;
-    uint8_t pattern = 0, maxS = 0, minS = 0;
-    float dist0 = 0.0f; // Abstand beim Start des Patterns
-    float progress = 0.0f;
-    float lastSpeed = 0.0f;
-    uint32_t lastCallMs = 0;
-    uint32_t lastUs = 0;
-};
-MoveState mv;
-
-inline float smoothstep01(float x)
-{
-    x = constrain(x, 0.0f, 1.0f);
-    return x * x * (3.0f - 2.0f * x);
-}
-
-/// Verlauf f(p) in 0..1 (p = Fortschritt 0..1)
-float speedPatternValue(uint8_t pattern, float p)
-{
-    p = constrain(p, 0.0f, 1.0f);
-    float f;
-    switch (pattern)
-    {
-    case SPattern_Linear:
-        f = 1.0f - p;
-        break;
-    case SPattern_LinearUp:
-        f = p;
-        break;
-    case SPattern_Constant:
-        f = 1.0f;
-        break;
-    case SPattern_Trapezoid:
-        f = min(min(p / 0.2f, 1.0f), (1.0f - p) / 0.4f);
-        break;
-    case SPattern_Triangle:
-        f = 1.0f - fabsf(1.0f - 2.0f * p);
-        break;
-    case SPattern_QuadDecel:
-        f = (1.0f - p) * (1.0f - p);
-        break;
-    case SPattern_ConstDecel:
-        f = sqrtf(1.0f - p);
-        break;
-    case SPattern_SmoothStep:
-        f = 1.0f - smoothstep01(p);
-        break;
-    case SPattern_Cosine:
-        f = 0.5f * (1.0f + cosf(PI * p));
-        break;
-    case SPattern_Sine:
-        f = sinf(PI * p);
-        break;
-    case SPattern_SCurve:
-        f = min(smoothstep01(p / 0.25f), 1.0f - smoothstep01((p - 0.6f) / 0.4f));
-        break;
-    case SPattern_LateBrake:
-        f = (p < 0.7f) ? 1.0f : 0.5f * (1.0f + cosf(PI * (p - 0.7f) / 0.3f));
-        break;
-    case SPattern_FastThenCrawl:
-        f = (p < 0.5f) ? 1.0f : ((p < 0.7f) ? 1.0f - (p - 0.5f) / 0.2f : 0.0f);
-        break;
-    case SPattern_QuadUp:
-        f = p * p;
-        break;
-    case SPattern_CubicUp:
-        f = p * p * p;
-        break;
-    case SPattern_Expo:
-        f = (expf(-3.0f * p) - expf(-3.0f)) / (1.0f - expf(-3.0f));
-        break;
-    case SPattern_Stairs:
-        f = 1.0f - min(floorf(p * 4.0f), 3.0f) / 3.0f;
-        break;
-    case SPattern_Wave:
-        f = (1.0f - p) * (0.6f + 0.4f * sinf(2.0f * PI * 3.0f * p));
-        break;
-    case SPattern_Pulse:
-        f = (fmodf(p * 5.0f, 1.0f) < 0.6f) ? 1.0f : 0.0f;
-        break;
-    default:
-        f = 1.0f;
-        break; // unbekanntes Pattern: konstant
-    }
-    return constrain(f, 0.0f, 1.0f);
-}
-}
-
-void systemlib::resetMoveProfile(void)
-{
-    mv.active = false; // lastSpeed bleibt: rollt der Roboter weiter, steigt der Speed stetig statt von 0
-}
-
-bool systemlib::giveMoveArrived(void) const { return mv.active && mv.arrived; }
-
-float systemlib::giveMoveProgress(void) const { return mv.progress; }
-
-/**
- * Faehrt zum Punkt (X, Y) [cm, Feldkoordinaten] und dreht dabei auf Andrehwinkel [Grad].
- *
- * @param SpeedPattern SPattern_* aus params.h (Verlauf ueber den Fahrweg)
- * @param MaxSpeed     Speed [%] bei f = 1
- * @param MinSpeed     Speed [%] bei f = 0 (Mindestfahrt, damit der Roboter nicht stehen bleibt)
- * @param Andrehwinkel Soll-Heading [Grad], wird waehrend der ganzen Fahrt geregelt
- *
- * Zyklisch aufrufen. Position ungueltig (-1) -> Roboter haelt an, Heading wird weiter geregelt.
- * Zielkreis MOVE_ARRIVE_CM: darin Speed 0; wird der Roboter weggeschoben, faehrt er
- * nach MOVE_ARRIVE_HYST_CM mit MinSpeed zurueck. Status: giveMoveArrived().
- * Der Speed darf hoechstens mit MOVE_MAX_ACCEL_PCT_S ansteigen (weicher Anlauf, Bremsen nie begrenzt).
- */
 void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel)
 {
-    // Heading wird immer geregelt, auch wenn der Roboter steht
-    setHeading(Andrehwinkel * DEG_TO_RAD);
-    const float omega = giveHeadingController() * 100;
-
-    if (MaxSpeed > 100)
-        MaxSpeed = 100;
-    if (MinSpeed > MaxSpeed)
-        MinSpeed = MaxSpeed;
-
-    const uint32_t nowMs = millis();
-    const uint32_t nowUs = micros();
-    float dt = (mv.lastUs != 0) ? (nowUs - mv.lastUs) * 1e-6f : 0.0f;
-    if (dt > 0.1f)
-        dt = 0.0f; // lange Aufrufpause: Anlaufbegrenzung beginnt von vorn statt sofort 60 % freizugeben
-    mv.lastUs = nowUs;
-
-    // Position verloren: anhalten, Profil verwerfen
-    if (Position.X < 0.0f || Position.Y < 0.0f)
-    {
-        resetMoveProfile();
-        mv.lastSpeed = 0.0f;
-        mv.lastCallMs = nowMs;
-        setOmniWheelDir(0, 0, omega);
-        return;
-    }
-
-    const float tx = constrain((float)X, 0.0f, FIELD_X_CM);
-    const float ty = constrain((float)Y, 0.0f, FIELD_Y_CM);
-    const float dx = tx - Position.X;
-    const float dy = ty - Position.Y;
-    const float dist = sqrtf(dx * dx + dy * dy);
-
-    // ---- Neustart des Patterns? -----------------------------------------
-    const bool sameTarget = (fabsf(tx - mv.tx) <= MOVE_TARGET_TOL_CM) && (fabsf(ty - mv.ty) <= MOVE_TARGET_TOL_CM);
-    const bool restart = !mv.active || !sameTarget || (SpeedPattern != mv.pattern) || (MaxSpeed != mv.maxS) || (MinSpeed != mv.minS) || ((nowMs - mv.lastCallMs) > (uint32_t)MOVE_RESTART_GAP_MS);
-    mv.lastCallMs = nowMs;
-
-    if (restart)
-    {
-        mv.active = true;
-        mv.tx = tx;
-        mv.ty = ty;
-        mv.pattern = SpeedPattern;
-        mv.maxS = MaxSpeed;
-        mv.minS = MinSpeed;
-        mv.dist0 = dist;
-        mv.progress = 0.0f;
-        mv.arrived = (dist <= MOVE_ARRIVE_CM);
-        mv.correcting = false;
-        // lastSpeed bleibt: rollt der Roboter noch, wird der Speed nicht ruckartig umgesetzt
-    }
-
-    // ---- Zielkreis mit Hysterese -----------------------------------------
-    if (mv.arrived)
-    {
-        if (dist > MOVE_ARRIVE_CM + MOVE_ARRIVE_HYST_CM) // weggeschoben -> Feinkorrektur
-        {
-            mv.arrived = false;
-            mv.correcting = true;
-            mv.dist0 = dist;
-            mv.progress = 0.0f;
-        }
-    }
-    else if (dist <= MOVE_ARRIVE_CM)
-    {
-        mv.arrived = true;
-    }
-
-    // ---- Geschwindigkeit ----------------------------------------------------
-    float speed = 0.0f;
-    if (!mv.arrived)
-    {
-        mv.progress = (mv.dist0 > MOVE_ARRIVE_CM) ? constrain(1.0f - dist / mv.dist0, 0.0f, 1.0f) : 1.0f;
-
-        const float f = mv.correcting ? 0.0f : speedPatternValue(mv.pattern, mv.progress);
-        speed = MinSpeed + (MaxSpeed - MinSpeed) * f;
-
-        // weicher Anlauf: Zunahme begrenzen, Abnahme (Bremsen) nie
-        if (MOVE_MAX_ACCEL_PCT_S > 0.0f && speed > mv.lastSpeed + MOVE_MAX_ACCEL_PCT_S * dt)
-            speed = mv.lastSpeed + MOVE_MAX_ACCEL_PCT_S * dt;
-    }
-    else
-    {
-        mv.progress = 1.0f;
-    }
-    mv.lastSpeed = speed;
-
-    setOmniWheelDir(Util.wrapAngle(atan2f(-dx, dy) * (180.0f / PI)),
-                    (uint8_t)constrain(speed + 0.5f, 0.0f, 100.0f), omega);
+    applyMotionCommand(Profile.moveToPoint(giveMotionInput(), X, Y, SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel));
 }
 
-/* ========================================================================
- * Punkt-Array: Liste von Zielpunkten, die nacheinander angefahren werden
- *
- * Jeder Punkt hat Ziel (X, Y), Andrehwinkel, Speed-Pattern, Max-/MinSpeed und
- * optional eine Wartezeit. Gefahren wird mit moveToPoint(), der Verlauf des
- * Speed-Patterns startet also an jedem Punkt neu.
- *
- *   ArrayPoint route[] = {
- *       // X    Y    Winkel  Pattern             Max  Min  Wartezeit
- *       {  60,  80,    0,    SPattern_Linear,     80,  25,    0 },
- *       { 120, 160,   90,    SPattern_Trapezoid,  70,  25,  500 },
- *   };
- *   Robot.setPointArray(route, 2);   // zyklisch aufrufbar: unveraendert = kein Neustart
- *   Robot.startArray();              // zyklisch aufrufbar: laeuft schon = kein Neustart
- *   Robot.updateArray();             // JEDEN Zyklus: faehrt, schaltet beim Erreichen weiter
- *
- * Ein Punkt gilt als erreicht, wenn der Zielkreis (MOVE_ARRIVE_CM) erreicht ist,
- * der Roboter auf Andrehwinkel +-ARRAY_HEADING_TOL_DEG steht und die Wartezeit
- * abgelaufen ist.
- * ===================================================================== */
-namespace
-{
-struct ArrayData
-{
-    ArrayPoint pts[ARRAY_MAX_POINTS];
-    uint8_t count = 0;
-    uint8_t index = 0; // aktueller Zielpunkt
-    bool loop = false;
-    ArrayState state = ArrayIdle;
-    bool holding = false; // Punkt erreicht, Wartezeit laeuft
-    uint32_t holdStartMs = 0;
-};
-ArrayData pa;
+void systemlib::resetMoveProfile(void) { Profile.resetProfile(); }
 
-bool samePoint(const ArrayPoint &a, const ArrayPoint &b)
-{
-    return a.X == b.X && a.Y == b.Y && a.Andrehwinkel == b.Andrehwinkel && a.SpeedPattern == b.SpeedPattern && a.MaxSpeed == b.MaxSpeed && a.MinSpeed == b.MinSpeed && a.HoldMs == b.HoldMs && a.PassCm == b.PassCm;
-}
-}
+bool systemlib::giveMoveArrived(void) const { return Profile.giveArrived(); }
 
-/**
- * Ersetzt die komplette Liste. Zyklisch aufrufbar: sind Punkte und loop unveraendert,
- * passiert nichts (Fortschritt bleibt). Bei jeder Aenderung beginnt die Liste wieder
- * beim ersten Punkt (ein laufender oder pausierter Zustand bleibt erhalten,
- * ein beendeter/ruhender wird zu Idle -> startArray()).
- *
- * @param loop true = nach dem letzten Punkt wieder beim ersten weitermachen
- * @return false, wenn die Liste laenger als ARRAY_MAX_POINTS ist (dann unveraendert)
- */
+float systemlib::giveMoveProgress(void) const { return Profile.giveProgress(); }
+
+/* -------------- Punkt-Liste -------------- */
+
 bool systemlib::setPointArray(const ArrayPoint *points, uint8_t count, bool loop)
 {
-    if (count > ARRAY_MAX_POINTS || (points == nullptr && count > 0))
-    {
-        return false;
-    }
-
-    bool same = (count == pa.count) && (loop == pa.loop);
-    for (uint8_t i = 0; same && i < count; i++)
-    {
-        same = samePoint(points[i], pa.pts[i]);
-    }
-    if (same)
-    {
-        return true;
-    }
-
-    for (uint8_t i = 0; i < count; i++)
-    {
-        pa.pts[i] = points[i];
-    }
-    pa.count = count;
-    pa.loop = loop;
-    pa.index = 0;
-    pa.holding = false;
-    resetMoveProfile();
-
-    if (count == 0 || pa.state == ArrayFinished)
-    {
-        pa.state = ArrayIdle;
-    }
-    return true;
+    return Profile.setPointArray(points, count, loop);
 }
 
-/**
- * Haengt einen Punkt hinten an. Eine laufende Fahrt wird dadurch nicht unterbrochen;
- * war die Liste schon beendet, faehrt der Roboter zum neuen Punkt weiter.
- *
- * @param HoldMs Wartezeit nach Erreichen des Punkts [ms], bevor der naechste folgt
- * @return false, wenn die Liste voll ist (ARRAY_MAX_POINTS)
- */
 bool systemlib::addPointToArray(uint16_t X, uint16_t Y, int16_t Andrehwinkel, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, uint16_t HoldMs)
 {
-    ArrayPoint p;
-    p.X = X;
-    p.Y = Y;
-    p.Andrehwinkel = Andrehwinkel;
-    p.SpeedPattern = SpeedPattern;
-    p.MaxSpeed = MaxSpeed;
-    p.MinSpeed = MinSpeed;
-    p.HoldMs = HoldMs;
-    p.PassCm = 0;
-    return addPointToArray(p);
+    return Profile.addPointToArray(X, Y, Andrehwinkel, SpeedPattern, MaxSpeed, MinSpeed, HoldMs);
 }
 
-bool systemlib::addPointToArray(const ArrayPoint &point)
-{
-    if (pa.count >= ARRAY_MAX_POINTS)
-    {
-        return false;
-    }
+bool systemlib::addPointToArray(const ArrayPoint &point) { return Profile.addPointToArray(point); }
 
-    pa.pts[pa.count] = point;
-    pa.count++;
+void systemlib::resetArray(void) { Profile.resetArray(); }
 
-    if (pa.state == ArrayFinished) // Liste war fertig -> zum neuen Punkt weiterfahren
-    {
-        pa.index = pa.count - 1;
-        pa.state = ArrayRunning;
-        pa.holding = false;
-        resetMoveProfile();
-    }
-    return true;
-}
+void systemlib::startArray(bool restart) { Profile.startArray(restart); }
 
-/** Loescht alle Punkte und setzt den Zustand auf Idle. updateArray() sendet dann keine Motorbefehle mehr. */
-void systemlib::resetArray(void)
-{
-    pa.count = 0;
-    pa.index = 0;
-    pa.loop = false;
-    pa.state = ArrayIdle;
-    pa.holding = false;
-    resetMoveProfile();
-}
+void systemlib::pauseArray(void) { Profile.pauseArray(); }
 
-/**
- * Startet die Liste beim ersten Punkt. Zyklisch aufrufbar: laeuft sie schon, ist sie
- * pausiert (-> resumeArray()) oder beendet, passiert nichts.
- *
- * @param restart true = in jedem Zustand von vorn beginnen
- */
-void systemlib::startArray(bool restart)
-{
-    if (pa.count == 0)
-    {
-        return;
-    }
-    if (pa.state != ArrayIdle && !restart)
-    {
-        return;
-    }
+void systemlib::resumeArray(void) { Profile.resumeArray(); }
 
-    pa.index = 0;
-    pa.holding = false;
-    pa.state = ArrayRunning;
-    resetMoveProfile();
-}
+void systemlib::updateArray(void) { applyMotionCommand(Profile.updateArray(giveMotionInput())); }
 
-/** Haelt den Roboter an (Heading wird weiter geregelt). Der Fortschritt bleibt erhalten. */
-void systemlib::pauseArray(void)
-{
-    if (pa.state == ArrayRunning)
-    {
-        pa.state = ArrayPaused;
-        pa.holding = false;
-        resetMoveProfile();
-        mv.lastSpeed = 0.0f; // Roboter steht -> Anlauf nach resumeArray() wieder begrenzt
-    }
-}
+ArrayState systemlib::giveArrayState(void) const { return Profile.giveArrayState(); }
+uint8_t systemlib::giveArrayIndex(void) const { return Profile.giveArrayIndex(); }
+uint8_t systemlib::giveArrayCount(void) const { return Profile.giveArrayCount(); }
 
-/** Setzt eine pausierte Liste am aktuellen Punkt fort (das Speed-Pattern startet fuer diesen Punkt neu). */
-void systemlib::resumeArray(void)
-{
-    if (pa.state == ArrayPaused)
-    {
-        pa.state = ArrayRunning;
-        pa.holding = false;
-        resetMoveProfile();
-    }
-}
-
-/**
- * Jeden Zyklus aufrufen (wie moveToPoint). Faehrt den aktuellen Punkt an und schaltet
- * weiter, sobald er erreicht ist.
- *
- *  Idle      -> keine Motorbefehle
- *  Running   -> faehrt / wartet am Punkt
- *  Paused    -> steht, haelt Andrehwinkel des aktuellen Punkts
- *  Finished  -> haelt Position und Winkel des letzten Punkts
- */
-void systemlib::updateArray(void)
-{
-    if (pa.count == 0)
-    {
-        return;
-    }
-
-    const ArrayPoint &p = pa.pts[pa.index];
-
-    switch (pa.state)
-    {
-    case ArrayRunning:
-        break;
-
-    case ArrayFinished:
-        moveToPoint(p.X, p.Y, p.SpeedPattern, p.MaxSpeed, p.MinSpeed, p.Andrehwinkel);
-        return;
-
-    case ArrayPaused:
-        setHeading(p.Andrehwinkel * DEG_TO_RAD);
-        setOmniWheelDir(0, 0, giveHeadingController() * 100);
-        return;
-
-    default: // ArrayIdle
-        return;
-    }
-
-    moveToPoint(p.X, p.Y, p.SpeedPattern, p.MaxSpeed, p.MinSpeed, p.Andrehwinkel);
-
-    // ---- Durchfahrpunkt: weiterschalten, ohne anzuhalten ------------------------
-    // Zielkreis, Winkel und Wartezeit gelten nur fuer Haltepunkte (PassCm = 0) und den letzten Punkt.
-    if (p.PassCm > 0 && !(pa.index + 1 >= pa.count && !pa.loop))
-    {
-        pa.holding = false;
-        const float dx = p.X - Position.X;
-        const float dy = p.Y - Position.Y;
-        if (Position.X >= 0.0f && Position.Y >= 0.0f && sqrtf(dx * dx + dy * dy) <= p.PassCm)
-        {
-            pa.index = (pa.index + 1 < pa.count) ? (pa.index + 1) : 0;
-            resetMoveProfile(); // Pattern fuer den naechsten Punkt von vorn, Speed laeuft stetig weiter
-        }
-        return;
-    }
-
-    // ---- Punkt erreicht? ----------------------------------------------------
-    const float headingErr = fabsf(Util.wrapAngle(p.Andrehwinkel - giveOrbitDir()));
-    const bool reached = giveMoveArrived() && (ARRAY_HEADING_TOL_DEG <= 0.0f || headingErr <= ARRAY_HEADING_TOL_DEG);
-
-    if (!reached)
-    {
-        pa.holding = false;
-        return;
-    }
-
-    const uint32_t nowMs = millis();
-    if (!pa.holding)
-    {
-        pa.holding = true;
-        pa.holdStartMs = nowMs;
-    }
-    if ((uint32_t)(nowMs - pa.holdStartMs) < p.HoldMs)
-    {
-        return; // Wartezeit laeuft
-    }
-
-    // ---- weiterschalten ---------------------------------------------------------
-    pa.holding = false;
-    if (pa.index + 1 < pa.count)
-    {
-        pa.index++;
-        resetMoveProfile(); // Pattern fuer den neuen Punkt von vorn, auch bei gleichem Ziel
-    }
-    else if (pa.loop)
-    {
-        pa.index = 0;
-        resetMoveProfile();
-    }
-    else
-    {
-        pa.state = ArrayFinished;
-    }
-}
-
-ArrayState systemlib::giveArrayState(void) const { return pa.state; }
-uint8_t systemlib::giveArrayIndex(void) const { return pa.index; }
-uint8_t systemlib::giveArrayCount(void) const { return pa.count; }
-
-/* ========================================================================
- * Pfadplanung: moveToPointAvoid()
- *
- * Verknuepft den A*-Pathfinder (lib/Pathfinder) mit dem Punkt-Array:
- *
- *   Position, Ziel, Ball, Partner  ->  Pathfinder::findPath()  (Raster PATH_GRID_X/Y_CELLS)
- *     ->  Zellpfad  ->  Pathfinder::giveWaypoints() (wenige Wegpunkte)  ->  in cm
- *     ->  Wegpunkte als ArrayPoints  ->  setPointArray() / updateArray()
- *
- * Das Speed-Pattern gilt fuer die GANZE Strecke: Zwischenpunkte bekommen je
- * ein konstantes Tempo, das aus dem Pattern an der Stelle des Teilstuecks
- * berechnet wird; sie werden ohne Halt durchfahren (PassCm). Das letzte
- * Teilstueck faehrt das Pattern selbst, inkl. Zielkreis und Andrehwinkel.
- *
- * Neu geplant wird bei: neuem Ziel / Pattern / Speed, bewegtem Hindernis
- * (> PATH_OBST_MOVE_CM) und zyklisch alle PATH_REPLAN_MS (nur wenn noch unterwegs).
- *
- * ACHTUNG: Waehrend moveToPointAvoid() benutzt wird, gehoert ihm das Punkt-Array.
- * ===================================================================== */
-namespace
-{
-struct PathPlan
-{
-    bool valid = false; // es gibt eine Planung fuer das aktuelle Ziel
-    bool found = false; // A* hat einen Weg gefunden
-    uint16_t tx = 0, ty = 0;
-    uint8_t pattern = 0, maxS = 0, minS = 0;
-    int16_t ballIn[2] = {-1, -1}; // aktuelle Eingabe [cm], -1 = kein Hindernis
-    int16_t robIn[2] = {-1, -1};
-    int16_t ballUsed[2] = {-1, -1}; // beim letzten Planen verwendet
-    int16_t robUsed[2] = {-1, -1};
-    uint32_t lastPlanMs = 0;
-    uint32_t planUs = 0;
-    uint8_t wpCount = 0;
-    float total0 = 1.0f; // Streckenlaenge [cm], auf die sich der Pattern-Fortschritt bezieht
-};
-PathPlan plan;
-
-uint8_t cmToCell(float cm, float fieldCm, uint8_t cells)
-{
-    const int c = (int)(cm / fieldCm * cells);
-    return (uint8_t)constrain(c, 0, (int)cells - 1);
-}
-
-float cellToCm(uint8_t cell, float fieldCm, uint8_t cells)
-{
-    return (cell + 0.5f) * fieldCm / cells;
-}
-
-/// true, wenn sich ein Hindernis gegenueber der letzten Planung bewegt hat (oder neu/weg ist)
-bool obstacleMoved(const int16_t (&now)[2], const int16_t (&used)[2])
-{
-    const bool a = (now[0] >= 0 && now[1] >= 0);
-    const bool b = (used[0] >= 0 && used[1] >= 0);
-    if (a != b)
-        return true;
-    if (!a)
-        return false;
-    const float dx = now[0] - used[0];
-    const float dy = now[1] - used[1];
-    return sqrtf(dx * dx + dy * dy) > PATH_OBST_MOVE_CM;
-}
-
-/**
-     * A* + Vereinfachung + Tempo je Teilstueck -> ArrayPoints.
-     * Versuche: 1) mit Ball und Partner, 2) ohne Ball (Ziel liegt oft im Ballbereich),
-     * 3) ohne Hindernisse (Startzelle im Sperrbereich). Jeder Fehlversuch kostet Rechenzeit.
-     */
-bool buildRoute(float sx, float sy, float fieldX, float fieldY, uint16_t tx, uint16_t ty,
-                uint8_t pattern, uint8_t maxS, uint8_t minS, int16_t angle, bool restartPattern,
-                ArrayPoint (&route)[ARRAY_MAX_POINTS], uint8_t &count)
-{
-    const uint8_t W = PATH_GRID_X_CELLS;
-    const uint8_t H = PATH_GRID_Y_CELLS;
-
-    const uint8_t scx = cmToCell(sx, fieldX, W), scy = cmToCell(sy, fieldY, H);
-    const uint8_t tcx = cmToCell(tx, fieldX, W), tcy = cmToCell(ty, fieldY, H);
-
-    const bool hasBall = (plan.ballIn[0] >= 0 && plan.ballIn[1] >= 0);
-    const bool hasRob = (plan.robIn[0] >= 0 && plan.robIn[1] >= 0);
-    const uint8_t bx = hasBall ? cmToCell(plan.ballIn[0], fieldX, W) : PATH_NO_OBSTACLE;
-    const uint8_t by = hasBall ? cmToCell(plan.ballIn[1], fieldY, H) : PATH_NO_OBSTACLE;
-    const uint8_t rx = hasRob ? cmToCell(plan.robIn[0], fieldX, W) : PATH_NO_OBSTACLE;
-    const uint8_t ry = hasRob ? cmToCell(plan.robIn[1], fieldY, H) : PATH_NO_OBSTACLE;
-
-    bool ok = false;
-    for (uint8_t attempt = 0; attempt < 3 && !ok; attempt++)
-    {
-        if (attempt == 1 && !hasBall)
-            continue;
-        if (attempt == 2 && !hasRob)
-            continue;
-
-        const bool useBall = (attempt == 0);
-        const bool useRob = (attempt <= 1);
-        ok = AStar.findPath(scx, scy, tcx, tcy,
-                            useBall ? bx : PATH_NO_OBSTACLE, useBall ? by : PATH_NO_OBSTACLE,
-                            useRob ? rx : PATH_NO_OBSTACLE, useRob ? ry : PATH_NO_OBSTACLE);
-    }
-    if (!ok)
-    {
-        return false;
-    }
-
-    // ---- Wegpunkte (cm) -------------------------------------------------
-    uint8_t wp[ARRAY_MAX_POINTS][2];
-    uint8_t n = (AStar.givePathLength() >= 2) ? AStar.giveWaypoints(wp, ARRAY_MAX_POINTS) : 0;
-
-    float px[ARRAY_MAX_POINTS + 1];
-    float py[ARRAY_MAX_POINTS + 1];
-    px[0] = sx;
-    py[0] = sy;
-    for (uint8_t i = 0; i < n; i++)
-    {
-        px[i + 1] = cellToCm(wp[i][0], fieldX, W);
-        py[i + 1] = cellToCm(wp[i][1], fieldY, H);
-    }
-    if (n == 0)
-        n = 1;  // Start und Ziel in derselben Zelle: nur das Ziel
-    px[n] = tx; // letzter Punkt = exaktes Ziel, nicht Zellmitte
-    py[n] = ty;
-
-    // ---- Tempo: Pattern ueber die ganze Strecke --------------------------------
-    float total = 0.0f;
-    float seg[ARRAY_MAX_POINTS];
-    for (uint8_t i = 0; i < n; i++)
-    {
-        const float dx = px[i + 1] - px[i];
-        const float dy = py[i + 1] - py[i];
-        seg[i] = sqrtf(dx * dx + dy * dy);
-        total += seg[i];
-    }
-    if (total < 1.0f)
-        total = 1.0f;
-
-    // Der Pattern-Fortschritt bezieht sich auf die Strecke bei Fahrtbeginn (neues Ziel / Pattern / Speed).
-    // Periodische Neuplanungen aendern das nicht, sonst wuerde das Tempo bei jeder Neuplanung neu anlaufen.
-    if (restartPattern || total > plan.total0)
-        plan.total0 = total;
-
-    float cum = 0.0f;
-    for (uint8_t i = 0; i < n; i++)
-    {
-        const float pStart = constrain(1.0f - (total - cum) / plan.total0, 0.0f, 1.0f);
-        const float pMid = constrain(1.0f - (total - cum - 0.5f * seg[i]) / plan.total0, 0.0f, 1.0f);
-        cum += seg[i];
-
-        ArrayPoint &a = route[i];
-        a.X = (uint16_t)constrain(px[i + 1] + 0.5f, 0.0f, fieldX);
-        a.Y = (uint16_t)constrain(py[i + 1] + 0.5f, 0.0f, fieldY);
-        a.Andrehwinkel = angle;
-        a.HoldMs = 0;
-
-        if (i + 1 < n) // Zwischenpunkt: konstantes Tempo, ohne Halt durchfahren
-        {
-            const float v = minS + (maxS - minS) * speedPatternValue(pattern, pMid);
-            a.SpeedPattern = SPattern_Constant;
-            a.MaxSpeed = (uint8_t)(v + 0.5f);
-            a.MinSpeed = a.MaxSpeed;
-            a.PassCm = PATH_PASS_CM;
-        }
-        else // letztes Teilstueck: Pattern bis zum Ziel
-        {
-            const float v0 = minS + (maxS - minS) * speedPatternValue(pattern, pStart);
-            a.SpeedPattern = pattern;
-            a.MaxSpeed = (uint8_t)(v0 + 0.5f);
-            a.MinSpeed = minS;
-            a.PassCm = 0;
-        }
-    }
-    count = n;
-    return true;
-}
-}
+/* -------------- Pfadplanung -------------- */
 
 /**
  * Hindernisse fuer die Pfadplanung [cm, Feldkoordinaten]. -1 = kein Hindernis.
@@ -2375,10 +1780,7 @@ bool buildRoute(float sx, float sy, float fieldX, float fieldY, uint16_t tx, uin
  */
 void systemlib::setPathObstacles(int16_t ballX, int16_t ballY, int16_t robotX, int16_t robotY)
 {
-    plan.ballIn[0] = ballX;
-    plan.ballIn[1] = ballY;
-    plan.robIn[0] = robotX;
-    plan.robIn[1] = robotY;
+    Planner.setObstacles(ballX, ballY, robotX, robotY);
 }
 
 /**
@@ -2387,100 +1789,75 @@ void systemlib::setPathObstacles(int16_t ballX, int16_t ballY, int16_t robotX, i
  *
  * Kein Weg gefunden: PATH_FALLBACK_DIRECT = true faehrt geradeaus per moveToPoint(),
  * sonst bleibt der Roboter stehen und haelt den Winkel. Status: givePathFound().
+ *
+ * ACHTUNG: Solange moveToPointAvoid() benutzt wird, gehoert ihm die Punkt-Liste.
  */
 void systemlib::moveToPointAvoid(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel)
 {
+    const MotionInput in = giveMotionInput();
+
     // Position unbekannt: moveToPoint() haelt an und regelt den Winkel
-    if (Position.X < 0.0f || Position.Y < 0.0f)
+    if (!in.PosValid)
     {
-        moveToPoint(X, Y, SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel);
+        applyMotionCommand(Profile.moveToPoint(in, X, Y, SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel));
         return;
     }
 
-    const uint32_t nowMs = millis();
+    RouteRequest req;
+    req.NowMs = in.NowMs;
+    req.FromX = in.X;
+    req.FromY = in.Y;
+    req.ToX = X;
+    req.ToY = Y;
+    req.Arrived = Profile.giveArrived(); // am Ziel: nicht dauernd neu planen
 
-    const bool settingsChanged = !plan.valid || X != plan.tx || Y != plan.ty || SpeedPattern != plan.pattern || MaxSpeed != plan.maxS || MinSpeed != plan.minS;
-    const bool moved = obstacleMoved(plan.ballIn, plan.ballUsed) || obstacleMoved(plan.robIn, plan.robUsed);
-    const bool settled = plan.found && giveMoveArrived(); // am Ziel: nicht dauernd neu planen
-    const uint32_t interval = plan.found ? PATH_REPLAN_MS : PATH_REPLAN_FAIL_MS;
-    const bool due = !settled && (uint32_t)(nowMs - plan.lastPlanMs) >= interval;
-
-    if (settingsChanged || moved || due)
+    Route route;
+    switch (Planner.update(req, route))
     {
-        plan.lastPlanMs = nowMs;
-        plan.valid = true;
-        plan.tx = X;
-        plan.ty = Y;
-        plan.pattern = SpeedPattern;
-        plan.maxS = MaxSpeed;
-        plan.minS = MinSpeed;
-        for (uint8_t i = 0; i < 2; i++)
-        {
-            plan.ballUsed[i] = plan.ballIn[i];
-            plan.robUsed[i] = plan.robIn[i];
-        }
+    case RouteNew:
+        // Tempo je Teilstueck rechnet MotionProfile; unveraenderte Wegpunkte starten nicht neu
+        Profile.setRoute(route, SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel);
+        break;
 
-        ArrayPoint route[ARRAY_MAX_POINTS];
-        uint8_t count = 0;
+    case RouteFailed:
+        Profile.resetArray();
+        break;
 
-        const uint32_t t0 = micros();
-        plan.found = buildRoute(Position.X, Position.Y, FIELD_X_CM, FIELD_Y_CM, X, Y,
-                                SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel, settingsChanged, route, count);
-        plan.planUs = micros() - t0;
-
-        if (plan.found)
-        {
-            plan.wpCount = count;
-            setPointArray(&route[0], count); // unveraenderte Wegpunkte: kein Neustart
-        }
-        else
-        {
-            plan.wpCount = 0;
-            resetArray();
-        }
+    default: // RouteUnchanged: die bisherige Route gilt weiter
+        break;
     }
 
-    if (plan.found)
+    if (Planner.giveFound())
     {
-        // Winkel darf sich waehrend der Fahrt aendern, ohne dass neu geplant wird
-        for (uint8_t i = 0; i < pa.count; i++)
-        {
-            pa.pts[i].Andrehwinkel = Andrehwinkel;
-        }
-        startArray();
-        updateArray();
+        Profile.setArrayHeading(Andrehwinkel); // Winkel darf sich ohne Neuplanung aendern
+        Profile.startArray();
+        applyMotionCommand(Profile.updateArray(in));
+    }
+    else if (PATH_FALLBACK_DIRECT)
+    {
+        applyMotionCommand(Profile.moveToPoint(in, X, Y, SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel));
     }
     else
     {
-        if (PATH_FALLBACK_DIRECT)
-        {
-            moveToPoint(X, Y, SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel);
-        }
-        else
-        {
-            setHeading(Andrehwinkel * DEG_TO_RAD);
-            setOmniWheelDir(0, 0, giveHeadingController() * 100);
-        }
+        setHeading(Andrehwinkel * DEG_TO_RAD);
+        setOmniWheelDir(0, 0, giveHeadingController() * 100);
     }
 }
 
 /**
- * Verwirft Planung, Punkt-Array und Fahrprofil (Speed 0). Aufrufen beim Wechsel in einen anderen
- * Modus, damit die naechste Fahrt ohne Reste der vorigen beginnt.
+ * Verwirft Planung, Punkt-Liste und Fahrprofil (Speed 0). Aufrufen beim Wechsel in einen
+ * anderen Modus, damit die naechste Fahrt ohne Reste der vorigen beginnt.
  */
 void systemlib::resetPathPlan(void)
 {
-    plan.valid = false;
-    plan.found = false;
-    plan.wpCount = 0;
-    plan.total0 = 1.0f;
-    resetArray();
-    mv.lastSpeed = 0.0f;
+    Planner.reset();
+    Profile.resetArray();
+    Profile.stopProfile();
 }
 
-bool systemlib::givePathFound(void) const { return plan.found; }
-uint8_t systemlib::givePathWaypoints(void) const { return plan.wpCount; }
-uint32_t systemlib::givePathTimeUs(void) const { return plan.planUs; }
+bool systemlib::givePathFound(void) const { return Planner.giveFound(); }
+uint8_t systemlib::givePathWaypoints(void) const { return Planner.giveWaypoints(); }
+uint32_t systemlib::givePathTimeUs(void) const { return Planner.giveTimeUs(); }
 
 namespace
 {
@@ -2552,33 +1929,21 @@ void systemlib::setOmniWheelDir(float directionDeg, uint8_t speedPercent, float 
     setMotorData(MoDataHR.ID, w[3], true, false);
 }
 
-static int checkWallDistance(float posX, float posY)
-{
-    // Ungültige Positionen (z. B. -1 aus der Fallback-Logik) direkt abfangen
-    if (posX < 0.0f || posY < 0.0f)
-    {
-        return -1;
-    }
-
-    // Prüfen, ob eine der 4 Wände unterschritten wird
-    if (posX < MOVE_WALL_MARGIN_CM || posX > (FIELD_X_CM - MOVE_WALL_MARGIN_CM) ||
-        posY < MOVE_WALL_MARGIN_CM || posY > (FIELD_Y_CM - MOVE_WALL_MARGIN_CM))
-    {
-        return 1; // Naeher als MOVE_WALL_MARGIN_CM an der Wand
-    }
-
-    return 0; // Sicherer Bereich
-}
-
+/**
+ * Freie Fahrt in eine Feldrichtung, mit Wandschutz.
+ *
+ * Steht der Roboter naeher als MOVE_WALL_MARGIN_CM an einer Wand, faehrt er nur
+ * noch mit MOVE_WALL_SPEED_PCT weiter. Bei unbekannter Position greift der
+ * Schutz nicht, dann ist der Wandabstand nicht bekannt.
+ */
 void systemlib::moveDir(int16_t Dir, uint8_t Speed, float Andrehwinkel)
 {
     setHeading(Andrehwinkel * DEG_TO_RAD);
-    if (checkWallDistance(Position.X, Position.Y) == 1)
+
+    if (MotionProfile::isNearWall(Position.X, Position.Y))
     {
-        setOmniWheelDir(Dir, MOVE_WALL_SPEED_PCT, giveHeadingController() * 100);
+        Speed = MOVE_WALL_SPEED_PCT;
     }
-    else
-    {
-        setOmniWheelDir(Dir, Speed, giveHeadingController() * 100);
-    }
+
+    setOmniWheelDir(Dir, Speed, giveHeadingController() * 100);
 }

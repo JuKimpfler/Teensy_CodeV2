@@ -40,6 +40,10 @@ static constexpr float MOVE_MAX_ACCEL_PCT_S = 10000.0f; ///< max. Zunahme des Sp
 static constexpr uint32_t MOVE_RESTART_GAP_MS = 200;    ///< Pause zwischen zwei Aufrufen, ab der das Pattern neu startet
 static constexpr float MOVE_TARGET_TOL_CM = 3.0f;       ///< Zielaenderung bis zu diesem Wert startet das Pattern NICHT neu
 
+/* -------------- moveToPoint ohne Pattern (4-Parameter-Variante) -------------- */
+static constexpr float MOVE_SLOWDOWN_CM = 40.0f;   ///< ab diesem Abstand voller Speed, darunter linear weniger
+static constexpr float MOVE_SIMPLE_STOP_CM = 5.0f; ///< naeher am Ziel: Speed 0
+
 /* -------------- Wandabstand (moveDir) -------------- */
 static constexpr float MOVE_WALL_MARGIN_CM = 20.0f; ///< naeher als das an der Wand -> Speed wird begrenzt
 static constexpr uint8_t MOVE_WALL_SPEED_PCT = 5;   ///< Speed [%] im Wandbereich

@@ -2,6 +2,12 @@ Hauptlib: systemlib
 -> Zugriff auf alle Sensorwerte und auf alle Aktuatoren
 -> Parameter in lib/include/params/ (Uebersicht: lib/include/include.md)
 
+Fahren (rechnen nur, kennen systemlib nicht):
+-> MotionProfile  Speed-Pattern, Zielanfahrt, Punkt-Liste
+-> RoutePlanner   Pfadplanung auf cm-Ebene ueber Pathfinder
+-> Pathfinder     A* auf Zellen
+   systemlib liefert ihnen Position und Winkel und setzt den Fahrbefehl um.
+
 Sublibs:
 -> exakt 2 Dateien: .h und .cpp (dazu .md)
 -> eindeutige Funktionsnamen

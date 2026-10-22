@@ -2,7 +2,7 @@
 
 Findet einen Weg über das Spielfeld, der Zellen mit hohem Gewicht (Wand, Tor, Ball, anderer Roboter) meidet.
 Die Klasse kennt weder Position noch Motoren: Sie rechnet in **Rasterzellen**. Die Umrechnung von und nach cm
-und das Abfahren des Wegs macht [`systemlib::moveToPointAvoid()`](../systemlib/Bewegungsfunktionen.md#7-pfadplanung-movetopointavoid).
+und das Abfahren des Wegs macht [`RoutePlanner`](../RoutePlanner/RoutePlanner.md) und [`MotionProfile`](../MotionProfile/MotionProfile.md).
 
 ```cpp
 #include <Pathfinder.h>
@@ -59,7 +59,7 @@ bleiben also wirksam. Ergebnis: ohne Startzelle, der letzte Punkt ist die Zielze
 |---|---|
 | RAM | ca. 132 kB (`sizeof(Pathfinder)`: Arbeitskarte, Kostenfelder, offene Liste, Pfad) |
 | Flash | ca. 13 kB Gewichtskarten |
-| Rechenzeit | wenige ms, blockiert (Messwerte siehe Abschnitt *Rechenzeit* in Bewegungsfunktionen.md). Nicht im Regelzyklus unbegrenzt oft aufrufen |
+| Rechenzeit | wenige ms, blockiert (Messwerte siehe Abschnitt *Rechenzeit* in MotionProfile.md). Nicht im Regelzyklus unbegrenzt oft aufrufen |
 
 Das Objekt muss global oder statisch angelegt werden, `systemlib` hat dafür `AStar`.
 
