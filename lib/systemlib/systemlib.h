@@ -205,32 +205,32 @@ public:
     void resetHeadingController(void);
     void moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed, int16_t Andrehwinkel);
     void moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel);
-    void resetMoveProfile(void);        ///< naechster moveToPoint()-Aufruf startet das Speed-Pattern von vorn
-    bool giveMoveArrived(void) const;   ///< true = Ziel von moveToPoint() erreicht (Zielkreis)
-    float giveMoveProgress(void) const; ///< Fortschritt 0..1 des aktuellen Speed-Patterns
+    void resetMoveProfile(void) { Profile.resetProfile(); };        ///< naechster moveToPoint()-Aufruf startet das Speed-Pattern von vorn
+    bool giveMoveArrived(void) const { return Profile.giveArrived(); };   ///< true = Ziel von moveToPoint() erreicht (Zielkreis)
+    float giveMoveProgress(void) const { return Profile.giveProgress(); }; ///< Fortschritt 0..1 des aktuellen Speed-Patterns
 
     /* -------------- Punkt-Array -------------- */
     bool setPointArray(const ArrayPoint *points, uint8_t count, bool loop = false); ///< Liste ersetzen (unveraendert = kein Neustart)
     template <size_t N>
     bool setPointArray(const ArrayPoint (&points)[N], bool loop = false) { return setPointArray(points, (uint8_t)N, loop); } ///< Anzahl automatisch
     bool addPointToArray(uint16_t X, uint16_t Y, int16_t Andrehwinkel, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, uint16_t HoldMs = 0);
-    bool addPointToArray(const ArrayPoint &point); ///< Punkt hinten anhaengen
-    void resetArray(void);                         ///< Liste leeren, Zustand Idle
-    void startArray(bool restart = false);         ///< beim ersten Punkt starten (laeuft sie schon: nichts)
-    void pauseArray(void);                         ///< anhalten
-    void resumeArray(void);                        ///< nach pauseArray() fortsetzen
-    void updateArray(void);                        ///< jeden Zyklus aufrufen
-    ArrayState giveArrayState(void) const;
-    uint8_t giveArrayIndex(void) const; ///< aktueller Zielpunkt (0-basiert)
-    uint8_t giveArrayCount(void) const; ///< Anzahl Punkte
+    bool addPointToArray(const ArrayPoint &point) { return Profile.addPointToArray(point); } ///< Punkt hinten anhaengen
+    void resetArray(void){ Profile.resetArray();}; ///< Liste leeren, Zustand Idle
+    void startArray(bool restart = false){ Profile.startArray(restart); }; ///< beim ersten Punkt starten (laeuft sie schon: nichts)
+    void pauseArray(void){ Profile.pauseArray(); }; ///< anhalten
+    void resumeArray(void){ Profile.resumeArray(); }; ///< nach pauseArray() fortsetzen
+    void updateArray(void){ applyMotionCommand(Profile.updateArray(giveMotionInput())); }; ///< jeden Zyklus aufrufen
+    ArrayState giveArrayState(void) const { return Profile.giveArrayState(); };
+    uint8_t giveArrayIndex(void) const { return Profile.giveArrayIndex(); }; ///< aktueller Zielpunkt (0-basiert)
+    uint8_t giveArrayCount(void) const { return Profile.giveArrayCount(); }; ///< Anzahl Punkte
 
     /* -------------- Pfadplanung (A*) -------------- */
     void setPathObstacles(int16_t ballX, int16_t ballY, int16_t robotX, int16_t robotY); ///< Hindernisse [cm], -1 = keins
     void moveToPointAvoid(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, int16_t Andrehwinkel);
     void resetPathPlan(void);              ///< Planung, Punkt-Array und Fahrprofil verwerfen
-    bool givePathFound(void) const;        ///< A* hat einen Weg gefunden
-    uint8_t givePathWaypoints(void) const; ///< Anzahl Wegpunkte der Route
-    uint32_t givePathTimeUs(void) const;   ///< Rechenzeit der letzten Planung [us]
+    bool givePathFound(void) const { return Planner.giveFound(); };        ///< A* hat einen Weg gefunden
+    uint8_t givePathWaypoints(void) const { return Planner.giveWaypoints(); }; ///< Anzahl Wegpunkte der Route
+    uint32_t givePathTimeUs(void) const { return Planner.giveTimeUs(); };   ///< Rechenzeit der letzten Planung [us]
     void moveDir(int16_t Dir, uint8_t Speed, float Andrehwinkel);
     void setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break);
     void setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break);
