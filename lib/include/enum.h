@@ -6,22 +6,54 @@
 
 #define LED_LENGTH 19
 
+#define MotorVR_ID 0 
+#define MotorVL_ID 1
+#define MotorHL_ID 2
+#define MotorHR_ID 3
+#define MotorDR_ID 4
+
 enum PinOut
 {
-    MOT1_IN1 = 0,
-    MOT1_IN2 = 1,
-    MOT2_IN1 = 2,
-    MOT2_IN2 = 3,
-    MOT1_PWM = 4,
-    MOT2_PWM = 5,
-    MOT3_PWM = 6,
-    MOT3_IN1 = 7,
-    MOT3_IN2 = 8,
-    MOT4_IN1 = 26,
-    MOT4_IN2 = 32,
-    MOT4_PWM = 9,
+    /*
+    4 -> 9 / 4
+    1 -> 4 / 9
+    2 -> 5 / 6
+    3 -> 6 / 5*/
 
-    BLDC_DRIBBLER_PWM = 33,
+    MotorVR_PWM = 4,
+    MotorVL_PWM = 9,
+    MotorHL_PWM = 6,
+    MotorHR_PWM = 5,
+    MotorDR_PWM = 33,
+
+    MotorVR_P1 = 6,
+    MotorVR_P2 = 7,
+    MotorVL_P1 = 0,
+    MotorVL_P2 = 1,
+    MotorHL_P1 = 2,
+    MotorHL_P2 = 3,
+    MotorHR_P1 = 4,
+    MotorHR_P2 = 5,
+
+    MotorVR_AP1 = 1,
+    MotorVR_AP2 = 0,
+    MotorVL_AP1 = 7,
+    MotorVL_AP2 = 6,
+    MotorHL_AP1 = 5,
+    MotorHL_AP2 = 4,
+    MotorHR_AP1 = 3,
+    MotorHR_AP2 = 2,
+
+    /*
+    1 RPM VR
+    0 Strom VR
+    7 RPM VL
+    6 Strom VL
+    5 RPM HL
+    4 Strom HL
+    3 RPM HR
+    2 Strom HR
+    */
 
     KICKER_PORT = 18,
 
@@ -53,5 +85,5 @@ enum PinOut
 
     EMPTY_27 = 27,
 
-    ADC108S102_CS1 = 32
+    ADC108S102_Motor_CS = 32
 };

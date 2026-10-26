@@ -22,9 +22,30 @@ import sys
 Import("env")
 
 PROJECT_DIR = env["PROJECT_DIR"]
-SENDER_SCRIPT = os.path.normpath(
-    os.path.join(PROJECT_DIR, "..","pc_flash_tool", "bt_flash_sender.py")
+
+# bt_flash_sender.py gehoert zum PDS-Repository (Robotic_PDS/pc_flash_tool).
+# Je nachdem, wie die Arbeitskopien nebeneinander liegen, steht es an einer
+# anderen Stelle -- die Kandidaten werden der Reihe nach probiert. Ein eigener
+# Pfad geht ueber die Umgebungsvariable PDS_FLASH_TOOL.
+_CANDIDATES = tuple(
+    p for p in (
+        os.environ.get("PDS_FLASH_TOOL"),
+        os.path.join(PROJECT_DIR, "..", "Robotic_PDS", "pc_flash_tool", "bt_flash_sender.py"),
+        os.path.join(PROJECT_DIR, "..", "pc_flash_tool", "bt_flash_sender.py"),
+        os.path.join(PROJECT_DIR, "..", "pc_setup", "pc_flash_tool", "bt_flash_sender.py"),
+    )
+    if p
 )
+
+SENDER_SCRIPT = next(
+    (os.path.normpath(p) for p in _CANDIDATES if os.path.isfile(p)),
+    os.path.normpath(_CANDIDATES[0]),
+)
+
+if not os.path.isfile(SENDER_SCRIPT):
+    print(f"[extra_script] WARNUNG: bt_flash_sender.py nicht gefunden "
+          f"(gesucht: {', '.join(os.path.normpath(p) for p in _CANDIDATES)}). "
+          f"Die 'Upload BT'-Targets werden fehlschlagen.")
 
 # Python-Interpreter des aktuellen PlatformIO-venv verwenden (robust unter Win/Linux/Mac)
 PYTHON_EXE = sys.executable

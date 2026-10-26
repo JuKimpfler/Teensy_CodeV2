@@ -22,7 +22,7 @@ public:
   //  address between 0x40 and 0x4F
   explicit INA219(const uint8_t address);
 
-  bool     begin();
+  bool     begin(TwoWire& wire);
   bool     isConnected();
   uint8_t  getAddress();
 
@@ -115,6 +115,7 @@ private:
   float    _maxCurrent;
 
   uint8_t   _address;
+  TwoWire*    _wire;
 };
 
 

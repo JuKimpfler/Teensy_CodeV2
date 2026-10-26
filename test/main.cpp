@@ -1,39 +1,63 @@
 #include <Arduino.h>
-
+#include <PDS.h>
 #include <systemlib.h>
 
 systemlib sys;
 
 RobotDataCom IMAS2;
 
+bool identity = false;
+
 void setup()
 {
+  // initialize() startet PDS mit und bindet die Systemwerte auf die festen
+  // Kanaele 0..25 (siehe systemlib::setupPDS() / docs/PDS_Belegung.md).
+  // Telemetrie laeuft danach von allein -- PDS.update() steckt in
+  // sys.readSensors() und wird unten in jedem Durchlauf erreicht.
   sys.initialize();
+  pinMode(21, INPUT);
+  identity = digitalRead(21);
+
+  // Welcher der beiden Roboter laeuft hier? Kanal vergibt PDS selbst.
+  PDS.track("Identity", &identity);
+  PDS.log(identity ? "Start als Roboter 1" : "Start als Roboter 2");
 }
 
 void loop()
 {
   sys.readSensors();
+  uint8_t buttons[5];
+  sys.giveButtonStates(buttons);
 
-  //if start switch
-  if (false){
-    
+  // if start switch
+  if (sys.giveStart()) // Game Loop
+  {
   }
-  USBC_UART.println("alive");
+  else if (sys.giveExpStartSwitch()) // gestoppt aber homing etc. erlaubt
+  {
+    if (buttons[0] == fancy_CLICKED) // move to point
+    {
+      PDS.event("Zielpunkt anfahren");
+      if (identity)
+        sys.moveToPoint(50, 50, 20, 0);
+      else
+        sys.moveToPoint(50, 30, 20, 0);
+    }
 
-  USBC_UART.print(sys.giveCycleTime_us());
-  USBC_UART.print(" , bno_main : ");
-  USBC_UART.println(sys.giveOrbitDir());
+    if (buttons[0] == fancy_DOUBLE_CLICK)
+      ; // ir Calibration
 
-  USBC_UART.print("main_voltage : ");
-  USBC_UART.print(sys.giveMainVoltage());
-  USBC_UART.print(" , main_current : ");
-  USBC_UART.print(sys.giveMainCurrent());
-  USBC_UART.print(" , motor_voltage : ");
-  USBC_UART.print(sys.giveMotorVoltage());
-  USBC_UART.print(" , motor_current : ");
-  USBC_UART.println(sys.giveMotorCurrent());
+    if (buttons[0] == fancy_LONG_PRESS)
+      ; // line Calibration
 
-  sys.setDBGSys();
-  sys.setDBGChannel(0,sys.giveCycleTime_us());
+    if (buttons[1] == fancy_CLICKED)
+      ; // Cam CalibrationW
+
+    if (buttons[2] == fancy_CLICKED) // cycle config
+      ;
+  }
+  else // Motor aus
+  {
+    sys.moveDir(0, 0, 0); // Motoren aus
+  }
 }
