@@ -460,6 +460,9 @@ static void hardwareInit(void)
 
     expEN.write(EN_SAFE);
     expEN.setup(false);
+    expEN.writePin(EN_VMOT, true);  // VMOT bleibt an
+    expEN.writePin(EN_VDRIB, true); // VDRIB bleibt an
+    expEN.writePin(EN_INTERCON, true); // INTERCON bleibt an
 
     // Den externen Modulen am Intercon Zeit zum Hochlaufen geben, bevor
     // gescannt wird — sonst fehlen sie im Ergebnis.
@@ -1747,6 +1750,8 @@ void setup()
     delay(500);   // dem USB-Serial Zeit geben, sonst fehlen die ersten Zeilen
 
     hardwareInit();
+
+
 
     allesPruefen();
     hilfe();
