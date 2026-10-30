@@ -188,7 +188,7 @@ constexpr uint8_t EN_INTERCON = 5;
 /// Ruhezustand von IC8: nur Sensor- und LED-Versorgung an, Leistung aus.
 /// Ohne LINE_EN sind die Linien-LEDs dunkel, ohne INTERCON fehlt den externen
 /// Modulen am 3V3-Intercon die Versorgung — beides wuerde als Defekt aussehen.
-constexpr uint8_t EN_SAFE = (1 << EN_BARRIER) | (1 << EN_LINE);
+constexpr uint8_t EN_SAFE = (1 << EN_BARRIER) | (1 << EN_VDRIB) | (1 << EN_VMOT);
 
 /* ---- ESCON-Steuerleitungen: Annahme ueber die Belegung von DI1/DI2 ----
  * Der Schaltplan zeigt MOx_DO1 -> ESCON DI1, MOx_DIO3 -> DI2, MOx_DIO4 -> DIO3.
@@ -463,6 +463,7 @@ static void hardwareInit(void)
     expEN.writePin(EN_VMOT, true);  // VMOT bleibt an
     expEN.writePin(EN_VDRIB, true); // VDRIB bleibt an
     expEN.writePin(EN_INTERCON, false); // Intercon wird durch Pulldown AKTIVIERTs
+    expEN.writePin(EN_LINE, true);  // Line wird durch Pullup AKTIVIERTs
 
     // Den externen Modulen am Intercon Zeit zum Hochlaufen geben, bevor
     // gescannt wird — sonst fehlen sie im Ergebnis.
@@ -486,6 +487,7 @@ static void hardwareInit(void)
 
     /* ---- 6. Lage und Radar ---- */
     bno.init();
+    delay(1);
     radar.begin(Wire);   // blockiert bis ~2 s je Sensor
 
     sbAdressenSuchen();
@@ -863,6 +865,69 @@ static void stufe_expander(void)
  *  6  BNO055  (Main Blatt 12, am ESP-Bus = Wire)
  * ============================================================ */
 
+/// Ein BNO-Register schreiben. @return Code von TwoWire::endTransmission (0 = ACK)
+static uint8_t bnoSchreiben(uint8_t reg, uint8_t wert)
+{
+    Wire.beginTransmission(ADR_BNO);
+    Wire.write(reg);
+    Wire.write(wert);
+    return Wire.endTransmission();
+}
+
+/// Zustand nach einem Versuch in einer Zeile: OPR_MODE, SYS_STATUS, SYS_ERR, PAGE_ID.
+static String bnoZustand(void)
+{
+    bool ok;
+    const uint8_t opr  = i2cReg(Wire, ADR_BNO, REG_OPR_MODE, ok);
+    const uint8_t st   = i2cReg(Wire, ADR_BNO, REG_SYS_STATUS, ok);
+    const uint8_t err  = i2cReg(Wire, ADR_BNO, REG_SYS_ERR, ok);
+    const uint8_t page = i2cReg(Wire, ADR_BNO, REG_PAGE_ID, ok);
+    return "OPR=" + hex2(opr) + " STAT=" + hex2(st) + " ERR=" + hex2(err) + " PAGE=" + hex2(page);
+}
+
+/// OPR_MODE steht nicht auf dem Sollwert: von Hand setzen, notfalls nach
+/// Software-Reset, und jeweils zeigen, was der Chip daraus macht.
+static void bnoModusDiagnose(void)
+{
+    bool ok;
+
+    /* Versuch 1: OPR_MODE direkt schreiben */
+    const uint8_t tx1 = bnoSchreiben(REG_OPR_MODE, DEFAULT_OPR_MODE);
+    delay(30);
+    const bool klappt1 = (i2cReg(Wire, ADR_BNO, REG_OPR_MODE, ok) & 0x0F) == DEFAULT_OPR_MODE;
+    zeile(klappt1 ? CHK_OK : CHK_FAIL, "  Modus direkt setzen",
+          "TX=" + String(tx1) + "  " + bnoZustand(),
+          tx1 ? "Schreibzugriff ohne ACK (TX 2/3 = NACK, 4/5 = Bus/Timeout)"
+              : "ACK, aber der Chip uebernimmt den Modus nicht");
+    if (klappt1)
+    {
+        hinweiszeile("direkt gesetzt geht — bno.init() kommt zu frueh oder wird ueberschrieben");
+        return;
+    }
+
+    /* Versuch 2: Software-Reset (SYS_TRIGGER.RST_SYS), Neustart abwarten, erneut setzen */
+    const uint8_t txR = bnoSchreiben(REG_SYS_TRIGGER, 1 << 5);
+    const uint32_t t0 = millis();
+    uint8_t id = 0;
+    delay(50);
+    while (millis() - t0 < 1000)
+    {
+        id = i2cReg(Wire, ADR_BNO, REG_CHIP_ID, ok);
+        if (ok && id == CHK_BNO_CHIP_ID) break;
+        delay(10);
+    }
+    const uint32_t tBoot = millis() - t0;
+    bnoSchreiben(REG_PAGE_ID, 0);
+    const uint8_t tx2 = bnoSchreiben(REG_OPR_MODE, DEFAULT_OPR_MODE);
+    delay(30);
+    const bool klappt2 = (i2cReg(Wire, ADR_BNO, REG_OPR_MODE, ok) & 0x0F) == DEFAULT_OPR_MODE;
+    zeile(klappt2 ? CHK_OK : CHK_FAIL, "  nach Software-Reset",
+          "TX=" + String(txR) + "/" + String(tx2) + " Boot " + String(tBoot) + " ms  " + bnoZustand(),
+          "auch nach Reset kein Fusion-Modus — Versorgung/Takt des Breakouts pruefen");
+    if (klappt2)
+        hinweiszeile("nach Reset geht es — Chip hing in einem Fehlerzustand vom Einschalten");
+}
+
 static void stufe_bno(void)
 {
     ueberschrift("6  Lagesensor BNO055 (0x28 @ Wire)");
@@ -919,6 +984,9 @@ static void stufe_bno(void)
           "OPR_MODE=" + hex2(opr) + " (erwartet " + hex2(DEFAULT_OPR_MODE) + ")",
           opr == OPR_MODE_CONFIGMODE ? "haengt im CONFIGMODE — bno.init() hat nicht gegriffen"
                                      : "falscher Modus — bno.init() pruefen");
+
+    if (opr != DEFAULT_OPR_MODE)
+        bnoModusDiagnose();
 
     const uint8_t cal = bno.calibStatus();
     zeile(((cal >> 4) & 0x03) == 3 ? CHK_OK : CHK_WARN, "Kalibrierung",
@@ -1756,8 +1824,6 @@ void setup()
     delay(500);   // dem USB-Serial Zeit geben, sonst fehlen die ersten Zeilen
 
     hardwareInit();
-
-
 
     allesPruefen();
     hilfe();
