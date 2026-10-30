@@ -30,7 +30,7 @@ static constexpr uint32_t UART_DBG_BAUD        = 1'000'000UL; // 1 Mbps
 //  muss dafuer nicht veraendert werden.
 // ============================================================
 #ifndef UART_DBG
-#define UART_DBG Serial3
+#define UART_DBG Serial1
 #endif
 
 // ============================================================

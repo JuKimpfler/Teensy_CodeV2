@@ -128,11 +128,14 @@ trägt ihn in `PARAM_SLOW_FLOATS` ein und liest ihn mit
 ## Verkabelung
 
 ```
-Teensy Pin 14 (TX3) ──→ RPi Zero Pin 10 (GPIO15, UART RX)
-Teensy Pin 15 (RX3) ←── RPi Zero Pin  8 (GPIO14, UART TX)   ← PFLICHT
-Teensy GND          ─── RPi Zero Pin  6 (GND)
+Teensy Pin 1 (TX1) ──→ DBG-INTERCON ──→ RPi Pin 10 (GPIO15, UART RX)
+Teensy Pin 0 (RX1) ←── DBG-INTERCON ←── RPi Pin  8 (GPIO14, UART TX)   ← PFLICHT
+Teensy GND          ─── DBG-INTERCON ─── RPi GND
 ```
 
-Ohne die RX-Leitung gibt es keine Parameter und keinen Joystick. Die
-UART-Instanz steht als `UART_DBG` in
-[`lib/PDS/params_PDS.h`](../lib/PDS/params_PDS.h).
+Ab der Main V2.0 laeuft der Debug-UART ueber den DBG-INTERCON (J17) zum
+Debugger-Board, also `Serial1` statt frueher `Serial3` (14/15 ist jetzt der
+UART/DIO-Stecker). Ohne die RX-Leitung gibt es keine Parameter und keinen
+Joystick. Die UART-Instanz `UART_DBG` wird per `-DUART_DBG=Serial1` in
+`platformio.ini` gesetzt; der Default in
+[`lib/PDS/params_PDS.h`](../lib/PDS/params_PDS.h) (`Serial3`) gilt dann nicht.

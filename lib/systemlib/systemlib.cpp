@@ -26,24 +26,29 @@ elapsedMillis lastvaliddata_Radar_Y;
 commlib communication;
 
 I2C_bus i2cIR(I2C_IR);
-Device_handle ir_ring_handle = {i2cIR, I2C_target{0x0A}};
+Device_handle ir_ring_handle = {i2cIR, I2C_target{IR_ADDRESS}};
 IR_ring ir_ring(ir_ring_handle);
 
-INA219 INA219_Main(0x40);
-INA219 INA219_Motor(0x41);
+INA219 INA219_Main(INA_MAIN_ADDRESS);
+INA219 INA219_Motor(INA_MOTOR_ADDRESS);
 
-TCA9534DW SW_EXP(&I2C_SW, 0x22);
-TCA9534DW Motor_EXP(&Wire1, 0x20);
-TCA9534DW Button_EXP(&Wire1, 0x23);
-TCA9534DW Rand_EXP(&Wire1, 0x21);
+TCA9534DW SW_EXP(&I2C_SW, SW_SWITCH_ADDRESS);
+TCA9534DW Button_EXP(&I2C_SW, SW_BUTTON_ADDRESS);
+TCA9534DW Motor12_EXP(&I2C_MAIN, EXP_MO12_ADDRESS); // IC9: ESCON-Bits 0..7
+TCA9534DW Motor34_EXP(&I2C_MAIN, EXP_MO34_ADDRESS); // IC7: ESCON-Bits 8..15
+TCA9534DW Power_EXP(&I2C_MAIN, EXP_POWER_ADDRESS);  // IC8
 
-ADC108S102 ADC_Motor(&SPI1, 32);
-ADC108S102 ADC_Line1(&SPI,25,22,0,0);
-ADC108S102 ADC_Line2(&SPI,25,22,0,1);
-ADC108S102 ADC_Line3(&SPI,25,22,0,2);
-ADC108S102 ADC_Line4(&SPI,25,22,0,3);
-ADC108S102 ADC_Line5(&SPI,25,22,0,4);
-ADC108S102 ADC_Line6(&SPI,25,22,0,5);
+// IC8 im Betrieb, wie CheckSystems::hardwareInit(): VMOT, VDRIB, Lichtschranke
+// und Linien-LEDs ein; I2C_INTERCON_3V3_EN bleibt LOW (= Intercon versorgt).
+constexpr uint8_t POWER_EXP_RUN = (1 << VDRIB_EN) | (1 << VMOT_EN) | (1 << LIGHT_BARRIER_EN) | (1 << LINE_EN);
+
+ADC108S102 ADC_Motor(&SPI, ADC108S102_Motor_CS);
+ADC108S102 ADC_Line1(&SPI, SPI2_DEC_A, SPI2_DEC_B, SPI2_DEC_C, 0);
+ADC108S102 ADC_Line2(&SPI, SPI2_DEC_A, SPI2_DEC_B, SPI2_DEC_C, 1);
+ADC108S102 ADC_Line3(&SPI, SPI2_DEC_A, SPI2_DEC_B, SPI2_DEC_C, 2);
+ADC108S102 ADC_Line4(&SPI, SPI2_DEC_A, SPI2_DEC_B, SPI2_DEC_C, 3);
+ADC108S102 ADC_Line5(&SPI, SPI2_DEC_A, SPI2_DEC_B, SPI2_DEC_C, 4);
+ADC108S102 ADC_Line6(&SPI, SPI2_DEC_A, SPI2_DEC_B, SPI2_DEC_C, 5);
 
 constexpr float TS_NOMINAL = 0.005f; // nur Fallback fuer cfg.Ts, siehe loop()
 PID *headingControllerP;
@@ -60,20 +65,37 @@ fancyBTN BTN5(50, 6, 8, true);
 
 void systemlib::initialize()
 {
+    // Sollwerte zuerst auf 0, bevor VMOT/VDRIB freigegeben werden
+    const uint8_t pwmPins[5] = {MotorVL_PWM, MotorVR_PWM, MotorHL_PWM, MotorHR_PWM, MotorDR_PWM};
+    for (uint8_t i = 0; i < 5; i++)
+    {
+        pinMode(pwmPins[i], OUTPUT);
+        analogWrite(pwmPins[i], 0);
+    }
+    pinMode(KICKER_PORT, OUTPUT);
+    digitalWrite(KICKER_PORT, LOW);
+    pinMode(SPI_TNS_CS, OUTPUT); // Bottom-Platine waehlt ueber den Decoder, CS bleibt inaktiv
+    digitalWrite(SPI_TNS_CS, HIGH);
+    pinMode(ROBO_ID, INPUT);
+
     Wire1.begin();
     Wire1.setClock(100000);
     Wire.begin();
     Wire.setClock(100000);
 
-    Rand_EXP.setup(false);
-    Motor_EXP.setup(false);
+    // Ausgangsregister VOR der Richtung setzen: nach dem Einschalten steht es
+    // auf 0xFF, ein setup(false) als erstes zoege alle ESCON-Freigaben auf HIGH.
+    Motor12_EXP.write(0x00);
+    Motor12_EXP.setup(false);
+    Motor34_EXP.write(0x00);
+    Motor34_EXP.setup(false, false, false, false, false, false, true, true); // P6/P7 = SWITCH1/BUTTON1
+    Power_EXP.write(POWER_EXP_RUN);
+    Power_EXP.setup(false);
     SW_EXP.setup(true);
     Button_EXP.setup(true);
     readExpanders();
-    Motor_EXP.writePin(7,false);
 
     SPI.begin();
-    SPI1.begin();
 
     USBC_UART.begin(115200);
 
@@ -96,13 +118,6 @@ void systemlib::initialize()
     MoDataHL.ID = MotorHL_ID;
     MoDataHR.ID = MotorHR_ID;
     MoDataDR.ID = MotorDR_ID;
-
-    pinMode(START_SWITCH, INPUT);
-
-    Motor_EXP.setup(false);
-    Rand_EXP.setup(false);
-    SW_EXP.setup(true);
-    Button_EXP.setup(true);
 
     Radar.begin(I2C_RADAR); // richtet alle Sensoren ein und startet die erste Messrunde
 
@@ -1249,10 +1264,16 @@ void systemlib::setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break){
     }
 }
 
+/// Freigabe- und Richtungsbit eines ESCON im Expanderwort setzen (Bitnummern aus enum.h).
+static void setEsconBits(uint16_t &out, const MotorData &m, uint8_t enBit, uint8_t dirBit)
+{
+    if (m.Enable) out |= (1u << enBit);
+    if (!m.Dir)   out |= (1u << dirBit);
+}
+
 void systemlib::updateMotors(void)
 {
-    uint8_t Port_List[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-    byte out = 0;
+    uint16_t out = 0;
     if (MoDataVL.Speed == 0 || giveExpander(0,3))
     {
         MoDataVL.Speed = 0;
@@ -1288,83 +1309,23 @@ void systemlib::updateMotors(void)
     analogWrite(MotorVR_PWM, abs(MoDataVR.Speed) * 2.55);
     analogWrite(MotorHR_PWM, abs(MoDataHR.Speed) * 2.55);
     analogWrite(MotorHL_PWM, abs(MoDataHL.Speed) * 2.55);
+    analogWrite(MotorDR_PWM, abs(MoDataDR.Speed) * 2.55);
 
-    if (MoDataVL.Dir)
-    {
-        Port_List[MotorVL_P1] = 0;
-    }
-    else
-    {
-        Port_List[MotorVL_P1] = 1;
-    }
-    if (MoDataVR.Dir)
-    {
-        Port_List[MotorVR_P1] = 0;
-    }
-    else
-    {
-        Port_List[MotorVR_P1] = 1;
-    }
-    if (MoDataHL.Dir)
-    {
-        Port_List[MotorHL_P1] = 0;
-    }
-    else
-    {
-        Port_List[MotorHL_P1] = 1;
-    }
-    if (MoDataHR.Dir)
-    {
-        Port_List[MotorHR_P1] = 0;
-    }
-    else
-    {
-        Port_List[MotorHR_P1] = 1;
-    }
+    // ESCON-Steuerleitungen: Bit 0..7 -> IC9, Bit 8..15 -> IC7 (siehe enum.h).
+    // Dir true -> Richtungsleitung LOW, Break -> Stopp-Leitung HIGH.
+    setEsconBits(out, MoDataVL, MotorVL_EN, MotorVL_DIR);
+    setEsconBits(out, MoDataVR, MotorVR_EN, MotorVR_DIR);
+    setEsconBits(out, MoDataHL, MotorHL_EN, MotorHL_DIR);
+    setEsconBits(out, MoDataHR, MotorHR_EN, MotorHR_DIR);
+    setEsconBits(out, MoDataDR, MotorDR_EN, MotorDR_DIR);
 
-    if (MoDataVL.Enable)
-    {
-        Port_List[MotorVL_P2] = 1;
-    }
-    else
-    {
-        Port_List[MotorVL_P2] = 0;
-    }
-    if (MoDataVR.Enable)
-    {
-        Port_List[MotorVR_P2] = 1;
-    }
-    else
-    {
-        Port_List[MotorVR_P2] = 0;
-    }
-    if (MoDataHL.Enable)
-    {
-        Port_List[MotorHL_P2] = 1;
-    }
-    else
-    {
-        Port_List[MotorHL_P2] = 0;
-    }
-    if (MoDataHR.Enable)
-    {
-        Port_List[MotorHR_P2] = 1;
-    }
-    else
-    {
-        Port_List[MotorHR_P2] = 0;
-    }
+    if (MoDataVL.Break) out |= (1u << MotorVL_STOP);
+    if (MoDataVR.Break) out |= (1u << MotorVR_STOP);
+    if (MoDataHL.Break) out |= (1u << MotorHL_STOP);
+    if (MoDataHR.Break) out |= (1u << MotorHR_STOP);
 
-    // Konvertieren von Liste zu byte
-    for (int i = 0; i < 8; i++)
-    {
-        if (Port_List[i] == 1)
-        {
-            out |= (1 << (7 - i));
-        }
-    }
-
-    Motor_EXP.write(out);
+    Motor12_EXP.write(out & 0xFF);
+    Motor34_EXP.write(out >> 8);
 
     /*for(int i = 0 ; i<8 ; i++){
         Serial.print("channel ");
@@ -1377,14 +1338,14 @@ void systemlib::updateMotors(void)
     */
 
     motorSampleUs = micros(); // Zeitstempel der Drehzahlmessung (fuer Totzeitausgleich in calculatePosition)
-    MoDataVL.Speed_real = ADC_Motor.read(MotorVL_AP1,true,true);
-    MoDataVL.Current = ADC_Motor.read(MotorVL_AP2,true,false);
-    MoDataVR.Speed_real = ADC_Motor.read(MotorVR_AP1,true,true);
-    MoDataVR.Current = ADC_Motor.read(MotorVR_AP2,true,false);
-    MoDataHL.Speed_real = ADC_Motor.read(MotorHL_AP1,true,true);
-    MoDataHL.Current = ADC_Motor.read(MotorHL_AP2,true,false);
-    MoDataHR.Speed_real = ADC_Motor.read(MotorHR_AP1,true,true);
-    MoDataHR.Current = ADC_Motor.read(MotorHR_AP2,true,false);
+    MoDataVL.Speed_real = ADC_Motor.read(MotorVL_RPM,true,true);
+    MoDataVL.Current = ADC_Motor.read(MotorVL_CUR,true,false);
+    MoDataVR.Speed_real = ADC_Motor.read(MotorVR_RPM,true,true);
+    MoDataVR.Current = ADC_Motor.read(MotorVR_CUR,true,false);
+    MoDataHL.Speed_real = ADC_Motor.read(MotorHL_RPM,true,true);
+    MoDataHL.Current = ADC_Motor.read(MotorHL_CUR,true,false);
+    MoDataHR.Speed_real = ADC_Motor.read(MotorHR_RPM,true,true);
+    MoDataHR.Current = ADC_Motor.read(MotorHR_CUR,true,false);
 }
 
 MotorData systemlib::giveMotorData(uint8_t ID)
@@ -1421,29 +1382,27 @@ MotorData systemlib::giveMotorData(uint8_t ID)
 /* -------------- Expanders -------------- */
 void systemlib::readExpanders(void)
 {
-    SW_EXP.read();     // Update the internal state of the port expander
-    Button_EXP.read(); // Update the internal state of the port expander
+    // Je Expander ein Buszugriff, danach nur noch aus dem gelesenen Byte
+    // (readPin() wuerde jedes Mal neu ueber I2C lesen).
+    SW_EXP.read();     // SwitchBoard IC1: P0 SW5 ... P4 SW1, P5 Start, P6 RCJ-Disable, P7 RCJ erkannt
+    Button_EXP.read(); // SwitchBoard IC2: P0 BTN1 ... P4 BTN5, P5 RCJ-Out1, P6 RCJ-Out2, P7 PX2_DIO
 
-    SWI[0] = SW_EXP.readPin(4);
-    SWI[1] = SW_EXP.readPin(3);
-    SWI[2] = SW_EXP.readPin(2);
-    SWI[3] = SW_EXP.readPin(1);
-    SWI[4] = SW_EXP.readPin(0);
+    SWI[0] = SW_EXP.getPinState(4);
+    SWI[1] = SW_EXP.getPinState(3);
+    SWI[2] = SW_EXP.getPinState(2);
+    SWI[3] = SW_EXP.getPinState(1);
+    SWI[4] = SW_EXP.getPinState(0);
 
-    startSwitch = SW_EXP.readPin(5);
-    RCJ = Button_EXP.readPin(5);
-    RCJ_Disable = SW_EXP.readPin(6);
-    RCJ_present = SW_EXP.readPin(7);
+    startSwitch = SW_EXP.getPinState(5);
+    RCJ = Button_EXP.getPinState(5);
+    RCJ_Disable = SW_EXP.getPinState(6);
+    RCJ_present = SW_EXP.getPinState(7);
 
-    /* BTN1.update(Button_EXP.readPin(0));
-    BTN2.update(Button_EXP.readPin(1));
-    BTN3.update(Button_EXP.readPin(2));
-    BTN4.update(Button_EXP.readPin(3));
-    BTN5.update(Button_EXP.readPin(4));*/
-
-    BTN1.update(SW_EXP.readPin(0));
-    BTN2.update(SW_EXP.readPin(6));
-    BTN3.update(SW_EXP.readPin(7));
+    BTN1.update(Button_EXP.getPinState(0));
+    BTN2.update(Button_EXP.getPinState(1));
+    BTN3.update(Button_EXP.getPinState(2));
+    BTN4.update(Button_EXP.getPinState(3));
+    BTN5.update(Button_EXP.getPinState(4));
 
     fancyBTNstates[0] = BTN1.getStatusCode();
     fancyBTNstates[1] = BTN2.getStatusCode();

@@ -14,84 +14,113 @@ Dateien: `enum.h` (Pinbelegung), `params.h` (Bus-/Protokollparameter)
 
 ## `enum.h` – Pinbelegung und Hardware-IDs
 
+Stand der Platinen in `pcbs/` (Main V2.0, Bottom, DasSwitchBoard V2.0). Die
+Referenz dafür ist die Hardware-Karte in
+[`src/CheckSystems.cpp`](../../src/CheckSystems.cpp).
+
 ### Schnittstellen
 
 | Define | Wert | Bedeutung |
 |---|---|---|
 | `USBC_UART` | `Serial` | USB-Serial für Konsolenausgaben |
-| `UART_DBG` | `Serial3` | Debug-UART für das [Power Debug System](../PDS/PDS.md) |
-| `LED_LENGTH` | `19` | Anzahl LEDs im RGB-Ring |
+| `UART_DBG` | `Serial1` | DBG-INTERCON (Teensy 0/1) → Debugger-Board, [Power Debug System](../PDS/PDS.md). Steht zusätzlich in den `build_flags`, weil `PDS.cpp` diese Datei nicht einbindet |
+| `UART_CAM1` / `UART_CAM2` | `Serial2` / `Serial7` | Kameras CAM1 (Teensy 7/8) / CAM2 (28/29) |
+| `UART_DIO` | `Serial3` | UART/DIO-Stecker J6 (Teensy 14/15) |
+| `UART_SUBCPU` | `Serial6` | ESP32-C3 SubCPU (Teensy 24/25) |
+| `LED_LENGTH` | `19` | Anzahl LEDs am RGB-Ausgang |
 
 ### Motor-IDs
 
 | Define | Wert | Motor |
 |---|---|---|
-| `MotorVL_ID` | 0 | vorne links |
-| `MotorVR_ID` | 1 | vorne rechts |
+| `MotorVR_ID` | 0 | vorne rechts |
+| `MotorVL_ID` | 1 | vorne links |
 | `MotorHL_ID` | 2 | hinten links |
 | `MotorHR_ID` | 3 | hinten rechts |
 | `MotorDR_ID` | 4 | Dribbler |
 
-### `enum PinOut` – Teensy-4.0-Pins
+### Rad → ESCON-Modul
 
-**PWM-Ausgänge (direkt am Teensy):**
+Die Main-Platine hat vier ESCON-Module MO1…MO4 (Blatt 6/7) und ein fünftes für
+den Dribbler (Blatt 13). Welches Rad an welchem Modul hängt, steht in keinem
+Plan, sondern ergibt sich aus der Verkabelung (bestätigt am 30.10.26):
 
-| Konstante | Pin |
-|---|---|
-| `MotorVL_PWM` | 4 |
-| `MotorVR_PWM` | 5 |
-| `MotorHL_PWM` | 6 |
-| `MotorHR_PWM` | 9 |
-| `MotorDR_PWM` | 33 |
+| Rad | Modul | PWM (AI1+) | Freigabe / Richtung / Stopp | ADC Drehzahl / Strom |
+|---|---|---|---|---|
+| VR | MO1 | 3 | Bit 0 / 1 / 2 | IN1 / IN0 |
+| HR | MO2 | 4 | Bit 3 / 4 / 5 | IN3 / IN2 |
+| HL | MO3 | 5 | Bit 8 / 9 / 10 | IN5 / IN4 |
+| VL | MO4 | 6 | Bit 11 / 12 / 13 | IN7 / IN6 |
+| DR | Dribbler | 2 | Bit 6 / 7 / – | Teensy 27 / 26 (`MotorDR_AO1/AO2`) |
 
-**Motor-Steuerbits am Portexpander** (Bitpositionen, **keine** Teensy-Pins –
-siehe [TCA9534DW](../TCA9534DW/TCA9534DW.md)):
+Stimmt die Zuordnung nicht, werden in `enum.h` alle Zeilen eines Rads
+zusammen getauscht – PWM, Expanderbits und ADC-Kanäle gehören immer zu einem
+Modul.
+
+Konstanten je Rad: `MotorXX_PWM`, `MotorXX_EN`, `MotorXX_DIR`, `MotorXX_STOP`,
+`MotorXX_RPM`, `MotorXX_CUR`.
+
+**ESCON-Steuerleitungen** (Bitnummern 0…15 über zwei
+[TCA9534DW](../TCA9534DW/TCA9534DW.md)): Bit 0…7 = IC9 (`0x22`) P0…P7,
+Bit 8…15 = IC7 (`0x20`) P0…P7. Je Modul drei Leitungen am Stück:
+
+| Offset | Leitung | ESCON-Eingang | Funktion |
+|---|---|---|---|
+| +0 | `MOx_DO1` | DI2 | Freigabe, HIGH = frei |
+| +1 | `MOx_DIO3` | DI3 | Richtung |
+| +2 | `MOx_DIO4` | DI4 | Stopp, HIGH = Stopp (angenommen) |
+
+IC7 P6/P7 (`MAIN_SWITCH1` = 14, `MAIN_BUTTON1` = 15) sind Eingänge.
+
+**Motor-ADC** IC10 ([ADC108S102](../ADC108S102/ADC108S102.md), CS 30):
+IN0…IN7 = MO1_AO1, MO1_AO2, MO2_AO1, … MO4_AO2. Was AO1/AO2 ausgeben, legt
+die ESCON-Konfiguration fest; angenommen ist wie auf der alten Platine
+AO2 = Drehzahl, AO1 = Strom. Nachprüfen mit `CheckSystems`, Stufe 12 (`m`).
+
+### Freigaben auf IC8 (`0x23`), Bitnummern
 
 | Konstante | Bit | Bedeutung |
 |---|---|---|
-| `MotorVL_P1` / `_P2` | 0 / 1 | Richtung / Enable vorne links |
-| `MotorVR_P1` / `_P2` | 2 / 3 | Richtung / Enable vorne rechts |
-| `MotorHL_P1` / `_P2` | 4 / 5 | Richtung / Enable hinten links |
-| `MotorHR_P1` / `_P2` | 6 / 7 | Richtung / Enable hinten rechts |
+| `VDRIB_EN` | 0 | Dribblerspannung (zusätzlich Schalter SW19) |
+| `VMOT_EN` | 1 | Motorspannung (zusätzlich Schalter SW3) |
+| `LIGHT_BARRIER_EN` | 2 | LED der Lichtschranke |
+| `LINE_EN` | 3 | Linien-LEDs der Bottom-Platine |
+| `UART_DIO1` | 4 | DIO zum UART/DIO-Stecker |
+| `I2C_INTERCON_3V3_EN` | 5 | 3V3 am I2C-INTERCON, **LOW = ein** |
 
-**Motor-ADC-Kanäle** (Kanalnummern am
-[ADC108S102](../ADC108S102/ADC108S102.md), gleiche Zahlenwerte wie `_P1/_P2`):
+`systemlib::initialize()` setzt Bit 0…3 und lässt 4/5 auf LOW.
 
-| Konstante | Kanal | Bedeutung |
-|---|---|---|
-| `MotorVL_AP1` / `_AP2` | 0 / 1 | Drehzahl / Strom vorne links |
-| `MotorVR_AP1` / `_AP2` | 2 / 3 | Drehzahl / Strom vorne rechts |
-| `MotorHL_AP1` / `_AP2` | 4 / 5 | Drehzahl / Strom hinten links |
-| `MotorHR_AP1` / `_AP2` | 6 / 7 | Drehzahl / Strom hinten rechts |
-
-**Sonstige Pins:**
+### Sonstige Pins
 
 | Konstante | Pin | Bedeutung |
 |---|---|---|
-| `KICKER_PORT` | 18 | Schussmechanik |
-| `START_SWITCH` | 10 | Startschalter |
-| `LIGHT_BARRIER` | 23 | Lichtschranke (Ball im Dribbler), analog gelesen |
-| `RGB_DATA_3V3` | 20 | LED-Datenleitung |
-| `EMPTY_27` | 27 | frei |
-| `ADC108S102_Motor_CS` | 32 | Chip-Select Motor-ADC |
+| `KICKER_PORT` | 9 | Schuss, Pulsdauer hardwareseitig auf 150 ms begrenzt |
+| `ROBO_ID` | 21 | Roboterkennung (Roboter 1 / 2) |
+| `RGB_DATA_3V3` | 22 | WS2812B-Datenleitung |
+| `LIGHT_BARRIER` | 23 | Lichtschranke (LDR), analog |
+| `MotorDR_DO1` | 20 | Rückmeldung Dribbler-ESCON |
 
-**SPI:**
+Der Startschalter ist kein Teensy-Pin mehr, sondern SwitchBoard IC1 P5
+(`giveExpStartSwitch()`).
 
-| Konstante | Pin |
-|---|---|
-| `SPI_MOSI` / `SPI_MISO` / `SPI_SCK` | 11 / 12 / 13 |
-| `SPI_DIO0` … `SPI_DIO4` | 19, 31, 30, 21, 22 |
+**SPI** (`SPI`): `SPI_MOSI` / `SPI_MISO` / `SPI_SCK` = 11 / 12 / 13,
+`ADC108S102_Motor_CS` = 30, `SPI_TNS_CS` = 10 (CS des SPI-INTERCON, von der
+Bottom-Platine nicht benutzt). Die sechs Linien-ADCs werden über den 74HC138
+der Bottom-Platine gewählt: `SPI2_DEC_A` / `_B` / `_C` = 31 / 32 / 33,
+Adresse 0…5 = Linien-ADC 1…6, 6 = Maussensor, 7 = keiner.
 
-**I²C:** `I2C_SCL_3V3` = 16, `I2C_SDA_3V3` = 17 (das ist `Wire1` auf dem
-Teensy 4.0).
+**I²C:** `I2C_TNS_SCL` / `_SDA` = 16 / 17 (`Wire1`), `I2C_ESP_SDA` / `_SCL` =
+18 / 19 (`Wire`, über die Jumper JP1/JP2).
 
 **UARTs:**
 
 | Konstante | Pin | Verwendung |
 |---|---|---|
-| `TNS_TX_PIXY_RX` / `TNS_RX_PIXY_TX` | 14 / 15 | Kamera ([Cam](../Cam/Cam.md)) |
-| `UART1_TNS_TX` / `_RX` | 24 / 25 | Teensy↔Teensy (frei) |
-| `UART2_TNS_TX` / `_RX` | 28 / 29 | Teensy↔Teensy (frei) |
+| `DBG_RX` / `DBG_TX` | 0 / 1 | DBG-INTERCON (`UART_DBG`) |
+| `UART1_TNS_RX` / `_TX` | 7 / 8 | CAM1 (`UART_CAM1`) |
+| `UART_DIO_TX` / `_RX` | 14 / 15 | UART/DIO-Stecker (`UART_DIO`) |
+| `SUBCPU_TX` / `_RX` | 24 / 25 | ESP32-C3 SubCPU (`UART_SUBCPU`) |
+| `UART2_TNS_RX` / `_TX` | 28 / 29 | CAM2 (`UART_CAM2`) |
 
 ---
 
@@ -105,19 +134,26 @@ Teensy 4.0).
 #define I2C_SW    Wire
 #define I2C_US    Wire
 #define I2C_RADAR Wire
+#define I2C_MAIN  Wire1
 ```
 
-Alle Aliase zeigen aktuell auf `Wire`. Die INA219 und drei der vier
-Portexpander werden in `systemlib.cpp` allerdings **direkt** auf `Wire1`
-gelegt – die Aufteilung ist also nicht vollständig über diese Defines
-gesteuert.
+`Wire` ist der „ESP“-Bus (Teensy 18/19): BNO055 und alles am I2C-INTERCON
+(IR-Ring, SwitchBoard, Radar). `Wire1` ist der „TNS“-Bus (16/17) mit den
+Portexpandern und INA219 der Main-Platine (`I2C_MAIN`).
 
-Ein Sensor lässt sich auf den anderen Bus umziehen, indem hier das Alias
-geändert wird (z.B. `#define I2C_US Wire1`).
+Ein Gerät lässt sich auf den anderen Bus umziehen, indem hier das Alias
+geändert wird (z.B. `#define I2C_SW Wire1`, wenn das SwitchBoard am
+Intercon des TNS-Busses steckt).
 
 | Define | Wert | Bedeutung |
 |---|---|---|
-| `BNO_ADDRESS` | `0x28` | I²C-Adresse des [BNO055](../BNO055/BNO055.md) |
+| `BNO_ADDRESS` | `0x28` | [BNO055](../BNO055/BNO055.md) |
+| `IR_ADDRESS` | `0x0A` | [IR-Ring](../IR/README.md) |
+| `INA_MAIN_ADDRESS` / `INA_MOTOR_ADDRESS` / `INA_DRIB_ADDRESS` | `0x40` / `0x41` / `0x45` | [INA219](../INA219/INA219.md) Akku / VMOT / VDrib |
+| `EXP_MO34_ADDRESS` | `0x20` | IC7: MO3, MO4, SWITCH1/BUTTON1 |
+| `EXP_MO12_ADDRESS` | `0x22` | IC9: MO1, MO2, Dribbler |
+| `EXP_POWER_ADDRESS` | `0x23` | IC8: Freigaben |
+| `SW_SWITCH_ADDRESS` / `SW_BUTTON_ADDRESS` | `0x26` / `0x27` | SwitchBoard IC1 / IC2, per Jumper einstellbar |
 
 ### Radar (XM125)
 
@@ -156,7 +192,7 @@ Nachmessen mit [XM125_Calib_Sensitivity.cpp](../XM125/examples/XM125_Calib_Sensi
 
 | Konstante | Wert | Bedeutung |
 |---|---|---|
-| `UART_DBG` | `Serial3` | wird gesetzt, falls nicht schon aus `enum.h` definiert |
+| `UART_DBG` | `Serial3` | Default in `params_PDS.h`; das Projekt setzt per `-DUART_DBG=Serial1` den DBG-INTERCON der Main V2.0 |
 | `UART_DBG_BAUD` | `1 000 000` | 1 Mbps |
 
 ### Parameter-Downlink (GUI → Teensy)
@@ -200,6 +236,7 @@ Ergänzend zu diesen Headern werden im Projekt-Root Build-Flags gesetzt:
 | `-DUSB_SERIAL` | – | USB als serielle Schnittstelle |
 | `-O2` | – | Optimierungsstufe |
 | `-DACTIVE_CHANNELS` | `200` | Anzahl aktiver Debug-Kanäle |
+| `-DUART_DBG` | `Serial1` | Debug-UART für PDS (DBG-INTERCON, Teensy 0/1) |
 
 `monitor_speed = 115200`, `upload_protocol = teensy-cli`,
 Board `teensy40`.

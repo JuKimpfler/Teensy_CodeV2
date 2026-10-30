@@ -60,9 +60,10 @@ RobotDataCom partner = sys.giveOtherRobotData();
 
 Damit die Bibliothek nutzbar wird, fehlen im Wesentlichen:
 
-1. **Transportweg festlegen.** Kandidaten laut Pinbelegung
-   ([`enum.h`](../include/include.md)): `UART1_TNS_TX/RX` (Pins 24/25) oder
-   `UART2_TNS_TX/RX` (Pins 28/29), alternativ ein Funkmodul.
+1. **Transportweg festlegen.** Naheliegend laut Pinbelegung
+   ([`enum.h`](../include/include.md)): die ESP32-C3-SubCPU an
+   `SUBCPU_TX/RX` (Pins 24/25, `UART_SUBCPU` = `Serial6`) als Funkstrecke.
+   `UART1/2_TNS` sind inzwischen die Kamera-Anschlüsse.
 2. **Paketformat.** Sinnvollerweise analog zum
    [Power Debug System](../PDS/PDS.md): Magic-Header + Payload, damit sich
    der Empfänger resynchronisieren kann.

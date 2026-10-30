@@ -112,7 +112,7 @@ void loop()
     sys.calibBNO();
   }
 
-  if (digitalRead(START_SWITCH)){
+  if (sys.giveExpStartSwitch()){
     sys.MoDataHL.Speed=100;
   }
 

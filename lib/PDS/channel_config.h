@@ -160,7 +160,8 @@ static constexpr size_t CHANNEL_NAMES_COUNT = sizeof(CHANNEL_NAMES) / sizeof(CHA
 static const OverlayDef CHANNEL_OVERLAYS[] = {
     // Alle Systemwerte auf einen Blick (Kanal 0..25).
     { 1, "text", "SW1",   50, 30,  40 },
-    { 1, "gauge",    "Akku",       1, -1, 10.0f,  16.8f },
+    // 4S-Akku (Main V2.0, VBAT-4S): LTC4365 trennt bei 13,2 V, voll = 16,8 V
+    { 1, "gauge",    "Akku",       1, -1, 13.2f,  16.8f },
     { 1, "rotation", "Motor1",    21, -1,  0.0f, 100.0f },
 
     // Feld-Draufsicht: der Roboter an seiner berechneten Position.
@@ -230,11 +231,11 @@ static const SettingDef GUI_SETTINGS[] = {
     // Die Akkuanzeige der GUI liest Kanal 1 (Akku_V, siehe setupPDS()).
     { "battery.enabled",          true      },
     { "battery.channel",          1         },
-    // Schwellen bewusst NICHT gesetzt: sie haengen an der Zellenzahl des
-    // eingesetzten Akkus. Passende Werte hier eintragen, dann gelten sie
-    // auf jedem Tablet:
-    // { "battery.warn_below",       11.5f     },
-    // { "battery.critical_below",   10.8f     },
+    // Schwellen fuer den 4S-Akku der Main V2.0. Der LTC4365 trennt bei
+    // 13,2 V; "kritisch" liegt mit 13,6 V (3,4 V/Zelle) wie in CheckSystems
+    // (CHK_AKKU_V_LEER) knapp darueber, damit die Warnung vor dem Abschalten kommt.
+    { "battery.warn_below",       14.0f     },   // 3,5 V/Zelle
+    { "battery.critical_below",   13.6f     },
 
     // { "ui.dark",                  true      },
     // { "ui.fontScale",             1.1f      },

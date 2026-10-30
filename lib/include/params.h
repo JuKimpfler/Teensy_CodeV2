@@ -1,13 +1,27 @@
 #pragma once
 #include <Arduino.h>
 
+// Wire  = "ESP"-Bus (Teensy 18/19): BNO055 und alles am I2C-INTERCON
+// Wire1 = "TNS"-Bus (Teensy 16/17): Portexpander und INA219 der Main-Platine
 #define I2C_BNO Wire
 #define I2C_IR Wire
 #define I2C_SW Wire
 #define I2C_US Wire
 #define I2C_RADAR Wire
+#define I2C_MAIN Wire1
 
 #define BNO_ADDRESS 0x28
+#define IR_ADDRESS 0x0A
+
+#define INA_MAIN_ADDRESS 0x40  // Akku VBAT-4S
+#define INA_MOTOR_ADDRESS 0x41 // VMOT
+#define INA_DRIB_ADDRESS 0x45  // VDrib (in systemlib noch nicht ausgelesen)
+
+#define EXP_MO34_ADDRESS 0x20  // IC7: MO3, MO4, SWITCH1/BUTTON1
+#define EXP_MO12_ADDRESS 0x22  // IC9: MO1, MO2, Dribbler
+#define EXP_POWER_ADDRESS 0x23 // IC8: Freigaben
+#define SW_SWITCH_ADDRESS 0x26 // SwitchBoard IC1: SW1-5, Start, RCJ (Jumper JP1-3)
+#define SW_BUTTON_ADDRESS 0x27 // SwitchBoard IC2: BTN1-5, RCJ-Out (Jumper JP4-6)
 
 const uint16_t LineSensorSchwelle[48] = 
 {3000,3000,3000,3000,3000,3000,3000,3000 // pex1

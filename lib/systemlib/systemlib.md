@@ -38,14 +38,14 @@ zwei Dateien und `give`/`set`-Funktionen.
 |---|---|---|
 | `BNO` | [BNO055](../BNO055/BNO055.md) | `I2C_BNO` (`Wire`), `0x28` |
 | `ir_ring` | [IR_ring](../IR/README.md) | `I2C_IR` (`Wire`), `0x0A` |
-| `INA219_Main` | [INA219](../INA219/INA219.md) | `Wire1`, `0x40` |
-| `INA219_Motor` | INA219 | `Wire1`, `0x41` |
-| `SRF08_vo/re/hi/li` | [SRF08](../SRF08/SRF08.md) | `I2C_US` (`Wire`), `0xE2/E4/E6/E8` |
-| `SW_EXP` | [TCA9534DW](../TCA9534DW/TCA9534DW.md) | `I2C_SW` (`Wire`), `0x22` |
-| `Motor_EXP` / `Rand_EXP` / `Button_EXP` | TCA9534DW | `Wire1`, `0x20` / `0x21` / `0x23` |
-| `ADC_Motor` | [ADC108S102](../ADC108S102/ADC108S102.md) | `SPI1`, CS 32 |
+| `INA219_Main` | [INA219](../INA219/INA219.md) | `I2C_MAIN` (`Wire1`), `0x40` |
+| `INA219_Motor` | INA219 | `I2C_MAIN` (`Wire1`), `0x41` |
+| `SW_EXP` / `Button_EXP` | [TCA9534DW](../TCA9534DW/TCA9534DW.md) | `I2C_SW` (`Wire`), `0x26` / `0x27` (SwitchBoard IC1 / IC2) |
+| `Motor12_EXP` / `Motor34_EXP` / `Power_EXP` | TCA9534DW | `I2C_MAIN` (`Wire1`), `0x22` / `0x20` / `0x23` (Main IC9 / IC7 / IC8) |
+| `ADC_Motor` | [ADC108S102](../ADC108S102/ADC108S102.md) | `SPI`, CS 30 |
+| `ADC_Line1`…`ADC_Line6` | ADC108S102 | `SPI`, CS über 74HC138 an 31/32/33, Adresse 0…5 |
 | `BTN1`…`BTN5` | [fancyBTN](../fancyBTN/fancyBTN.md) | – |
-| `PDS` | [PowerDebugger](../PDS/PDS.md) | `UART_DBG` (`Serial3`) |
+| `PDS` | [PowerDebugger](../PDS/PDS.md) | `UART_DBG` (`Serial1`) |
 | `communication` | [commlib](../commlib/commlib.md) | – |
 | `headingControllerA/P` | [ADRC](../Regler/ADRC/README.md) / [PID](../Regler/PID/README.md) | – |
 
@@ -64,7 +64,8 @@ zwei Dateien und `give`/`set`-Funktionen.
 | SRF08 `setJumpThreshold(...)` | `50` cm (alle vier) |
 | `setDebugTimeout(...)` | `5` ms |
 | `setupHeadingController(...)` | `true` → **ADRC** |
-| Expander-Richtung | `Motor_EXP`/`Rand_EXP` = Ausgang, `SW_EXP`/`Button_EXP` = Eingang |
+| Expander-Richtung | `Motor12_EXP`/`Power_EXP` = Ausgang, `Motor34_EXP` = Ausgang bis auf P6/P7, `SW_EXP`/`Button_EXP` = Eingang |
+| Freigaben (`Power_EXP`) | VMOT, VDRIB, Lichtschranke, Linien-LEDs ein; Intercon-3V3 ein (LOW) |
 | fancyBTN-Parameter | `(50, 6, 8, true)` → 100 ms Doppelklick, 3 s Long-Press, 8 ms Entprellung |
 
 ### Heading-Regler
@@ -319,9 +320,13 @@ Ablauf: `giveMotorData(ID)` holen → Felder ändern → `setMotorData(...)`
 zurückschreiben. `setMotorData()` ruft direkt `updateMotors()` auf. Eine
 unbekannte ID liefert einen Datensatz mit `ID = 100`.
 
-`updateMotors()` schreibt die PWMs direkt am Teensy, die Richtungs-/Enable-Bits
-gesammelt über `Motor_EXP` und liest anschließend Drehzahl und Strom aller vier
-Antriebsmotoren vom `ADC_Motor`.
+`updateMotors()` schreibt die PWMs (vier Räder + Dribbler) direkt am Teensy und
+die ESCON-Steuerleitungen gesammelt über `Motor12_EXP` (IC9) und `Motor34_EXP`
+(IC7): `Enable` → Freigabe (ESCON DI2), `Dir` → Richtung (DI3, `true` = LOW),
+`Break` → Stopp (DI4, HIGH = Stopp; der Dribbler hat keine Stopp-Leitung).
+Anschließend liest es Drehzahl und Strom der vier Antriebsmotoren vom
+`ADC_Motor`. Welches Rad an welchem ESCON-Modul hängt, steht in
+[`enum.h`](../include/include.md).
 
 ---
 

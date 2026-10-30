@@ -253,7 +253,7 @@ public:
     void giveTSSPData(bool (&TSSPData)[8]) const {for (uint8_t i = 0; i < 8; i++){TSSPData[i] = IR_TSSP[i];}};                                                                               // currently disabled -> change in readIR() to enable it
     bool giveTSSPData(uint8_t sensorNumber) const { return IR_TSSP[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
     float giveHeadingController(void); // BNO has to be setup allready
-    void giveButtonStates(uint8_t (&buttonStates)[5]) const {for (uint8_t i = 0; i < 5; i++){buttonStates[i] = fancyBTNstates[i];}}; // currently disabled -> change in readExpanders() to enable it
+    void giveButtonStates(uint8_t (&buttonStates)[5]) const {for (uint8_t i = 0; i < 5; i++){buttonStates[i] = fancyBTNstates[i];}}; // BTN1..BTN5 vom SwitchBoard, fancyBTN-Statuscodes
     RadarData giveRadar(uint8_t pos) const { return Radar[pos]; };       // Radar-Messwerte, pos = RadarVo/Li/Hi/Re
     bool giveRadarCon(uint8_t pos) const { return Radar.giveCon(pos); }; // antwortet der Radarsensor?
     uint32_t giveRadarAge(uint8_t pos) const { return Radar.giveAge(pos); }; // Alter des Radarwerts in ms

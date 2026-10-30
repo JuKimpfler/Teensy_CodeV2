@@ -3,7 +3,7 @@
 
 class CamC {
 public:
-  void init(HardwareSerial& ser = Serial1, uint32_t baud = 115200);
+  void init(HardwareSerial& ser = Serial2, uint32_t baud = 115200); // Serial2 = CAM1 (Teensy 7/8)
   // headingDeg: aktuelles BNO-Heading (Feld-KS), noetig um die kamerarelative
   // Peilung in eine absolute Feld-Peilung umzurechnen.
   void Update(float headingDeg);
