@@ -6,13 +6,26 @@
 
 // Initialize BNO055
 void BNO055::init() {
-  // BNO055 in Konfigurationsmodus bringen
-  cls->beginTransmission(this->addr);
-  cls->write(REG_OPR_MODE);
-  cls->write(OPR_MODE_CONFIGMODE);
-  cls->endTransmission();
+  // Nach Power-On/Reset braucht der BNO055 bis zu 650 ms, bis er antwortet
+  // (BNO055.pdf Tab. 0-2). Vorher geschriebene Register gehen verloren.
+  const uint32_t start = millis();
+  while (millis() - start < 850) {
+    cls->beginTransmission(this->addr);
+    cls->write(REG_CHIP_ID);
+    if (cls->endTransmission() == 0 && cls->requestFrom((int) this->addr, 1) == 1 &&
+        cls->read() == BNO055_CHIP_ID) {
+      break;
+    }
+    delay(10);
+  }
 
-  delayMicroseconds(50);
+  // Registerseite 0 sicherstellen
+  writeReg(REG_PAGE_ID, 0);
+
+  // BNO055 in Konfigurationsmodus bringen
+  // Moduswechsel dauert bis zu 19 ms (BNO055.pdf Tab. 3-6)
+  writeReg(REG_OPR_MODE, OPR_MODE_CONFIGMODE);
+  delay(25);
 
 #ifdef CALIBRATION_ENABLED
   // Calibration
@@ -39,30 +52,28 @@ void BNO055::init() {
   }
 #endif
 
-  // Puffer für Datentransfer
-  uint8_t buffer[2] = {0, 0};
-
   // Unit Selection
-  cls->beginTransmission(addr);
-  buffer[0] = REG_UNIT_SEL;
   // Einheiten festlegen (BNO055.pdf S.69)
   // Bit7: Data output format = 1 -> Android (verändert Ausgabe von Pitch-Werten)
   // Bit4: Temperature = 0 -> Celsius
   // Bit2: Euler units = 0 -> Grad (Winkeleinheit)
   // Bit1: Angular Rate units = 0 -> Dps (Rotationsgeschwindigkeit Grad/s)
   // Bit0: Acceleration units = 0 -> m/s² (Beschleunigung)
-  buffer[1] = (1 << 7) | (0 << 4) | (0 << 2) | (0 << 1) | (1 << 0);
-  cls->write(buffer, 2);
+  // Eigene Transmission je Register: Mehrere Bytes in einer Transmission
+  // schreibt der BNO055 per Auto-Increment in die Folgeregister.
+  writeReg(REG_UNIT_SEL, (1 << 7) | (0 << 4) | (0 << 2) | (0 << 1) | (1 << 0));
+  delay(2);
 
-  // TODO: evtl neue Transmission starten
+  // BNO055 in Standardmodus bringen (Wechsel dauert bis zu 7 ms)
+  writeReg(REG_OPR_MODE, DEFAULT_OPR_MODE);
+  delay(20);
+}
 
-  // BNO055 in Standardmodus bringen
-  buffer[0] = REG_OPR_MODE;
-  buffer[1] = DEFAULT_OPR_MODE;
-  cls->write(buffer[0]);
-  cls->write(buffer[1]);
-  // ? warum nicht: cls->write(buffer, 2);
-
+// Ein Register beschreiben
+inline void BNO055::writeReg(uint8_t reg, uint8_t value) {
+  cls->beginTransmission(this->addr);
+  cls->write(reg);
+  cls->write(value);
   cls->endTransmission();
 }
 
@@ -73,8 +84,8 @@ inline void BNO055::getWords(uint8_t start_address, int16_t* data, uint8_t numWo
   cls->endTransmission();
   cls->requestFrom(this->addr, (size_t) (numWords * 2));
   uint8_t bytes[numWords * 2];
-  if (cls->available() != 8) {
-    memset((void*) data, 0, numWords);
+  if (cls->available() != numWords * 2) {
+    memset((void*) data, 0, numWords * sizeof(int16_t));
     return;
   }
   cls->readBytes(bytes, (size_t) (numWords * 2));

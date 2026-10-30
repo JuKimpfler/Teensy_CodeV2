@@ -188,7 +188,7 @@ constexpr uint8_t EN_INTERCON = 5;
 /// Ruhezustand von IC8: nur Sensor- und LED-Versorgung an, Leistung aus.
 /// Ohne LINE_EN sind die Linien-LEDs dunkel, ohne INTERCON fehlt den externen
 /// Modulen am 3V3-Intercon die Versorgung — beides wuerde als Defekt aussehen.
-constexpr uint8_t EN_SAFE = (1 << EN_BARRIER) | (1 << EN_LINE) | (1 << EN_INTERCON);
+constexpr uint8_t EN_SAFE = (1 << EN_BARRIER) | (1 << EN_LINE);
 
 /* ---- ESCON-Steuerleitungen: Annahme ueber die Belegung von DI1/DI2 ----
  * Der Schaltplan zeigt MOx_DO1 -> ESCON DI1, MOx_DIO3 -> DI2, MOx_DIO4 -> DIO3.
@@ -462,7 +462,7 @@ static void hardwareInit(void)
     expEN.setup(false);
     expEN.writePin(EN_VMOT, true);  // VMOT bleibt an
     expEN.writePin(EN_VDRIB, true); // VDRIB bleibt an
-    expEN.writePin(EN_INTERCON, true); // INTERCON bleibt an
+    expEN.writePin(EN_INTERCON, false); // Intercon wird durch Pulldown AKTIVIERTs
 
     // Den externen Modulen am Intercon Zeit zum Hochlaufen geben, bevor
     // gescannt wird — sonst fehlen sie im Ergebnis.
@@ -914,6 +914,12 @@ static void stufe_bno(void)
           "Systemstatus", String(stTxt) + " (SYS_ERR=" + hex2(sysErr) + ")",
           "nur 'Fusion laeuft' liefert ein brauchbares Heading — OPR_MODE pruefen");
 
+    const uint8_t opr = i2cReg(Wire, ADR_BNO, REG_OPR_MODE, ok) & 0x0F;
+    zeile((ok && opr == DEFAULT_OPR_MODE) ? CHK_OK : CHK_FAIL, "Betriebsmodus",
+          "OPR_MODE=" + hex2(opr) + " (erwartet " + hex2(DEFAULT_OPR_MODE) + ")",
+          opr == OPR_MODE_CONFIGMODE ? "haengt im CONFIGMODE — bno.init() hat nicht gegriffen"
+                                     : "falscher Modus — bno.init() pruefen");
+
     const uint8_t cal = bno.calibStatus();
     zeile(((cal >> 4) & 0x03) == 3 ? CHK_OK : CHK_WARN, "Kalibrierung",
           "Sys " + String((cal >> 6) & 0x03) + " / Gyro " + String((cal >> 4) & 0x03) +
@@ -933,7 +939,7 @@ static void stufe_bno(void)
 
     if (h0 == 0.0f && drift == 0.0f)
         zeile(CHK_FAIL, "Heading", "konstant 0.0 Grad",
-              "Sensor liefert keine Daten — getWords() bricht ab (siehe BNO055.cpp)");
+              "Euler-Register leer — Fusion laeuft nicht (Betriebsmodus/Systemstatus oben)");
     else if (drift > CHK_BNO_DRIFT_MAX)
         zeile(CHK_WARN, "Heading", String(h0, 1) + " Grad, wandert " + String(drift, 1) + " Grad",
               "unruhig: steht der Roboter still? Sonst Gyro kalibrieren / Magnetfeld pruefen");
