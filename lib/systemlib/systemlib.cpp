@@ -55,11 +55,11 @@ PID *headingControllerP;
 ADRC *headingControllerA;
 uint32_t lastMicrosContrl = 0;
 
-fancyBTN BTN1(50, 6, 8, true);
-fancyBTN BTN2(50, 6, 8, true);
-fancyBTN BTN3(50, 6, 8, true);
-fancyBTN BTN4(50, 6, 8, true);
-fancyBTN BTN5(50, 6, 8, true);
+fancyBTN BTN1(50, 4, 8, false);
+fancyBTN BTN2(50, 4, 8, false);
+fancyBTN BTN3(50, 4, 8, false);
+fancyBTN BTN4(50, 4, 8, false);
+fancyBTN BTN5(50, 4, 8, false);
 
 /* -------------- System Worker -------------- */
 
@@ -85,27 +85,35 @@ void systemlib::initialize()
 
     // Ausgangsregister VOR der Richtung setzen: nach dem Einschalten steht es
     // auf 0xFF, ein setup(false) als erstes zoege alle ESCON-Freigaben auf HIGH.
+    #if SYS_EN_MOTORS
     Motor12_EXP.write(0x00);
     Motor12_EXP.setup(false);
     Motor34_EXP.write(0x00);
     Motor34_EXP.setup(false, false, false, false, false, false, true, true); // P6/P7 = SWITCH1/BUTTON1
+    #endif
     Power_EXP.write(POWER_EXP_RUN);
     Power_EXP.setup(false);
+    #if SYS_EN_SWITCHBOARD
     SW_EXP.setup(true);
     Button_EXP.setup(true);
+    #endif
     readExpanders();
 
     SPI.begin();
 
     USBC_UART.begin(115200);
 
+    #if SYS_EN_POWER
     INA219_Main.begin(Wire1);
     INA219_Motor.begin(Wire1);
 
     INA219_Main.setMaxCurrentShunt(15);
     INA219_Motor.setMaxCurrentShunt(15);
+    #endif
 
+    #if SYS_EN_BNO
     BNO.init();
+    #endif
     calibBNO();
 
     #if DPDS_Game == D_Mode_Test
@@ -119,20 +127,26 @@ void systemlib::initialize()
     MoDataHR.ID = MotorHR_ID;
     MoDataDR.ID = MotorDR_ID;
 
+    #if SYS_EN_RADAR
     Radar.begin(I2C_RADAR); // richtet alle Sensoren ein und startet die erste Messrunde
+    #endif
 
     //ir_ring.read_gains(IR_Gains);
     //ir_ring.read_offsets(IR_Offsets);
 
     setDebugTimeout(0);
 
+    #if SYS_EN_MOTORS
     ADC_Motor.init();
+    #endif
+    #if SYS_EN_LINE
     ADC_Line1.init();
     ADC_Line2.init();
     ADC_Line3.init();
     ADC_Line4.init();
     ADC_Line5.init();
     ADC_Line6.init();
+    #endif
 
     setupHeadingController();
 
@@ -150,7 +164,9 @@ void systemlib::readSensors(void)
     cycleTimer_us = 0;
 
     readBNO();
+    #if SYS_EN_RADAR
     Radar.update();
+    #endif
 
 
     // Motordrehzahlen -> Feldgeschwindigkeit. Heading als Mittel ueber den Zyklus,
@@ -986,12 +1002,17 @@ PositionData systemlib::calculatePosition(uint32_t current_time_ms, float vx_fie
 
 void systemlib::calibRadar()
 {
+    #if SYS_EN_RADAR
     Radar.calib();
+    #endif
 }
 
 /* -------------- ADC/Line -------------- */
 
 uint16_t systemlib::giveADC(uint8_t Port, uint8_t Pin){
+    #if !SYS_EN_LINE
+    return 0;
+    #endif
     if(Port == 0){return ADC_Line1.read(Pin);}
     else if(Port == 1){return ADC_Line2.read(Pin);}
     else if(Port == 2){return ADC_Line3.read(Pin);}
@@ -1007,6 +1028,8 @@ void systemlib::updateLine(){
     int8_t line_Angle = 0;
     bool line_touching;
 
+    // Ohne Linienplatinen bleibt line_array auf 0 -> keine Linie erkannt
+    #if SYS_EN_LINE
     for(int i = 0; i<6 ; i++){
         for (int j = 0; j<8 ; j++){
             if(i == 0){line_array[j]= ADC_Line1.read(j);}
@@ -1017,6 +1040,7 @@ void systemlib::updateLine(){
             else if(i == 5){line_array[40+j]= ADC_Line6.read(j);}
         }
     }
+    #endif
 
     for( int i = 0 ; i<48 ; i++){
         line_bool_array[i] = line_array[i]>LineSensorSchwelle[i];
@@ -1085,7 +1109,9 @@ void systemlib::calibBNO(void)
 
 void systemlib::readBNO(void)
 {
+    #if SYS_EN_BNO
     BNO_eulerZ = BNO.eulHeading();
+    #endif
     BNO_OrbitDir = Util.AMap(BNO_eulerZ - BNO_calibration);
 }
 
@@ -1150,21 +1176,33 @@ void systemlib::communicationSend(float positionX, float positionY, float ballAn
 
 float systemlib::giveMainVoltage(void)
 {
+    #if !SYS_EN_POWER
+    return 0.0f;
+    #endif
     return (float)INA219_Main.getBusVoltage();
 }
 
 float systemlib::giveMotorVoltage(void)
 {
+    #if !SYS_EN_POWER
+    return 0.0f;
+    #endif
     return (float)INA219_Motor.getBusVoltage();
 }
 
 float systemlib::giveMainCurrent(void)
 {
+    #if !SYS_EN_POWER
+    return 0.0f;
+    #endif
     return (float)INA219_Main.getCurrent_mA();
 }
 
 float systemlib::giveMotorCurrent(void)
 {
+    #if !SYS_EN_POWER
+    return 0.0f;
+    #endif
     INA_filter[0] = INA_filter[1];
     INA_filter[1] = INA_filter[2];
     INA_filter[2] = INA_filter[3];
@@ -1273,6 +1311,11 @@ static void setEsconBits(uint16_t &out, const MotorData &m, uint8_t enBit, uint8
 
 void systemlib::updateMotors(void)
 {
+    // Ohne Motorplatine bleiben PWM (in initialize() auf 0 gesetzt) und
+    // Speed_real/Current auf 0 -- MoData* koennen trotzdem beschrieben werden.
+    #if !SYS_EN_MOTORS
+    return;
+    #endif
     uint16_t out = 0;
     if (MoDataVL.Speed == 0 || giveExpander(0,3))
     {
@@ -1382,6 +1425,10 @@ MotorData systemlib::giveMotorData(uint8_t ID)
 /* -------------- Expanders -------------- */
 void systemlib::readExpanders(void)
 {
+    // Ohne SwitchBoard bleiben Schalter, Start, RCJ und Taster auf false
+    #if !SYS_EN_SWITCHBOARD
+    return;
+    #endif
     // Je Expander ein Buszugriff, danach nur noch aus dem gelesenen Byte
     // (readPin() wuerde jedes Mal neu ueber I2C lesen).
     SW_EXP.read();     // SwitchBoard IC1: P0 SW5 ... P4 SW1, P5 Start, P6 RCJ-Disable, P7 RCJ erkannt
@@ -1416,6 +1463,9 @@ void systemlib::readExpanders(void)
 
 bool systemlib::giveExpander(uint8_t expnum, uint8_t portnum)
 {
+    #if !SYS_EN_SWITCHBOARD
+    return false;
+    #endif
     if (expnum == 0)
     {
         return SW_EXP.readPin(portnum);

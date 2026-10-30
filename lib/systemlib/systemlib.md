@@ -68,6 +68,23 @@ zwei Dateien und `give`/`set`-Funktionen.
 | Freigaben (`Power_EXP`) | VMOT, VDRIB, Lichtschranke, Linien-LEDs ein; Intercon-3V3 ein (LOW) |
 | fancyBTN-Parameter | `(50, 6, 8, true)` → 100 ms Doppelklick, 3 s Long-Press, 8 ms Entprellung |
 
+### Hardware ein/aus (`SYS_EN_*` in `params.h`)
+
+Jede Platine/jeder Sensor laesst sich per Flag abschalten (`1` = an, Default).
+Abgeschaltet wird weder eingerichtet noch gelesen, die Werte bleiben auf 0.
+Ueberschreibbar auch per `build_flags`, z. B. `-DSYS_EN_RADAR=0`.
+
+| Flag | Betrifft | Abgeschaltet |
+|---|---|---|
+| `SYS_EN_BNO` | BNO055 | Heading bleibt 0 |
+| `SYS_EN_RADAR` | 4x XM125 | spart mehrere Sekunden Start; Position nur aus Odometrie |
+| `SYS_EN_LINE` | 6x Linien-ADC | keine Linie erkannt, `giveADC()` = 0 |
+| `SYS_EN_POWER` | INA219 Akku/Motor | Spannungen/Stroeme = 0 |
+| `SYS_EN_SWITCHBOARD` | SW_EXP, Button_EXP | Schalter/Taster/Start/RCJ = false |
+| `SYS_EN_MOTORS` | Motor12/34_EXP, ADC_Motor | `updateMotors()` tut nichts, PWM bleibt 0 |
+
+`Power_EXP` (Versorgungsfreigaben) wird immer eingerichtet.
+
 ### Heading-Regler
 
 `setupHeadingController(bool useADRC)` legt einen der beiden Regler an.

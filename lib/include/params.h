@@ -23,6 +23,31 @@
 #define SW_SWITCH_ADDRESS 0x26 // SwitchBoard IC1: SW1-5, Start, RCJ (Jumper JP1-3)
 #define SW_BUTTON_ADDRESS 0x27 // SwitchBoard IC2: BTN1-5, RCJ-Out (Jumper JP4-6)
 
+// ── Hardware ein/aus ─────────────────────────────────────────────────────────
+// 1 = wird in systemlib::initialize() eingerichtet und in readSensors() gelesen,
+// 0 = wird komplett uebersprungen (kein Buszugriff, keine Wartezeit). Die
+// Messwerte bleiben dann auf 0 stehen. Gedacht zum Testen mit abgesteckten
+// Platinen oder zum Eingrenzen, wer die Zykluszeit/den Start ausbremst.
+// Ueberschreibbar per build_flags, z. B. -DSYS_EN_RADAR=0
+#ifndef SYS_EN_BNO
+#define SYS_EN_BNO 1         // BNO055 (Heading)
+#endif
+#ifndef SYS_EN_RADAR
+#define SYS_EN_RADAR 0       // 4x XM125 -- Start kostet mehrere Sekunden Kalibrierung
+#endif
+#ifndef SYS_EN_LINE
+#define SYS_EN_LINE 0        // 6x ADC108S102 der Linienplatinen
+#endif
+#ifndef SYS_EN_POWER
+#define SYS_EN_POWER 1       // INA219 Akku/Motor (Spannung, Strom)
+#endif
+#ifndef SYS_EN_SWITCHBOARD
+#define SYS_EN_SWITCHBOARD 1 // SwitchBoard: Schalter, Taster, Start, RCJ-Modul
+#endif
+#ifndef SYS_EN_MOTORS
+#define SYS_EN_MOTORS 1      // Motor-Expander (ESCON-Freigaben) und Motor-ADC; 0 = PWM bleibt auf 0
+#endif
+
 const uint16_t LineSensorSchwelle[48] = 
 {3000,3000,3000,3000,3000,3000,3000,3000 // pex1
 ,3000,3000,3000,3000,3000,3000,3000,3000 // pex2

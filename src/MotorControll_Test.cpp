@@ -116,6 +116,18 @@ void loop()
     sys.MoDataHL.Speed=100;
   }
 
+  if (buttons[1] == fancy_LONG_PRESS)
+  {
+    digitalWrite(9, HIGH);
+    delay(1000);
+    digitalWrite(9, LOW);
+  }
+
+  Serial.print("B1 :");
+  Serial.print(buttons[0]);
+  Serial.print(" B2 :");
+  Serial.println(buttons[1]);
+
 
   /*Serial.print("X: ");
   Serial.print(sys.Position.X);
