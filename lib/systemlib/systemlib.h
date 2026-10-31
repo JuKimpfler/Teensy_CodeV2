@@ -5,7 +5,6 @@
 #include "params.h"
 #include <Utils.h>
 
-#include <BNO055.h>
 #include <INA219.h>
 #include <SRF08.h>
 #include <ADC108S102.h>
@@ -13,15 +12,10 @@
 #include <ir_ring.h>
 #include "SPI.h"
 #include <fancyBTN.h>
-#include <RadarArray.h>
-
-#include <commlib.h>
 #include <PDS.h>
 
 #include <PID/PID.h>
 #include <ADRC/ADRC.h>
-
-extern BNO055 BNO;
 
 struct MotorData
 {
@@ -80,21 +74,12 @@ enum ArrayState : uint8_t {
 class systemlib
 {
 private:
-    RobotDataCom ownRobot;
-    RobotDataCom otherRobot;
 
     /* -------------- Sensor Var -------------- */
     float Akku_V = 0.0f;
     float Akku_I = 0.0f;
     float Motor_V = 0.0f;
     float Motor_I = 0.0f;
-    float BNO_calibration = 0.0f;
-    float BNO_eulerZ = 0.0f;
-    float BNO_OrbitDir = 0.0f;
-    uint16_t US_vo = 0;
-    uint16_t US_re = 0;
-    uint16_t US_hi = 0;
-    uint16_t US_li = 0;
     float IR_Angle = 0.0f;
     float IR_Distance = 0.0f;
     float IR_rawAngle = 0.0f;
@@ -120,9 +105,6 @@ private:
     float ADRC_Out = 0;
     float PID_Out = 0;
 
-    float feld_x = POS_FIELD_X_CM; ///< Feldbreite [cm], siehe params.h
-    float feld_y = POS_FIELD_Y_CM; ///< Feldlaenge [cm], siehe params.h
-
     uint8_t fancyBTNstates[5] = {0};
     /* -------------- System -------------- */
     uint16_t cycleTime = 0;
@@ -131,7 +113,6 @@ private:
     float uptime_s = 0.0f; ///< Laufzeit seit dem Start [s], PDS-Kanal 0
 
     /* -------------- Sensor Funktion -------------- */
-    void readBNO(void);
     void readIR(void);
     void readExpanders(void);
 
@@ -143,16 +124,7 @@ private:
     /* -------------- Motor ----------------- */
     void updateMotors(void);
 
-    /* -------------- Position -------------- */
-    float calcAxisPosition(uint8_t posLow, uint8_t posHigh, float feldSize,
-                           float offsetLow, float offsetHigh,
-                           float lastPos, float &certainty);
-    float goalOffset(float x_cm, float &sureness) const;
-
 public:
-
-    /// Alle Radarsensoren. Zugriff ueber die Einbauposition: Radar[RadarVo].Dist
-    RadarArray Radar;
 
     MotorData MoDataVL;
     MotorData MoDataVR;
@@ -166,24 +138,15 @@ public:
     uint16_t line_array[48];
     bool line_bool_array[48];
 
-    /// Letztes Ergebnis von calculatePosition(), wird in readSensors() aktualisiert.
-    PositionData Position;
-
     /* -------------- Ssytem Worker -------------- */
     void initialize();
     void readSensors(void);
-
-    /* -------------- Communication -------------- */
-    void communicationSend(void);                                                                                                       // setzt die Daten Automatisch und sendet sie
-    void communicationSend(float positionX, float positionY, float ballAngle, float ballDistance, float goalAngle, float goalDistance); // sendet Benutzerdefinierte Daten
 
     /* -------------- Calibrate -------------- */
     void calibBNO(void);
     void writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain);
     void writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16]);
     void calibIR(void);
-    void calibRadar(void); ///< alle Radarsensoren neu konfigurieren + kalibrieren (blockiert)
-
     /* -------------- Aktors -------------- */
     void setMotorData(MotorData Data);
     MotorData giveMotorData(uint8_t ID);
@@ -226,20 +189,11 @@ public:
     /* -------------- Calculate -------------- */
     void updateLine();
     void updateHeadingController(void);
-    PositionData calculatePosition(uint32_t current_time_ms, 
-                                           float vx_field, 
-                                           float vy_field, 
-                                           bool use_radar = true, 
-                                           bool use_odometry = true);
-    void getOmniWheelVek(float wVL, float wVR, float wHL, float wHR, float &vx, float &vy, float &omega);
-    float convertMotorRpmToWheelSpeedCmS(float motor_rpm);
-    RobotVelocity calculateFieldVelocityFromMotorRpm(const float motor_rpm[4], float heading_deg);
 
     /* -------------- give -------------- */
     float giveOrbitDir(void) const { return BNO_OrbitDir; };            // Orbital Ausrichtung
     uint16_t giveCycleTime(void) const { return cycleTime; };           // Zyklische Messung der Laufzeit in ms
     uint16_t giveCycleTime_us(void) const { return cycleTime_us; };     // Zyklische Messung der Laufzeit in us
-    RobotDataCom giveOtherRobotData(void) const { return otherRobot; }; // Daten des anderen Roboter
     float giveMainVoltage(void);
     float giveMotorVoltage(void);
     float giveMainCurrent(void);
@@ -254,11 +208,6 @@ public:
     bool giveTSSPData(uint8_t sensorNumber) const { return IR_TSSP[sensorNumber]; }; // currently disabled -> change in readIR() to enable it
     float giveHeadingController(void); // BNO has to be setup allready
     void giveButtonStates(uint8_t (&buttonStates)[5]) const {for (uint8_t i = 0; i < 5; i++){buttonStates[i] = fancyBTNstates[i];}}; // BTN1..BTN5 vom SwitchBoard, fancyBTN-Statuscodes
-    RadarData giveRadar(uint8_t pos) const { return Radar[pos]; };       // Radar-Messwerte, pos = RadarVo/Li/Hi/Re
-    bool giveRadarCon(uint8_t pos) const { return Radar.giveCon(pos); }; // antwortet der Radarsensor?
-    uint32_t giveRadarAge(uint8_t pos) const { return Radar.giveAge(pos); }; // Alter des Radarwerts in ms
-    PositionData givePosition(void) const { return Position; };          // zuletzt berechnete Feldposition + Certainty
-    float givePositionCertainty(void) const { return Position.Certainty; }; // 0 = unbrauchbar ... 1 = sicher
     bool giveExpander(uint8_t expnum, uint8_t portnum);
     bool giveExpSwitch(uint8_t switchNumber) const { return SWI[switchNumber]; };
     bool giveExpStartSwitch(void) const { return startSwitch; };
