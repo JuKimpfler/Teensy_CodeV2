@@ -17,18 +17,19 @@ Dateien: `Cam.h`, `Cam.cpp`
 
 ```cpp
 CamC cam;
-cam.init(Serial1, 115200);
+cam.init(UART_CAM1, 115200);
 ```
 
 | Parameter | Default | Bedeutung |
 |---|---|---|
-| `ser` | `Serial1` | HardwareSerial-Port, an dem die OpenMV hängt |
+| `ser` | `Serial2` | HardwareSerial-Port, an dem die OpenMV hängt |
 | `baud` | `115200` | Baudrate; muss zur OpenMV-Firmware passen |
 
-Im Projekt sind für die Kamera die Pins `TNS_TX_PIXY_RX = 14` /
-`TNS_RX_PIXY_TX = 15` vorgesehen (siehe [`enum.h`](../include/include.md)) –
-das entspricht `Serial3` auf dem Teensy 4.0. Der Default `Serial1` ist also
-ggf. anzupassen.
+Die Main-Platine hat zwei Kamera-Anschlüsse (Blatt 11): CAM1 an
+`UART1_TNS_RX/TX` = 7/8 (`UART_CAM1` = `Serial2`, der Default) und CAM2 an
+`UART2_TNS_RX/TX` = 28/29 (`UART_CAM2` = `Serial7`), siehe
+[`enum.h`](../include/include.md). `Serial1` ist der Debug-UART und darf hier
+nicht verwendet werden.
 
 ### Vorzeichen-Konvention
 

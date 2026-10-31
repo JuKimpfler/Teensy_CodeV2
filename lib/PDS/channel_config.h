@@ -1,6 +1,6 @@
 #pragma once
 #include <Arduino.h>
-#include "params.h"   // PARAM_*_COUNT und die Strukturen ChannelNameDef/ParamDef/OverlayDef
+#include "params_PDS.h"   // PARAM_*_COUNT und die Strukturen ChannelNameDef/ParamDef/OverlayDef
 
 /* ============================================================
  *  channel_config.h — die EINZIGE Datei, die man von Hand pflegt
@@ -47,29 +47,29 @@
 //           "toggle" | "button"      (Bools; button + momentary = Taster)
 
 static const ParamDef PARAM_SLOW_FLOATS[] = {
-    // {  0, "Kp_Heading",  "slider",   0.0f,  10.0f, 0.05f,  2.5f, "Regler" },
-    // {  1, "Ki_Heading",  "slider",   0.0f,   5.0f, 0.01f,  0.2f, "Regler" },
-    // {  2, "Kd_Heading",  "slider",   0.0f,   5.0f, 0.01f,  0.8f, "Regler" },
-    // {  3, "Max_Speed",   "number",   0.0f, 100.0f, 1.0f,  60.0f, "Fahren" },
+     {  0, "PID_P",  "slider",   0.0f,  10.0f, 0.05f,  2.5f, "Regler" },
+     {  1, "PID_D",  "slider",   0.0f,   5.0f, 0.01f,  0.2f, "Regler" },
+     {  2, "Multi",  "slider",   0.0f,   5.0f, 0.01f,  0.8f, "Regler" },
 };
 static constexpr size_t PARAM_SLOW_FLOATS_COUNT =
     sizeof(PARAM_SLOW_FLOATS) / sizeof(PARAM_SLOW_FLOATS[0]);
 
 static const ParamDef PARAM_SLOW_BOOLS[] = {
-    // {  0, "Motoren_frei", "toggle", 0, 1, 1, 0, "Schalter" },
-    // {  1, "Not_Aus",      "button", 0, 1, 1, 0, "Schalter", true },   // Taster
+    {  0, "Zielpunkt_anfahren", "button", 0, 1, 1, 0, "Fahren", true },
+    {  1, "BNO_kalibrieren",    "button", 0, 1, 1, 0, "Kalibrierung", true },
+    {  2, "Radar_setzen",       "button", 0, 1, 1, 0, "Kalibrierung", true },
 };
 static constexpr size_t PARAM_SLOW_BOOLS_COUNT =
     sizeof(PARAM_SLOW_BOOLS) / sizeof(PARAM_SLOW_BOOLS[0]);
 
+//  ACHTUNG: Fast-Floats koennen nur "slider" oder "number" sein. Die Widgets
+//  "toggle"/"button" schreiben in der GUI auf einen SLOW-BOOL (siehe
+//  qml/ParamsView.qml) -- ein Taster gehoert deshalb nach PARAM_SLOW_BOOLS.
 static const ParamDef PARAM_FAST_FLOATS[] = {
     // Die 5 Echtzeit-Kanaele (Joystick / PS4-Controller / Tastatur).
-    // Standardbelegung siehe rpi5_monitor/.../bridge/controller_bridge.py:
-    // {  0, "Joystick_X", "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
-    // {  1, "Joystick_Y", "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
-    // {  2, "Rotation",   "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
-    // {  3, "Speed",      "slider",    0.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
-    // {  4, "Dribbler",   "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
+    // Standardbelegung siehe rpi5_monitor/.../bridge/controller_bridge.py.
+    {  0, "Fahrt_Y", "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
+    {  1, "Fahrt_X", "slider", -100.0f, 100.0f, 1.0f, 0.0f, "Fahren" },
 };
 static constexpr size_t PARAM_FAST_FLOATS_COUNT =
     sizeof(PARAM_FAST_FLOATS) / sizeof(PARAM_FAST_FLOATS[0]);
@@ -82,7 +82,11 @@ static constexpr size_t PARAM_FAST_FLOATS_COUNT =
 //          x_min, x_max, y_min, y_max, return_to_center
 
 static const JoystickDef PARAM_JOYSTICKS[] = {
-    // { "Fahrtrichtung", "fast", 0, 1, -100.0f, 100.0f, -100.0f, 100.0f, true },
+    // x = Fast-Param 1, y = Fast-Param 0 -- genau die Reihenfolge, mit der
+    // src/MotorControll_Test.cpp Winkel und Betrag rechnet:
+    //     x = PDS.fastParam(1); y = PDS.fastParam(0);
+    //     angle = atan2(y, x);  speed = hypot(x, y) / 2;
+    { "Fahrtrichtung", "fast", 1, 0, -100.0f, 100.0f, -100.0f, 100.0f, true },
 };
 static constexpr size_t PARAM_JOYSTICKS_COUNT =
     sizeof(PARAM_JOYSTICKS) / sizeof(PARAM_JOYSTICKS[0]);
@@ -150,7 +154,23 @@ static constexpr size_t CHANNEL_NAMES_COUNT = sizeof(CHANNEL_NAMES) / sizeof(CHA
 //  angeben, der den Durchmesser zur Laufzeit liefert (z. B. Ballgroesse aus
 //  der Kamera). Nicht benutzte Kanaele einfach weglassen.
 
+//  Die Kanalnummern unten stammen aus lib/systemlib/systemlib.cpp
+//  (setupPDS()) und sind dort fest vergeben -- siehe docs/PDS_Belegung.md.
+//  Wer dort etwas verschiebt, muss es hier nachziehen.
 static const OverlayDef CHANNEL_OVERLAYS[] = {
+    // Alle Systemwerte auf einen Blick (Kanal 0..25).
+    { 1, "text", "SW1",   50, 30,  40 },
+    // 4S-Akku (Main V2.0, VBAT-4S): LTC4365 trennt bei 13,2 V, voll = 16,8 V
+    { 1, "gauge",    "Akku",       1, -1, 13.2f,  16.8f },
+    { 1, "rotation", "Motor1",    21, -1,  0.0f, 100.0f },
+
+    // Feld-Draufsicht: der Roboter an seiner berechneten Position.
+    // Feldmasse wie POS_FIELD_X_CM / POS_FIELD_Y_CM in lib/include/params.h.
+    { 2, "bodies",   "Feldposition", -1, -1, 0.0f, 0.0f, -1.0f, -1.0f,
+        "field_x_cm=182;field_y_cm=243;"
+        "body1_label=Roboter;body1_color=#4ec9b0;body1_diameter=18;"
+        "body1_channel_x=16;body1_channel_y=17;body1_channel_angle=5" },
+
     // { 1, "gauge",    "Akku",       10, -1,  0.0f, 16.8f },
     // { 1, "rotation", "Heading",     5, -1,  0.0f, 360.0f },
     // { 1, "vector",   "Fahrt",       6,  7,  0.0f, 100.0f },
@@ -164,3 +184,69 @@ static const OverlayDef CHANNEL_OVERLAYS[] = {
     //     "body2_channel_x=2;body2_channel_y=3;body2_channel_angle=4" },
 };
 static constexpr size_t CHANNEL_OVERLAYS_COUNT = sizeof(CHANNEL_OVERLAYS) / sizeof(CHANNEL_OVERLAYS[0]);
+
+
+// ══════════════════════════════════════════════════════════════════════════
+//  5) Einstellungen der OBERFLAECHE, die der Roboter vorgibt
+// ══════════════════════════════════════════════════════════════════════════
+//  Derselbe Punktpfad wie in der settings.json der GUI. Was hier steht,
+//  reist im Deskriptor mit, wird auf dem Raspberry Pi dauerhaft gespeichert
+//  und gilt damit auch beim naechsten Start ohne eingeschalteten Roboter.
+//
+//  Der Typ ergibt sich aus dem geschriebenen Wert:
+//      { "ui.dark",                true      }   Wahrheitswert
+//      { "ui.fontScale",           1.2f      }   Zahl
+//      { "plotter.historySeconds", 20        }   Zahl (ganz)
+//      { "theme.colors.dark.bg",   "#101010" }   Text/Farbe
+//
+//  ── Was geht (Auszug aus settings.json — es gilt JEDER Schluessel) ──────
+//    ui.dark  ui.fontScale  ui.kiosk  ui.keyboardControl  ui.startTab
+//    battery.enabled  battery.channel  battery.warn_below
+//    battery.critical_below  battery.hold_seconds
+//    ranges.fontScale.min|max|step   (Grenzen der Bedienelemente)
+//    theme.fontSize.base|table|large|small|xlarge   theme.touchTargetMin
+//    theme.spacing.xs|s|m|l          theme.radius.s|m|l
+//    theme.colors.dark.<name>        theme.colors.light.<name>
+//    window.fullscreen  window.width  window.height  window.headerHeight
+//    plotter.historySeconds  plotter.defaultPoints  plotter.maxCurves
+//    plotter.curveColors.0 .. .7     plotter.markerColors.0 .. .2
+//    params.undoDepth  params.spinBoxFactor
+//    diagnostics.eventLogMax
+//    controller.deadzone  controller.axis_left_x  controller.button_r1  ...
+//
+//  ── Was NICHT geht ─────────────────────────────────────────────────────
+//    "network.*" — eine falsche IP in der Firmware wuerde genau die Leitung
+//    kappen, ueber die man sie korrigieren muesste. Die GUI verwirft diesen
+//    Abschnitt aus dem Deskriptor grundsaetzlich.
+//
+//  Unsinnige Werte kosten hoechstens IHR Feld: die GUI prueft jeden Wert
+//  gegen ihren eigenen Standardwert und behaelt bei einem Typfehler den
+//  eigenen (siehe rpi5_monitor/64Bit_Version/app_settings.py).
+//
+//  Dasselbe geht auch im Sketch:  PDS.setting("ui.dark", true);
+//  Der Bediener kann die Uebernahme im Diagnose-Tab abschalten.
+
+#define PDS_HAS_GUI_SETTINGS 1
+static const SettingDef GUI_SETTINGS[] = {
+    // Die Akkuanzeige der GUI liest Kanal 1 (Akku_V, siehe setupPDS()).
+    { "battery.enabled",          true      },
+    { "battery.channel",          1         },
+    // Schwellen fuer den 4S-Akku der Main V2.0. Der LTC4365 trennt bei
+    // 13,2 V; "kritisch" liegt mit 13,6 V (3,4 V/Zelle) wie in CheckSystems
+    // (CHK_AKKU_V_LEER) knapp darueber, damit die Warnung vor dem Abschalten kommt.
+    { "battery.warn_below",       14.0f     },   // 3,5 V/Zelle
+    { "battery.critical_below",   13.6f     },
+
+    // { "ui.dark",                  true      },
+    // { "ui.fontScale",             1.1f      },
+    // { "ui.startTab",              2         },   // 2 = Systemansicht
+    // { "battery.enabled",          true      },
+    // { "battery.channel",          10        },
+    // { "battery.warn_below",       11.5f     },
+    // { "battery.critical_below",   10.8f     },
+    // { "plotter.historySeconds",   20        },
+    // { "plotter.curveColors.0",    "#00ff88" },
+    // { "theme.colors.dark.bg",     "#101010" },
+};
+static constexpr size_t GUI_SETTINGS_COUNT =
+    sizeof(GUI_SETTINGS) / sizeof(GUI_SETTINGS[0]);

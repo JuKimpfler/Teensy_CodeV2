@@ -9,16 +9,79 @@ RadarArray::RadarArray()
     // Abstimmung auf eine gerade Holzwand bis 2,5 m, Werte siehe params.h.
     config.startMm             = RADAR_START_MM;
     config.endMm               = RADAR_END_MM;   // > 2500, damit die Wand nicht auf der Bereichskante liegt
-    config.maxProfile          = XM125D_PROFILE5;            // laengste Pulse = groesste Reichweite
+    config.maxProfile          = XM125D_PROFILE3;            // laengste Pulse = groesste Reichweite
     config.thresholdMethod     = XM125D_THRESHOLD_CFAR;      // adaptiv, unabhaengig von der Umgebung
     config.thresholdSensitivity = RADAR_THRESHOLD_SENSITIVITY;
     config.signalQuality       = RADAR_SIGNAL_QUALITY;
-    config.peakSorting         = XM125D_SORT_STRONGEST;
+    config.peakSorting         = XM125D_SORT_FARTHEST;
     // PLANAR: bei einer flaechigen Wand faellt die Echo-Amplitude langsamer mit der
     // Distanz als bei einem punktfoermigen Reflektor. Ohne diese Angabe setzt der
     // Detektor die Schwelle am Bereichsende zu hoch an und die Wand faellt raus.
     config.reflectorShape      = XM125D_REFLECTOR_PLANAR;
     config.closeRangeLeakageCancellation = false; // sauberer Nahbereich ab startMm
+}
+
+float RadarArray::filterRadar(int sensorIndex, float rawValue, unsigned long nowMs) {
+  static float pos[4] = {0, 0, 0, 0};
+  static float vel[4] = {0, 0, 0, 0};
+  static unsigned long lastTime[4] = {0, 0, 0, 0};
+  static bool initialized[4] = {false, false, false, false};
+  static int rejectCount[4] = {0, 0, 0, 0};
+
+  if (!initialized[sensorIndex]) {
+    pos[sensorIndex] = rawValue;
+    lastTime[sensorIndex] = nowMs;
+    initialized[sensorIndex] = true;
+    return rawValue;
+  }
+
+  float dt = (nowMs - lastTime[sensorIndex]) / 1000.0f;
+  if (dt <= 0.0f || dt > 0.5f) {
+    lastTime[sensorIndex] = nowMs;
+    return pos[sensorIndex];
+  }
+  lastTime[sensorIndex] = nowMs;
+
+  const float maxSpeedMM = 3000; // ~1.266 m/s in mm/s
+
+  // 1. Vorhersage
+  float predictedPos = pos[sensorIndex] + vel[sensorIndex] * dt;
+
+  // 2. Erlaubte Änderung: Physikalische Strecke + 10mm Puffer für 4mm Rauschen
+  float maxAllowedChange = (maxSpeedMM * dt * 1.15f) + 10.0f;
+
+  // 3. Ausreißer-Prüfung
+  float diff = rawValue - predictedPos;
+  
+  if (fabs(diff) > maxAllowedChange) {
+    rejectCount[sensorIndex]++;
+    
+    if (rejectCount[sensorIndex] < 10) { 
+      // Ausreißer verworfen -> Vorhersage beibehalten
+      rawValue = predictedPos;
+    } else {
+      // Bei anhaltender Abweichung kontrolliert annähern (kein Sprung)
+      rawValue = predictedPos + (diff > 0 ? maxAllowedChange : -maxAllowedChange);
+      vel[sensorIndex] = 0.0f;
+    }
+  } else {
+    rejectCount[sensorIndex] = 0;
+  }
+
+  // 4. Alpha-Beta Glättung
+  // Wegen des geringen Rauschens vertrauen wir dem Messwert stark (Alpha = 0.8)
+  const float alpha = 0.8f;
+  const float beta = 0.1f;
+
+  float residual = rawValue - predictedPos;
+  pos[sensorIndex] = predictedPos + alpha * residual;
+  vel[sensorIndex] = vel[sensorIndex] + (beta / dt) * residual;
+
+  // Geschwindigkeitsbegrenzung gegen Aufschaukeln
+  if (vel[sensorIndex] > maxSpeedMM)  vel[sensorIndex] = maxSpeedMM;
+  if (vel[sensorIndex] < -maxSpeedMM) vel[sensorIndex] = -maxSpeedMM;
+
+  return pos[sensorIndex];
 }
 
 /* -------------- System Worker -------------- */
@@ -143,12 +206,17 @@ void RadarArray::_takeResult(uint8_t idx)
 {
     _fails[idx] = 0;
 
-    // Peak 0: bei peakSorting = CLOSEST das naechstgelegene Objekt.
+    // Peak 0: bei peakSorting = FARTHEST das am weitesten entfernte Objekt.
     // Peaks == 0 (keine Wand erkannt) liefert Dist/Strenght = 0, damit kein
     // alter Wert stehen bleibt und "reagiert nicht" sichtbar wird.
     const XM125DistanceResult &res = _sensors[idx].getLastResult();
     _data[idx].Peaks    = res.numDistances;
-    _data[idx].Dist     = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
+    _data[idx].DistRaw  = (res.numDistances > 0) ? res.peakDistanceRaw[0] : 0;
+    _data[idx].Dist     = _data[idx].DistRaw;
+    // Filter nur mit echten Peaks fuettern: Nullen ("keine Wand") wuerden ihn
+    // sonst Richtung 0 ziehen und die Rueckkehr der Wand um ~10 Zyklen verzoegern.
+    if (res.numDistances > 0)
+        _data[idx].Dist = filterRadar(idx, _data[idx].DistRaw, millis());
     _data[idx].Strenght = (res.numDistances > 0) ? res.peakStrength[0] : 0;
     _data[idx].isCon    = true;
     _data[idx].Time     = millis(); // Zeitstempel fuer die Altersbewertung, siehe giveAge()

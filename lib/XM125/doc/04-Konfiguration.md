@@ -35,7 +35,7 @@ Struct-Definition: [XM125Distance.h](../XM125Distance.h) (`XM125DistanceConfig`,
 | `signalQuality` | `0x0044` | uint32 (1000×-Einheit) | **15000** | Gewünschte Signalqualität. Höhere Werte verbessern SNR auf Kosten der Messzeit/Energieverbrauch |
 | `maxProfile` | `0x0045` | Enum `PROFILE1`–`PROFILE5` | **PROFILE5** | Radar-Profil, steuert Trade-off zwischen Reichweite/Auflösung und Energieverbrauch. Höhere Profile = größere Reichweite, aber längere Pulse (schlechtere Nahbereichsauflösung). PROFILE5 = maximale Reichweite |
 | `thresholdMethod` | `0x0046` | Enum, s.u. | **CFAR** | Verfahren zur Schwellwertberechnung, mit dem echte Reflexionen vom Rauschen unterschieden werden (siehe Tabelle unten) |
-| `peakSorting` | `0x0047` | Enum `CLOSEST` / `STRONGEST` | **STRONGEST** | Sortierreihenfolge der zurückgegebenen Peaks: nach Nähe oder nach Signalstärke |
+| `peakSorting` | `0x0047` | Enum `CLOSEST`/`STRONGEST`/`FARTHEST`/`WEAKEST` | **STRONGEST** | Sortierreihenfolge der zurückgegebenen Peaks: nach Nähe oder Signalstärke, jeweils auch rückwärts (`FARTHEST`/`WEAKEST` sind Firmware-Erweiterungen, siehe Glossar) |
 | `numFramesRecordedThreshold` | `0x0048` | uint32 | **100** | Nur relevant bei `thresholdMethod = RECORDED`: Anzahl der Frames, die zur Aufzeichnung des Rausch-/Referenzprofils verwendet werden |
 | `fixedAmplitudeThreshold` | `0x0049` | uint32 (1000×-Einheit) | **100000** | Nur relevant bei `thresholdMethod = FIXED_AMPLITUDE`: fester Amplituden-Schwellwert |
 | `thresholdSensitivity` | `0x004A` | uint32, 0–1000 (1000×-Einheit) | **500** | Empfindlichkeit des Schwellwertverfahrens (v.a. bei CFAR relevant). Höhere Werte = empfindlicher, aber mehr Fehlalarme |

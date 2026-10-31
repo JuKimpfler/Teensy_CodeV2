@@ -38,14 +38,14 @@ zwei Dateien und `give`/`set`-Funktionen.
 |---|---|---|
 | `BNO` | [BNO055](../BNO055/BNO055.md) | `I2C_BNO` (`Wire`), `0x28` |
 | `ir_ring` | [IR_ring](../IR/README.md) | `I2C_IR` (`Wire`), `0x0A` |
-| `INA219_Main` | [INA219](../INA219/INA219.md) | `Wire1`, `0x40` |
-| `INA219_Motor` | INA219 | `Wire1`, `0x41` |
-| `SRF08_vo/re/hi/li` | [SRF08](../SRF08/SRF08.md) | `I2C_US` (`Wire`), `0xE2/E4/E6/E8` |
-| `SW_EXP` | [TCA9534DW](../TCA9534DW/TCA9534DW.md) | `I2C_SW` (`Wire`), `0x22` |
-| `Motor_EXP` / `Rand_EXP` / `Button_EXP` | TCA9534DW | `Wire1`, `0x20` / `0x21` / `0x23` |
-| `ADC_Motor` | [ADC108S102](../ADC108S102/ADC108S102.md) | `SPI1`, CS 32 |
+| `INA219_Main` | [INA219](../INA219/INA219.md) | `I2C_MAIN` (`Wire1`), `0x40` |
+| `INA219_Motor` | INA219 | `I2C_MAIN` (`Wire1`), `0x41` |
+| `SW_EXP` / `Button_EXP` | [TCA9534DW](../TCA9534DW/TCA9534DW.md) | `I2C_SW` (`Wire`), `0x26` / `0x27` (SwitchBoard IC1 / IC2) |
+| `Motor12_EXP` / `Motor34_EXP` / `Power_EXP` | TCA9534DW | `I2C_MAIN` (`Wire1`), `0x22` / `0x20` / `0x23` (Main IC9 / IC7 / IC8) |
+| `ADC_Motor` | [ADC108S102](../ADC108S102/ADC108S102.md) | `SPI`, CS 30 |
+| `ADC_Line1`…`ADC_Line6` | ADC108S102 | `SPI`, CS über 74HC138 an 31/32/33, Adresse 0…5 |
 | `BTN1`…`BTN5` | [fancyBTN](../fancyBTN/fancyBTN.md) | – |
-| `PDS` | [PowerDebugger](../Debugger/PDS.md) | `UART_DBG` (`Serial3`) |
+| `PDS` | [PowerDebugger](../PDS/PDS.md) | `UART_DBG` (`Serial1`) |
 | `communication` | [commlib](../commlib/commlib.md) | – |
 | `headingControllerA/P` | [ADRC](../Regler/ADRC/README.md) / [PID](../Regler/PID/README.md) | – |
 
@@ -64,8 +64,26 @@ zwei Dateien und `give`/`set`-Funktionen.
 | SRF08 `setJumpThreshold(...)` | `50` cm (alle vier) |
 | `setDebugTimeout(...)` | `5` ms |
 | `setupHeadingController(...)` | `true` → **ADRC** |
-| Expander-Richtung | `Motor_EXP`/`Rand_EXP` = Ausgang, `SW_EXP`/`Button_EXP` = Eingang |
+| Expander-Richtung | `Motor12_EXP`/`Power_EXP` = Ausgang, `Motor34_EXP` = Ausgang bis auf P6/P7, `SW_EXP`/`Button_EXP` = Eingang |
+| Freigaben (`Power_EXP`) | VMOT, VDRIB, Lichtschranke, Linien-LEDs ein; Intercon-3V3 ein (LOW) |
 | fancyBTN-Parameter | `(50, 6, 8, true)` → 100 ms Doppelklick, 3 s Long-Press, 8 ms Entprellung |
+
+### Hardware ein/aus (`SYS_EN_*` in `params.h`)
+
+Jede Platine/jeder Sensor laesst sich per Flag abschalten (`1` = an, Default).
+Abgeschaltet wird weder eingerichtet noch gelesen, die Werte bleiben auf 0.
+Ueberschreibbar auch per `build_flags`, z. B. `-DSYS_EN_RADAR=0`.
+
+| Flag | Betrifft | Abgeschaltet |
+|---|---|---|
+| `SYS_EN_BNO` | BNO055 | Heading bleibt 0 |
+| `SYS_EN_RADAR` | 4x XM125 | spart mehrere Sekunden Start; Position nur aus Odometrie |
+| `SYS_EN_LINE` | 6x Linien-ADC | keine Linie erkannt, `giveADC()` = 0 |
+| `SYS_EN_POWER` | INA219 Akku/Motor | Spannungen/Stroeme = 0 |
+| `SYS_EN_SWITCHBOARD` | SW_EXP, Button_EXP | Schalter/Taster/Start/RCJ = false |
+| `SYS_EN_MOTORS` | Motor12/34_EXP, ADC_Motor | `updateMotors()` tut nichts, PWM bleibt 0 |
+
+`Power_EXP` (Versorgungsfreigaben) wird immer eingerichtet.
 
 ### Heading-Regler
 
@@ -142,7 +160,8 @@ void loop() {
 2. `delay(debugTimeout)` – **blockierende Pause**, Default 5 ms
 3. `readBNO()`, `Radar.update()`, `calculatePosition()` (`readIR()`/`readUS()` sind auskommentiert)
 4. `readExpanders()` (Schalter + Taster)
-5. `PDS.update()` (Telemetrie senden/empfangen)
+5. Akku-/Motorwerte nachführen (gedrosselt auf 10 Hz) und `PDS.update()`
+   (Telemetrie senden/empfangen) – **bedingungslos**, siehe unten
 6. `updateHeadingController()`
 7. `updateMotors()`
 
@@ -189,8 +208,8 @@ Messergebnis — Details und Zeitbedarf siehe
 ## Position aus den Radarwerten
 
 `calculatePosition()` läuft in `readSensors()` direkt nach `Radar.update()` und
-schreibt das Ergebnis nach `Position` (sowie weiterhin nach `feld_x_pos` /
-`feld_y_pos`, die `moveToPoint()` und der PDS lesen).
+schreibt das Ergebnis nach `Position` — dort lesen es `moveToPoint()` und der
+PDS.
 
 ```cpp
 struct PositionData
@@ -198,6 +217,7 @@ struct PositionData
     float X;          // cm, 0 = linke Feldwand
     float Y;          // cm, 0 = Wand hinter dem eigenen Tor
     float Certainty;  // 0 = unbrauchbar ... 1 = plausibles Paar, brandaktuell
+    bool  AtGoal;     // Roboter steht vor einer Toröffnung (Y-Achse verkürzt)
 };
 
 PositionData p = sys.givePosition();
@@ -206,17 +226,18 @@ if (p.Certainty > 0.5f) { /* Position ist belastbar */ }
 
 Je Achse arbeiten zwei **gegenüberliegende** Sensoren zusammen — X aus
 `RadarLi`/`RadarRe`, Y aus `RadarHi`/`RadarVo`. Beide messen dieselbe Strecke
-aus, also muss gelten: *Weg zur einen Wand + Weg zur anderen Wand =
-Feldgröße*. Daran wird das Paar geprüft:
+aus, also muss gelten: *Weg zur einen Fläche + Weg zur anderen Fläche =
+Strecke dazwischen* (`span`, siehe [Tore](#tore) — ohne Tor ist das die volle
+Feldgröße). Daran wird das Paar geprüft:
 
 1. **Einzelprüfung** — der Sensor muss antworten (`isCon`), einen Peak haben
    (`Peaks > 0`) und eine Distanz liefern, die überhaupt ins Feld passt.
-2. **Blindbereich** — misst ein Sensor mehr als `Feldgröße - POS_BLIND_CM`,
+2. **Blindbereich** — misst ein Sensor mehr als `span - POS_BLIND_CM`,
    steht der Roboter dicht an der gegenüberliegenden Wand. Der Sensor dort ist
    näher dran als der Radar-Blindbereich (`RADAR_START_MM` = 20 cm) und kann die
    Wand gar nicht mehr erkennen — sein Wert fliegt raus. Melden **beide** so
    weit, widersprechen sie sich und beide fliegen raus.
-3. **Paarprüfung** — passt die Summe zur Feldgröße, wird gemittelt. Passt sie
+3. **Paarprüfung** — passt die Summe zur Strecke, wird gemittelt. Passt sie
    nicht, verrät die Fehlerrichtung den Schuldigen: Summe zu **klein** → einer
    hat ein Hindernis vor der Wand gesehen (Gegner, Ball), der **längere** Weg
    gewinnt. Summe zu **groß** → einer hat die Wand verpasst (Mehrwegecho), der
@@ -224,6 +245,40 @@ Feldgröße*. Daran wird das Paar geprüft:
 
 Bleibt nichts Brauchbares übrig, bleibt die letzte Position stehen und
 `Certainty` wird `0`.
+
+### Tore
+
+Das Feld ist `POS_FIELD_X_CM` × `POS_FIELD_Y_CM` (182 × 243 cm, Wand zu Wand).
+An **beiden** Enden steht aber mittig ein Tor `POS_GOAL_DEPTH_CM` weit im Feld.
+Steht der Roboter davor, sieht der vordere bzw. hintere Sensor die
+**Torrückwand statt der Feldwand** — die Y-Achse ist dort um die Tortiefe
+kürzer, an beiden Enden zusammen also um `2 × POS_GOAL_DEPTH_CM`:
+
+```
+y = 243  ┌───────┬───────────┬───────┐
+         │       │  Tor 10   │       │   vor dem Tor:  span = 243 - 2*10 = 223
+y = 233  │       └───────────┘       │   sonst:        span = 243
+         │        ← 60 cm →          │
+         │                           │
+y =  10  │       ┌───────────┐       │
+         │       │  Tor 10   │       │
+y =   0  └───────┴───────────┴───────┘
+```
+
+Ob der Sensor Tor oder Wand trifft, sagt allein **X** — deshalb rechnet
+`calculatePosition()` erst die X-Achse (die Seitenwände laufen durch, dort gibt
+es nichts zu korrigieren) und daraus den Tor-Offset für Y.
+
+Die Torkante ist für den Radar kein scharfer Sprung: die Keule ist breiter als
+ein Punkt. Im Band `POS_GOAL_EDGE_CM` (± 12 cm) um die Kante wird deshalb
+linear zwischen beiden Fällen geblendet — der Fehler bleibt damit unter der
+**halben** Tortiefe (max. 5 cm statt 10 cm) — und `Certainty` der Y-Achse fällt
+auf `POS_PLAUS_GOAL_EDGE` (0.5), weil eben nicht feststeht, was der Sensor
+gesehen hat. `PositionData.AtGoal` zeigt, ob die Korrektur greift.
+
+> Ist ein Tor bei euch eine **Nische in der Wand** (Feld dort länger statt
+> kürzer), einfach `POS_GOAL_DEPTH_CM` negativ eintragen — die Rechnung stimmt
+> genauso. `POS_GOAL_DEPTH_CM = 0` schaltet die Torkorrektur komplett ab.
 
 ### Certainty
 
@@ -233,10 +288,13 @@ andere als Position wertlos.
 
 | Plausibilität | Fall |
 |---|---|
-| `POS_PLAUS_PAIR` (1.00) | Summe des Paares trifft die Feldgröße genau; bis `POS_PAIR_TOL_CM` Abweichung linear auf `POS_PLAUS_SINGLE` fallend |
+| `POS_PLAUS_PAIR` (1.00) | Summe des Paares trifft die Strecke genau; bis `POS_PAIR_TOL_CM` Abweichung linear auf `POS_PLAUS_SINGLE` fallend |
 | `POS_PLAUS_SINGLE` (0.60) | nur ein Sensor nutzbar — keine Gegenprobe möglich |
 | `POS_PLAUS_CONFLICT` (0.30) | Paar widerspricht sich, ein Wert wurde geraten |
 | `0` | kein brauchbarer Wert |
+
+Die Y-Achse wird zusätzlich mit `POS_PLAUS_GOAL_EDGE` (0.50) gewichtet, solange
+der Roboter auf der Torkante steht (siehe [Tore](#tore)).
 
 Der Altersfaktor kommt aus `Radar.giveAge(pos)` (Zeitstempel `RadarData.Time`)
 und fällt linear von `1` bei 0 ms auf `0` bei `POS_AGE_MAX_MS` (1000 ms). Bei
@@ -244,7 +302,7 @@ einem Paar zählt der **ältere** der beiden Werte. Ein Sensor, der noch nie
 gemessen hat, liefert ein Alter von `millis()` und damit `Certainty` `0`.
 
 Alle Stellschrauben stehen in `params.h` unter *Positionsbestimmung aus den
-Radarwerten*. Dort sitzt auch `POS_RADAR_OFFSET_CM`: der Abstand vom
+Radarwerten*, *Feldgeometrie* und *Tore*. Dort sitzt auch `POS_RADAR_OFFSET_CM`: der Abstand vom
 Roboter-Mittelpunkt zur Sensorfläche, der auf jede Messung addiert wird, weil
 die Koordinaten ab Mittelpunkt zählen. **Noch nicht ausgemessen (0.0)** —
 solange dort `0` steht, ist die Position um genau diesen Betrag zur Wand hin
@@ -279,9 +337,13 @@ Ablauf: `giveMotorData(ID)` holen → Felder ändern → `setMotorData(...)`
 zurückschreiben. `setMotorData()` ruft direkt `updateMotors()` auf. Eine
 unbekannte ID liefert einen Datensatz mit `ID = 100`.
 
-`updateMotors()` schreibt die PWMs direkt am Teensy, die Richtungs-/Enable-Bits
-gesammelt über `Motor_EXP` und liest anschließend Drehzahl und Strom aller vier
-Antriebsmotoren vom `ADC_Motor`.
+`updateMotors()` schreibt die PWMs (vier Räder + Dribbler) direkt am Teensy und
+die ESCON-Steuerleitungen gesammelt über `Motor12_EXP` (IC9) und `Motor34_EXP`
+(IC7): `Enable` → Freigabe (ESCON DI2), `Dir` → Richtung (DI3, `true` = LOW),
+`Break` → Stopp (DI4, HIGH = Stopp; der Dribbler hat keine Stopp-Leitung).
+Anschließend liest es Drehzahl und Strom der vier Antriebsmotoren vom
+`ADC_Motor`. Welches Rad an welchem ESCON-Modul hängt, steht in
+[`enum.h`](../include/include.md).
 
 ---
 
@@ -334,15 +396,30 @@ Antriebsmotoren vom `ADC_Motor`.
 | `PositionData calculatePosition()` | Feldposition + Certainty aus den Radarwerten, wird von `readSensors()` aufgerufen |
 | `float giveHeadingController()` | Stellgröße −1…+1 |
 
-### Debug
+### Debug (PDS)
 
 | Funktion | Beschreibung |
 |---|---|
-| `void setDBGSys()` | Systemkanäle 21–40 füllen |
-| `void setDBGChannel(uint8_t ch, float v)` | Freie Kanäle **0–20** (`Util.Range` prüft das) |
+| `void setupPDS()` | *privat*, aus `initialize()`. Bindet die Systemwerte an die **festen** Kanäle 0–25 und setzt die Firmware-Version. |
 | `void setDebugTimeout(uint16_t ms)` | Länge des `delay()` in `readSensors()` |
 
-Kanalbelegung: [Channel.md](../Debugger/Channel.md)
+`setupPDS()` benutzt `PDS.bind()`, merkt sich also nur Zeiger – die Werte holt
+die Bibliothek danach selbst mit 100 Hz ab. Im Sketch ist dafür nichts zu tun;
+eigene Werte kommen mit `PDS.plot()` / `PDS.track()` dazu und bekommen
+automatisch Kanäle ab 32 (`PDS_AUTO_CHANNEL_BASE`).
+
+Zwei Dinge sind Absicht und sollten so bleiben:
+
+* **`PDS.update()` läuft in jedem Zyklus**, nicht nur wenn `PDS.linkOk()`.
+  Erst `update()` wertet die RX-Leitung aus. Hinge der Aufruf an `linkOk()`,
+  bliebe die Verbindung nach dem ersten Aussetzer für immer tot. `update()`
+  blockiert nie – die Bibliothek hat dafür ein Zeitbudget je Aufruf.
+* **Akku- und Motorwerte werden auf 10 Hz gedrosselt.** Die INA219 hängen am
+  I2C; vier Abfragen im 100-Hz-Takt würden die Zykluszeit spürbar verlängern,
+  und schneller ändert sich eine Akkuspannung ohnehin nicht.
+
+Kanalbelegung: [docs/PDS_Belegung.md](../../docs/PDS_Belegung.md)
+Einbau der Bibliothek: [lib/PDS/PDS.md](../PDS/PDS.md)
 
 ### Kommunikation
 

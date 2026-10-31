@@ -130,7 +130,7 @@ Beispiel: `result = 0x00190002` → 2 Peaks, keine Flags, Temperatur `0x0019` = 
 | `XM125D_REG_SIGNAL_QUALITY` | `0x0044` | `signalQuality` | 15000 |
 | `XM125D_REG_MAX_PROFILE` | `0x0045` | `maxProfile` | PROFILE5 |
 | `XM125D_REG_THRESHOLD_METHOD` | `0x0046` | `thresholdMethod` | CFAR |
-| `XM125D_REG_PEAK_SORTING` | `0x0047` | `peakSorting` | STRONGEST |
+| `XM125D_REG_PEAK_SORTING` | `0x0047` | `peakSorting` | STRONGEST (FARTHEST/WEAKEST: Firmware-Erweiterung, siehe unten) |
 | `XM125D_REG_NUM_FRAMES_RECORDED_THRESHOLD` | `0x0048` | `numFramesRecordedThreshold` | 100 |
 | `XM125D_REG_FIXED_AMPLITUDE_THRESHOLD` | `0x0049` | `fixedAmplitudeThreshold` | 100000 |
 | `XM125D_REG_THRESHOLD_SENSITIVITY` | `0x004A` | `thresholdSensitivity` | 500 |
@@ -168,9 +168,16 @@ enum XM125DThresholdMethod: uint32_t { XM125D_THRESHOLD_FIXED_AMPLITUDE = 1,
                                        XM125D_THRESHOLD_RECORDED        = 2,
                                        XM125D_THRESHOLD_CFAR            = 3,
                                        XM125D_THRESHOLD_FIXED_STRENGTH  = 4 };
-enum XM125DPeakSorting    : uint32_t { XM125D_SORT_CLOSEST = 1, XM125D_SORT_STRONGEST = 2 };
+enum XM125DPeakSorting    : uint32_t { XM125D_SORT_CLOSEST = 1, XM125D_SORT_STRONGEST = 2,
+                                       XM125D_SORT_FARTHEST = 3, XM125D_SORT_WEAKEST = 4 };
 enum XM125DReflectorShape : uint32_t { XM125D_REFLECTOR_GENERIC = 1, XM125D_REFLECTOR_PLANAR = 2 };
 ```
+
+`FARTHEST`/`WEAKEST` sind eine Erweiterung der (nicht-offiziellen) Sensor-
+Firmware: die Acconeer-RSS-Bibliothek im Modul kennt nur `CLOSEST`/
+`STRONGEST`, die Firmware dreht die bereits sortierte Peak-Liste bei Bedarf
+intern um. Fuer diese Library macht das keinen Unterschied -- den Enum-Wert
+setzen genuegt, die Peaks kommen schon richtig sortiert zurueck.
 
 ### 3.6 Statusbits (Register `0x0003`)
 

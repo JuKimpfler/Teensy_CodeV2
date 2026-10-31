@@ -21,6 +21,8 @@ enum e_bnoSysStatus {
   systemRunningWithoutFusionAlgorithm
 };
 
+#define BNO055_CHIP_ID 0xA0
+
 // Register
 #define REG_CHIP_ID 0x00
 #define REG_ACC_ID 0x01
@@ -115,6 +117,7 @@ public:
 
 private:
   uint8_t calibDataByte[22];
+  inline void writeReg(uint8_t reg, uint8_t value);
   inline int16_t getWord(uint8_t address);
   inline void getWords(uint8_t start_address, int16_t* data, uint8_t numWords);
   uint8_t addr;

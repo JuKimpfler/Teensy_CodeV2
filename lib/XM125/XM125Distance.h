@@ -71,7 +71,12 @@ static constexpr uint16_t XM125D_REG_CLOSE_RANGE_LEAKAGE_CANCEL     = 0x0043; //
 static constexpr uint16_t XM125D_REG_SIGNAL_QUALITY                 = 0x0044; ///< R/W: 1000x-Einheit (Default 15000)
 static constexpr uint16_t XM125D_REG_MAX_PROFILE                    = 0x0045; ///< R/W: PROFILE1..5   (Default PROFILE5)
 static constexpr uint16_t XM125D_REG_THRESHOLD_METHOD               = 0x0046; ///< R/W: siehe ThresholdMethod (Default CFAR)
-static constexpr uint16_t XM125D_REG_PEAK_SORTING                   = 0x0047; ///< R/W: siehe PeakSorting (Default STRONGEST)
+static constexpr uint16_t XM125D_REG_PEAK_SORTING                   = 0x0047; ///< R/W: siehe PeakSorting (Default STRONGEST). FARTHEST/WEAKEST sind
+                                                                                ///< firmwareseitige Erweiterungen: die RSS-Bibliothek im Sensor kennt nur
+                                                                                ///< CLOSEST/STRONGEST, die Firmware dreht die bereits sortierte Peak-Liste
+                                                                                ///< dafuer intern um (siehe distance_reg_peak_sorting_is_reversed() in der
+                                                                                ///< Sensor-Firmware). Fuer diese Library ist das transparent -- einfach den
+                                                                                ///< Enum-Wert setzen, die Peaks kommen bereits richtig sortiert zurueck.
 static constexpr uint16_t XM125D_REG_NUM_FRAMES_RECORDED_THRESHOLD  = 0x0048; ///< R/W: (Default 100)
 static constexpr uint16_t XM125D_REG_FIXED_AMPLITUDE_THRESHOLD      = 0x0049; ///< R/W: 1000x-Einheit (Default 100000)
 static constexpr uint16_t XM125D_REG_THRESHOLD_SENSITIVITY          = 0x004A; ///< R/W: 0..1000, 1000x-Einheit (Default 500)
@@ -118,6 +123,8 @@ enum XM125DThresholdMethod : uint32_t {
 enum XM125DPeakSorting : uint32_t {
     XM125D_SORT_CLOSEST   = 1,
     XM125D_SORT_STRONGEST = 2,
+    XM125D_SORT_FARTHEST  = 3, ///< CLOSEST rueckwaerts   (am weitesten entfernter Peak zuerst)
+    XM125D_SORT_WEAKEST   = 4, ///< STRONGEST rueckwaerts (schwaechster Peak zuerst)
 };
 enum XM125DReflectorShape : uint32_t {
     XM125D_REFLECTOR_GENERIC = 1,
@@ -153,19 +160,19 @@ static constexpr uint32_t XM125D_RESULT_TEMPERATURE_SHIFT    = 16; ///< Bit 16-3
 // ── Werksvorgaben der Konfigurationsregister (lt. Acconeer-Datenblatt) ──────
 // An genau einer Stelle definiert, damit XM125DistanceConfig und die
 // Parameterliste von hardCalibration() nicht auseinanderlaufen koennen.
-static constexpr uint32_t XM125D_DEFAULT_START_MM                      = 250;
+static constexpr uint32_t XM125D_DEFAULT_START_MM                      = 150;
 static constexpr uint32_t XM125D_DEFAULT_END_MM                        = 3000;
 static constexpr uint32_t XM125D_DEFAULT_MAX_STEP_LENGTH               = 0;      ///< 0 = automatisch
-static constexpr bool     XM125D_DEFAULT_CLOSE_RANGE_LEAKAGE_CANCEL    = true;
-static constexpr uint32_t XM125D_DEFAULT_SIGNAL_QUALITY                = 15000;
-static constexpr uint32_t XM125D_DEFAULT_MAX_PROFILE                   = XM125D_PROFILE5;
+static constexpr bool     XM125D_DEFAULT_CLOSE_RANGE_LEAKAGE_CANCEL    = false;
+static constexpr uint32_t XM125D_DEFAULT_SIGNAL_QUALITY                = 35000;
+static constexpr uint32_t XM125D_DEFAULT_MAX_PROFILE                   = XM125D_PROFILE3;
 static constexpr uint32_t XM125D_DEFAULT_THRESHOLD_METHOD              = XM125D_THRESHOLD_CFAR;
-static constexpr uint32_t XM125D_DEFAULT_PEAK_SORTING                  = XM125D_SORT_STRONGEST;
+static constexpr uint32_t XM125D_DEFAULT_PEAK_SORTING                  = XM125D_SORT_FARTHEST;
 static constexpr uint32_t XM125D_DEFAULT_NUM_FRAMES_RECORDED_THRESHOLD = 100;
 static constexpr uint32_t XM125D_DEFAULT_FIXED_AMPLITUDE_THRESHOLD     = 100000;
 static constexpr uint32_t XM125D_DEFAULT_THRESHOLD_SENSITIVITY         = 500;
-static constexpr uint32_t XM125D_DEFAULT_REFLECTOR_SHAPE               = XM125D_REFLECTOR_GENERIC;
-static constexpr uint32_t XM125D_DEFAULT_FIXED_STRENGTH_THRESHOLD      = 0;
+static constexpr uint32_t XM125D_DEFAULT_REFLECTOR_SHAPE               = XM125D_REFLECTOR_PLANAR;
+static constexpr uint32_t XM125D_DEFAULT_FIXED_STRENGTH_THRESHOLD      = -25;
 static constexpr bool     XM125D_DEFAULT_MEASURE_ON_WAKEUP             = false;
 
 // ═════════════════════════════════════════════════════════════════════════════
