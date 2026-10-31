@@ -1,24 +1,52 @@
 #include <Arduino.h>
-#include "commlib.h"
+#include "comProtokoll.h"
+
+DataSync datasync;
+elapsedMillis toogle_timer;
+elapsedMillis toogle_timer2;
 
 void setup() {
     Serial.begin(115200);
+    datasync.begin();
 
-    Serial6.begin(115200);
+    pinMode(9,OUTPUT);
 }
 
+bool toogle;
+
 void loop() {
-    // if(Serial6.available()) {
-    //     char c = Serial6.read();
-    //     Serial.print(c);
-    // }
-    // if(Serial.available()) {
-    //     char c = Serial.read();
-    //     Serial6.print(c);
-    // }
+    datasync.update();
 
-    Serial6.print("t");
-    Serial.print(Serial6.read());
-    delay(100);
+    if( toogle_timer > 2000){
+        if(toogle==true){
+            toogle = false;
+        }
+        else{
+            toogle = true;
+        }
+        toogle_timer = 0;
+        Serial.println("toogle");
+    }
+    
+    if( toogle_timer2 > 2000){
+      Serial.print("bool:");
+      Serial.println(datasync.rc_bool);
+      Serial.print("Connected:");
+      Serial.println(datasync.isConnected());
+      toogle_timer2 = 0;
+    }
 
+    datasync.test_bool = toogle;
+
+    if(datasync.isConnected()){
+        if(datasync.rc_bool){
+            digitalWrite(9,HIGH);
+        }
+        else{
+            digitalWrite(9,LOW);
+        }
+    }
+    else{
+        digitalWrite(9,LOW);
+    }
 }
