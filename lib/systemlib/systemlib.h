@@ -90,6 +90,10 @@ private:
     int16_t IR_Offsets[16] = {9999};
     float INA_filter[6] = {0, 0, 0, 0, 0, 0};
 
+    // Esp Data 
+    PositionData Position;
+    int16_t BNO_OrbitDir=0;
+
     int8_t LineWinkel = 0;
     int8_t LineDepth = 0;
     bool LinePresent = 0;
@@ -124,6 +128,9 @@ private:
     /* -------------- Motor ----------------- */
     void updateMotors(void);
 
+    float feld_x = POS_FIELD_X_CM; ///< Feldbreite [cm], siehe params.h
+    float feld_y = POS_FIELD_Y_CM; ///< Feldlaenge [cm], siehe params.h
+
 public:
 
     MotorData MoDataVL;
@@ -143,7 +150,6 @@ public:
     void readSensors(void);
 
     /* -------------- Calibrate -------------- */
-    void calibBNO(void);
     void writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain);
     void writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16]);
     void calibIR(void);
@@ -191,7 +197,7 @@ public:
     void updateHeadingController(void);
 
     /* -------------- give -------------- */
-    float giveOrbitDir(void) const { return BNO_OrbitDir; };            // Orbital Ausrichtung
+    int16_t giveOrbitDir();
     uint16_t giveCycleTime(void) const { return cycleTime; };           // Zyklische Messung der Laufzeit in ms
     uint16_t giveCycleTime_us(void) const { return cycleTime_us; };     // Zyklische Messung der Laufzeit in us
     float giveMainVoltage(void);

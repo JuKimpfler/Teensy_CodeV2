@@ -10,11 +10,17 @@ public:
   void update();
   bool isConnected();
 
-  bool test_bool;
-  int32_t test_int;
-  float test_float;
+  bool Position_AtGoal;
+  bool Position_YVal;
+  bool Position_XVal;
+  float Position_Cert;
+  float PositionY;
+  float PositionX;
 
-  bool rc_bool;
-  int32_t rc_int;
-  float rc_float;
+  bool BNO_Calib;
+  int32_t BNO_Heading;
+  float Motor_SpeedVL;
+  float Motor_SpeedVR;
+  float Motor_SpeedHL;
+  float Motor_SpeedHR;
 };

@@ -1,4 +1,5 @@
 #include <systemlib.h>
+#include <comProtokoll.h>
 
 // A*-Pathfinder (lib/pathfinder). Fehlt die Bibliothek, faehrt moveToPointAvoid() geradeaus.
 #ifndef PF_AVAILABLE // kann auch per build_flags gesetzt werden: -DPF_AVAILABLE=1 / 0
@@ -14,8 +15,6 @@
 
 /* -------------- Instanzen -------------- */
 
-BNO055 BNO(BNO_ADDRESS, &I2C_BNO);
-// PowerDebugger PDS;
 
 elapsedMillis cycleTimer;
 elapsedMillis powerTimer;   // drosselt die INA219-Abfrage fuer die PDS-Kanaele
@@ -23,6 +22,7 @@ elapsedMicros cycleTimer_us;
 elapsedMillis lastvaliddata_Radar_X;
 elapsedMillis lastvaliddata_Radar_Y;
 
+DataSync datasync;
 
 I2C_bus i2cIR(I2C_IR);
 Device_handle ir_ring_handle = {i2cIR, I2C_target{IR_ADDRESS}};
@@ -79,8 +79,8 @@ void systemlib::initialize()
 
     Wire1.begin();
     Wire1.setClock(100000);
-    Wire.begin();
-    Wire.setClock(100000);
+
+    datasync.begin();
 
     // Ausgangsregister VOR der Richtung setzen: nach dem Einschalten steht es
     // auf 0xFF, ein setup(false) als erstes zoege alle ESCON-Freigaben auf HIGH.
@@ -109,11 +109,6 @@ void systemlib::initialize()
     INA219_Main.setMaxCurrentShunt(15);
     INA219_Motor.setMaxCurrentShunt(15);
     #endif
-
-    #if SYS_EN_BNO
-    BNO.init();
-    #endif
-    calibBNO();
 
     #if DPDS_Game == D_Mode_Test
     PDS.init();
@@ -148,9 +143,10 @@ void systemlib::initialize()
     #endif
 
     setupHeadingController();
+}
 
-    Position.X = 90;
-    Position.Y = 120;
+int16_t systemlib::giveOrbitDir(){
+    return BNO_OrbitDir;
 }
 
 void systemlib::readSensors(void)
@@ -162,26 +158,27 @@ void systemlib::readSensors(void)
     cycleTimer = 0;
     cycleTimer_us = 0;
 
-    readBNO();
-    #if SYS_EN_RADAR
-    Radar.update();
-    #endif
-
-
-    // Motordrehzahlen -> Feldgeschwindigkeit. Heading als Mittel ueber den Zyklus,
-    // damit die Drehung waehrend des Zyklus nicht als Richtungsfehler eingeht.
-    float motorRpm[4] = { MoDataVL.Speed_real, MoDataVR.Speed_real, MoDataHL.Speed_real, MoDataHR.Speed_real };
-    static float lastHeadingOdo = giveOrbitDir();
-    const float hNow = giveOrbitDir();
-    const float hMid = Util.AMap(lastHeadingOdo + 0.5f * Util.AMap(hNow - lastHeadingOdo));
-    lastHeadingOdo = hNow;
-    RobotVelocity vel = calculateFieldVelocityFromMotorRpm(motorRpm, hMid);
-    calculatePosition(millis(), vel.vx_field, vel.vy_field);
     // readIR();
     updateArray(); 
     updateLine();
 
     readExpanders();
+
+    datasync.update();
+
+    Position.X = datasync.PositionX;
+    Position.Y = datasync.PositionY;
+    Position.XValid = datasync.Position_XVal;
+    Position.YValid = datasync.Position_YVal;
+    Position.AtGoal = datasync.Position_AtGoal;
+    Position.Certainty = datasync.Position_Cert;
+
+    datasync.Motor_SpeedVL = MoDataVL.Speed_real;
+    datasync.Motor_SpeedVR = MoDataVR.Speed_real;
+    datasync.Motor_SpeedHL = MoDataHL.Speed_real;
+    datasync.Motor_SpeedHR = MoDataHR.Speed_real;
+
+    BNO_OrbitDir = datasync.BNO_Heading;
 
     // Werte fuer die PDS-Kanaele nachfuehren. Die INA219 haengen am I2C und
     // kosten je Abfrage spuerbar Zeit -- Akkuspannung aendert sich nicht im
@@ -244,11 +241,6 @@ void systemlib::setupPDS(void)
     PDS.bind("Motor_V",       &Motor_V,      3,  "V");
     PDS.bind("Motor_I",       &Motor_I,      4,  "mA");
 
-    /* ---- Lage ---------------------------------------------------------- */
-    PDS.bind("Heading",       &BNO_eulerZ,       5, "°");
-    PDS.bind("Orbit_Dir",     &BNO_OrbitDir,     6, "°");
-    PDS.bind("BNO_Nullpunkt", &BNO_calibration,  7, "°");
-
     /* ---- Ball (IR) ----------------------------------------------------- */
     // readIR() ist in readSensors() derzeit auskommentiert -- die Kanaele
     // stehen aber schon bereit und zeigen bis dahin 0.
@@ -259,20 +251,6 @@ void systemlib::setupPDS(void)
     PDS.bind("Zykluszeit",    &cycleTime,    9,  "ms");
     PDS.bind("Zykluszeit_us", &cycleTime_us, 10, "us");
 
-    /* ---- Radar --------------------------------------------------------- */
-    // Dist ist ein Rohwert ("Counts"), NICHT Millimeter -- siehe RadarArray.h.
-    PDS.bind("Radar_Vo",      &Radar[RadarVo].Strenght, 12, "Counts");
-    PDS.bind("Radar_Li",      &Radar[RadarLi].Strenght, 13, "Counts");
-    PDS.bind("Radar_Hi",      &Radar[RadarHi].Strenght, 14, "Counts");
-    PDS.bind("Radar_Re",      &Radar[RadarRe].Strenght, 15, "Counts");
-
-    /* ---- Feldposition -------------------------------------------------- */
-    // Kanal 16/17 sind die Koordinaten, auf die das "bodies"-Overlay der GUI
-    // zeigt (Feld-Draufsicht in channel_config.h).
-    PDS.bind("Pos_X",         &Position.X,         16, "cm");
-    PDS.bind("Pos_Y",         &Position.Y,         17, "cm");
-    PDS.bind("Pos_certanty_x",     &Position.XValid, 18);
-    PDS.bind("Pos_certanty_y",     &Position.YValid, 19);
 
     /* ---- Motoren ------------------------------------------------------- */
     PDS.bind("Motor_VL",      &MoDataVL.Speed_real, 20, "%");
@@ -568,6 +546,8 @@ static void setEsconBits(uint16_t &out, const MotorData &m, uint8_t enBit, uint8
     if (!m.Dir)   out |= (1u << dirBit);
 }
 
+int motorSampleUs = 0; 
+
 void systemlib::updateMotors(void)
 {
     // Ohne Motorplatine bleiben PWM (in initialize() auf 0 gesetzt) und
@@ -827,11 +807,11 @@ void systemlib::updateHeadingController()
 
     if (_useADRC)
     {
-        ADRC_Out = headingControllerA->update(_OrbitHeading, DEG_TO_RAD * giveOrbitDir(), dt);
+        ADRC_Out = headingControllerA->update(_OrbitHeading, DEG_TO_RAD * BNO_OrbitDir, dt);
     }
     else
     {
-        PID_Out = headingControllerP->update(_OrbitHeading, DEG_TO_RAD * giveOrbitDir(), dt);
+        PID_Out = headingControllerP->update(_OrbitHeading, DEG_TO_RAD * BNO_OrbitDir, dt);
     }
 }
 
@@ -1273,7 +1253,7 @@ void systemlib::updateArray(void)
     }
 
     // ---- Punkt erreicht? ----------------------------------------------------
-    const float headingErr = fabsf(Util.AMap(p.Andrehwinkel - giveOrbitDir()));
+    const float headingErr = fabsf(Util.AMap(p.Andrehwinkel - BNO_OrbitDir));
     const bool  reached    = giveMoveArrived() && (ARRAY_HEADING_TOL_DEG <= 0.0f || headingErr <= ARRAY_HEADING_TOL_DEG);
 
     if (!reached)
@@ -1728,7 +1708,7 @@ void systemlib::setOmniWheelVek(float vx, float vy, float omega) {
 }
 
 void systemlib::setOmniWheelDir(float directionDeg, uint8_t speedPercent, float omega) {
-    directionDeg = directionDeg-giveOrbitDir();
+    directionDeg = directionDeg-BNO_OrbitDir;
 
     directionDeg = Util.AMap(directionDeg);
 
