@@ -9,6 +9,9 @@
  *
  * ID und Typ muessen auf beiden Seiten gleich sein, die Richtung ist gespiegelt.
  * Beide Seiten senden alle 500 ms einen Heartbeat -> connected() zeigt die Verbindung.
+ * Wiederanlauf: Sobald die Gegenseite (neu) auftaucht, werden alle eigenen Werte erneut
+ * gesendet. Zusaetzlich werden SEND-Variablen alle REFRESH_MS wiederholt, damit verlorene
+ * Pakete (Start, Stoerungen) sich selbst heilen, auch wenn sich der Wert nicht aendert.
  *
  * Paketformat (8 Byte): [0xAA][ID][TYP][4 Byte Wert LE][CRC8 ueber ID..Wert]
  */
@@ -24,6 +27,7 @@ public:
   static const uint8_t  MAX_VARS   = 32;
   static const uint32_t HEARTBEAT_MS = 500;
   static const uint32_t TIMEOUT_MS   = 1500;
+  static const uint32_t REFRESH_MS   = 1000;   // 0 = Refresh aus (setRefreshInterval)
 
   SerialSync(Stream &port, bool isMaster) : _s(port), _master(isMaster) {}
 
@@ -34,23 +38,47 @@ public:
   // Serial-Port muss vorher mit begin() initialisiert sein
   void begin() {
     for (uint8_t i = 0; i < _count; i++) _vars[i].shadow = readRaw(_vars[i]);
-    sendOwned();
-    sendPacket(0, T_REQUEST, 0);
-    _lastHb = millis();
+    _started = false;
+    tryStart();
   }
 
   // im loop() moeglichst oft aufrufen
   void update() {
     receive();
+    if (!_started) {
+      tryStart();
+      if (!_started) return;          // Startverzoegerung laeuft: nichts senden
+    }
     sendChanges();
     uint32_t now = millis();
     if (now - _lastHb >= HEARTBEAT_MS) {
       _lastHb = now;
       sendPacket(0, T_HEARTBEAT, 0);
     }
+    const uint32_t interval = (_burstMs && (now - _startedAt) < _burstMs) ? 100 : _refreshMs;
+    if (interval && now - _lastRefresh >= interval) {
+      _lastRefresh = now;
+      refreshSend();
+    }
   }
 
-  // true, solange in den letzten TIMEOUT_MS ein gueltiges Paket der Gegenseite kam
+  void setRefreshInterval(uint32_t ms) { _refreshMs = ms; }
+
+  // Sende-Start verzoegern: Es wird NICHTS gesendet, bis millis() >= ms (Zeit seit Prozessorstart,
+  // die Dauer von setup() zaehlt also mit). Empfangen laeuft normal. Danach: alle eigenen Werte + Request.
+  // Vor begin() aufrufen. 0 = sofort (Standard).
+  void setStartupDelay(uint32_t ms) { _startDelayMs = ms; }
+
+  // Nach dem Start fuer 'ms' Millisekunden alle 100 ms alle SEND-Werte wiederholen (Start entzerren).
+  void setStartupBurst(uint32_t ms) { _burstMs = ms; }
+
+  bool started() const { return _started; }
+
+  // Diagnose: kommen Bytes an? Sind die Pakete gueltig?
+  uint32_t rxBytes() const { return _rxBytes; }   // alle empfangenen Bytes
+  uint32_t rxOk()    const { return _rxOk; }      // Pakete mit richtiger Pruefsumme
+  uint32_t rxBad()   const { return _rxBad; }     // Pakete mit falscher Pruefsumme
+
   bool connected() const { return _gotRx && (millis() - _lastRx) < TIMEOUT_MS; }
 
   void sendAll() { sendOwned(); }
@@ -74,7 +102,11 @@ private:
   uint8_t  _count = 0;
   uint8_t  _buf[PKT];
   uint8_t  _n = 0;
-  uint32_t _lastHb = 0, _lastRx = 0;
+  uint32_t _lastHb = 0, _lastRx = 0, _lastRefresh = 0;
+  uint32_t _refreshMs = REFRESH_MS;
+  uint32_t _rxBytes = 0, _rxOk = 0, _rxBad = 0;
+  uint32_t _startDelayMs = 0, _burstMs = 0, _startedAt = 0;
+  bool     _started = false;
   bool     _gotRx = false;
 
   bool reg(uint8_t id, uint8_t type, void *ptr, SyncDir dir, float thr) {
@@ -118,7 +150,17 @@ private:
   bool mayWrite(const Var &v) const { return v.dir != SYNC_RECEIVE; }
   bool isOwned(const Var &v) const  { return v.dir == SYNC_SEND || (v.dir == SYNC_BOTH && _master); }
 
+  void tryStart() {
+    if (_started || millis() < _startDelayMs) return;
+    _started   = true;
+    _startedAt = millis();
+    sendOwned();
+    sendPacket(0, T_REQUEST, 0);
+    _lastHb = _lastRefresh = _startedAt;
+  }
+
   void sendPacket(uint8_t id, uint8_t type, uint32_t raw) {
+    if (!_started) return;            // waehrend der Startverzoegerung bleibt die Leitung still
     uint8_t p[PKT];
     p[0] = SYNC_BYTE; p[1] = id; p[2] = type;
     memcpy(&p[3], &raw, 4);
@@ -129,6 +171,16 @@ private:
   void sendOwned() {
     for (uint8_t i = 0; i < _count; i++) {
       if (!isOwned(_vars[i])) continue;
+      _vars[i].shadow = readRaw(_vars[i]);
+      sendPacket(_vars[i].id, _vars[i].type, _vars[i].shadow);
+    }
+  }
+
+  // Nur SEND-Variablen wiederholen (BOTH nicht, sonst koennte ein Refresh eine
+  // gerade geaenderte Variable der Gegenseite ueberschreiben).
+  void refreshSend() {
+    for (uint8_t i = 0; i < _count; i++) {
+      if (_vars[i].dir != SYNC_SEND) continue;
       _vars[i].shadow = readRaw(_vars[i]);
       sendPacket(_vars[i].id, _vars[i].type, _vars[i].shadow);
     }
@@ -147,10 +199,13 @@ private:
 
   void handlePacket(const uint8_t *p) {
     uint8_t id = p[1], type = p[2];
+    const bool wasConnected = connected();
     _lastRx = millis();
     _gotRx  = true;
-    if (type == T_HEARTBEAT) return;
-    if (type == T_REQUEST)   { sendOwned(); return; }
+    _rxOk++;
+    // Anfrage oder Gegenseite taucht (wieder) auf -> alle eigenen Werte (nochmal) senden
+    if (type == T_REQUEST || !wasConnected) sendOwned();
+    if (type == T_HEARTBEAT || type == T_REQUEST) return;
     uint32_t raw;
     memcpy(&raw, &p[3], 4);
     for (uint8_t i = 0; i < _count; i++) {
@@ -164,6 +219,7 @@ private:
   void receive() {
     while (_s.available()) {
       uint8_t b = _s.read();
+      _rxBytes++;
       if (_n == 0 && b != SYNC_BYTE) continue;
       _buf[_n++] = b;
       if (_n == PKT) {
@@ -171,6 +227,7 @@ private:
           handlePacket(_buf);
           _n = 0;
         } else {
+          _rxBad++;
           uint8_t k = 1;
           while (k < PKT && _buf[k] != SYNC_BYTE) k++;
           memmove(_buf, _buf + k, PKT - k);

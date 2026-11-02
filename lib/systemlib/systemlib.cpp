@@ -80,8 +80,6 @@ void systemlib::initialize()
     Wire1.begin();
     Wire1.setClock(100000);
 
-    datasync.begin();
-
     // Ausgangsregister VOR der Richtung setzen: nach dem Einschalten steht es
     // auf 0xFF, ein setup(false) als erstes zoege alle ESCON-Freigaben auf HIGH.
     #if SYS_EN_MOTORS
@@ -143,6 +141,8 @@ void systemlib::initialize()
     #endif
 
     setupHeadingController();
+
+    datasync.begin();
 }
 
 int16_t systemlib::giveOrbitDir(){

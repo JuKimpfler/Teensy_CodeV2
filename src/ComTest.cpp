@@ -13,7 +13,7 @@ void setup() {
 void loop() {
     sys.readSensors();
 
-    if(Debug_tim > 1000){
+    if(Debug_tim > 300){
         Serial.print("Orbit: ");
         Serial.println(sys.giveOrbitDir());
         Debug_tim = 0;
