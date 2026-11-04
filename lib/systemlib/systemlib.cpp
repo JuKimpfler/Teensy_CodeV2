@@ -158,6 +158,8 @@ void systemlib::readSensors(void)
     cycleTimer = 0;
     cycleTimer_us = 0;
 
+    radar_test = datasync.radar_test;
+
     // readIR();
     updateArray(); 
     updateLine();

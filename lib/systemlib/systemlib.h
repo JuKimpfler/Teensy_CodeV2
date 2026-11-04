@@ -139,6 +139,8 @@ public:
     MotorData MoDataHR;
     MotorData MoDataDR;
 
+    float radar_test;
+
     ADRCConfig cfgA;
     PIDConfig cfgP;
 

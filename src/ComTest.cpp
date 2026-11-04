@@ -13,9 +13,9 @@ void setup() {
 void loop() {
     sys.readSensors();
 
-    if(Debug_tim > 300){
-        Serial.print("Orbit: ");
-        Serial.println(sys.giveOrbitDir());
+    if(Debug_tim > 100){
+        Serial.print("Radar: ");
+        Serial.println(sys.radar_test);
         Debug_tim = 0;
     }
 }
