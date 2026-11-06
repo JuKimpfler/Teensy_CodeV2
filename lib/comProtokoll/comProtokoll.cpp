@@ -33,7 +33,6 @@ void DataSync::begin() {
   serialLink.addFloat (10, Motor_SpeedVR,  SYNC_SEND, 0.5f);
   serialLink.addFloat (11, Motor_SpeedHL,  SYNC_SEND, 0.5f);
   serialLink.addFloat (12, Motor_SpeedHR,  SYNC_SEND, 0.5f);
-  serialLink.addFloat (13, radar_test,SYNC_RECEIVE);
   serialLink.begin();
 }
 

@@ -16,12 +16,6 @@
 /* -------------- Instanzen -------------- */
 
 
-elapsedMillis cycleTimer;
-elapsedMillis powerTimer;   // drosselt die INA219-Abfrage fuer die PDS-Kanaele
-elapsedMicros cycleTimer_us;
-elapsedMillis lastvaliddata_Radar_X;
-elapsedMillis lastvaliddata_Radar_Y;
-
 DataSync datasync;
 
 I2C_bus i2cIR(I2C_IR);
@@ -152,11 +146,11 @@ int16_t systemlib::giveOrbitDir(){
 void systemlib::readSensors(void)
 {
     // Zyklische Messung der Laufzeit in ms (read -> read)
-    cycleTime = cycleTimer;
-    cycleTime_us = cycleTimer_us;
+    cycleTime = cycle;
+    cycleTime_us = cycle_us;
     delay(debugTimeout);
-    cycleTimer = 0;
-    cycleTimer_us = 0;
+    cycle = 0;
+    cycle_us = 0;
 
     radar_test = datasync.radar_test;
 
@@ -186,9 +180,9 @@ void systemlib::readSensors(void)
     // kosten je Abfrage spuerbar Zeit -- Akkuspannung aendert sich nicht im
     // 100-Hz-Takt, 10 Hz reichen voellig.
     uptime_s = millis() / 1000.0f;
-    if (powerTimer >= 100)
+    if (power >= 100)
     {
-        powerTimer = 0;
+        power = 0;
         Akku_V = giveMainVoltage();
         Akku_I = giveMainCurrent();
         Motor_V = giveMotorVoltage();
@@ -201,6 +195,10 @@ void systemlib::readSensors(void)
 
     updateHeadingController();
     updateMotors();
+
+    if((Timer.BNOCalib > 200)){
+        datasync.calibBNO = false;
+    }
 }
 
 /* -------------- PDS (Power Debug System) -------------- */
@@ -271,6 +269,10 @@ void systemlib::setupPDS(void)
     // 26..31 bleiben frei fuer weitere Systemwerte.
 
     #endif // Game_mode
+}
+
+int16_t systemlib::giveOrbitDir(){
+    return BNO_OrbitDir;
 }
 
 /* -------------- ADC/Line -------------- */
@@ -362,7 +364,7 @@ void systemlib::updateLine(){
         line_touching=false;
     }
 
-    LineDepth = line_summe;
+    LineDepth = line_depth;
     LineWinkel = line_Angle;
     LinePresent = line_touching;
 }
@@ -410,6 +412,12 @@ void systemlib::calibIR(void)
     ir_ring.write_offsets(IR_Offsets);
     ir_ring.write_gains(IR_Gains);
 }
+
+void systemlib::calibBNO(void){
+    datasync.BNO_Calib = true;
+    Timer.BNOCalib=0;
+}
+
 
 /* -------------- Aktor --------------*/
 

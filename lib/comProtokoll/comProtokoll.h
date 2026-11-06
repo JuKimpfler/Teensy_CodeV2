@@ -30,6 +30,4 @@ public:
   float Motor_SpeedVR;
   float Motor_SpeedHL;
   float Motor_SpeedHR;
-
-  float radar_test;
 };
