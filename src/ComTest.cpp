@@ -6,7 +6,7 @@ systemlib sys;
 elapsedMillis Debug_tim;
 
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(250000);
     sys.initialize();
 }
 
@@ -14,8 +14,8 @@ void loop() {
     sys.readSensors();
 
     if(Debug_tim > 100){
-        Serial.print("Radar: ");
-        Serial.println(sys.radar_test);
+        Serial.print("cycle: ");
+        Serial.println(sys.giveCycleTime_us());
         Debug_tim = 0;
     }
 }
