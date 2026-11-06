@@ -6,7 +6,6 @@
 #include <Utils.h>
 
 #include <INA219.h>
-#include <SRF08.h>
 #include <ADC108S102.h>
 #include <TCA9534DW.h>
 #include <ir_ring.h>
@@ -139,8 +138,6 @@ public:
     MotorData MoDataHR;
     MotorData MoDataDR;
 
-    float radar_test;
-
     ADRCConfig cfgA;
     PIDConfig cfgP;
 
@@ -155,6 +152,8 @@ public:
     void writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain);
     void writeIRCalibration(const int16_t (&offsets)[16], const uint16_t (&gains)[16]);
     void calibIR(void);
+    void calibBNO(void);
+
     /* -------------- Aktors -------------- */
     void setMotorData(MotorData Data);
     MotorData giveMotorData(uint8_t ID);
