@@ -1,5 +1,6 @@
 #include <systemlib.h>
 #include <comProtokoll.h>
+#include <Cam.h>
 
 // A*-Pathfinder (lib/pathfinder). Fehlt die Bibliothek, faehrt moveToPointAvoid() geradeaus.
 #ifndef PF_AVAILABLE // kann auch per build_flags gesetzt werden: -DPF_AVAILABLE=1 / 0
@@ -17,6 +18,7 @@
 
 
 DataSync datasync;
+Timer timer;
 
 I2C_bus i2cIR(I2C_IR);
 Device_handle ir_ring_handle = {i2cIR, I2C_target{IR_ADDRESS}};
@@ -53,6 +55,9 @@ fancyBTN BTN2(50, 4, 8, false);
 fancyBTN BTN3(50, 4, 8, false);
 fancyBTN BTN4(50, 4, 8, false);
 fancyBTN BTN5(50, 4, 8, false);
+
+CamC Cam1;
+CamC Cam2;
 
 /* -------------- System Worker -------------- */
 
@@ -113,10 +118,6 @@ void systemlib::initialize()
     MoDataHR.ID = MotorHR_ID;
     MoDataDR.ID = MotorDR_ID;
 
-    #if SYS_EN_RADAR
-    Radar.begin(I2C_RADAR); // richtet alle Sensoren ein und startet die erste Messrunde
-    #endif
-
     //ir_ring.read_gains(IR_Gains);
     //ir_ring.read_offsets(IR_Offsets);
 
@@ -137,6 +138,9 @@ void systemlib::initialize()
     setupHeadingController();
 
     datasync.begin();
+
+    Cam1.init(UART_CAM1);
+    Cam2.init(UART_CAM2);
 }
 
 int16_t systemlib::giveOrbitDir(){
@@ -146,15 +150,16 @@ int16_t systemlib::giveOrbitDir(){
 void systemlib::readSensors(void)
 {
     // Zyklische Messung der Laufzeit in ms (read -> read)
-    cycleTime = cycle;
-    cycleTime_us = cycle_us;
+    cycleTime = timer.cycle;
+    cycleTime_us = timer.cycle_us;
     delay(debugTimeout);
-    cycle = 0;
-    cycle_us = 0;
+    timer.cycle = 0;
+    timer.cycle_us = 0;
 
-    radar_test = datasync.radar_test;
+    Cam1.Update(BNO_OrbitDir);
+    Cam2.Update(BNO_OrbitDir);
 
-    // readIR();
+    readIR();
     updateArray(); 
     updateLine();
 
@@ -180,9 +185,9 @@ void systemlib::readSensors(void)
     // kosten je Abfrage spuerbar Zeit -- Akkuspannung aendert sich nicht im
     // 100-Hz-Takt, 10 Hz reichen voellig.
     uptime_s = millis() / 1000.0f;
-    if (power >= 100)
+    if (timer.power >= 100)
     {
-        power = 0;
+        timer.power = 0;
         Akku_V = giveMainVoltage();
         Akku_I = giveMainCurrent();
         Motor_V = giveMotorVoltage();
@@ -196,9 +201,13 @@ void systemlib::readSensors(void)
     updateHeadingController();
     updateMotors();
 
-    if((Timer.BNOCalib > 200)){
-        datasync.calibBNO = false;
+    if((timer.BNOCalib > 200)){
+        datasync.BNO_Calib = false;
     }
+}
+
+float systemlib::giveCamAngle(){
+    return Cam1.give_Angle();
 }
 
 /* -------------- PDS (Power Debug System) -------------- */
@@ -269,10 +278,6 @@ void systemlib::setupPDS(void)
     // 26..31 bleiben frei fuer weitere Systemwerte.
 
     #endif // Game_mode
-}
-
-int16_t systemlib::giveOrbitDir(){
-    return BNO_OrbitDir;
 }
 
 /* -------------- ADC/Line -------------- */
@@ -364,7 +369,7 @@ void systemlib::updateLine(){
         line_touching=false;
     }
 
-    LineDepth = line_depth;
+    LineDepth = line_array[0];
     LineWinkel = line_Angle;
     LinePresent = line_touching;
 }
@@ -415,7 +420,7 @@ void systemlib::calibIR(void)
 
 void systemlib::calibBNO(void){
     datasync.BNO_Calib = true;
-    Timer.BNOCalib=0;
+    timer.BNOCalib=0;
 }
 
 

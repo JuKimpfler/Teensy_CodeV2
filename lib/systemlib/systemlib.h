@@ -94,7 +94,7 @@ private:
     int16_t BNO_OrbitDir=0;
 
     int8_t LineWinkel = 0;
-    int8_t LineDepth = 0;
+    int16_t LineDepth = 0;
     bool LinePresent = 0;
 
     bool SWI[5] = {false};
@@ -223,8 +223,9 @@ public:
     bool giveStart(void);
     uint16_t giveADC(uint8_t Port, uint8_t Pin);
     int8_t giveLineAngle() { return LineWinkel; }
-    int8_t giveLineDepth() { return LineDepth; }
+    int16_t giveLineDepth() { return LineDepth; }
     bool giveLinePresent() { return LinePresent; }
+    float giveCamAngle();
 
     /* -------------- set -------------- */
     void setDebugTimeout(uint16_t timeout_ms) { debugTimeout = timeout_ms; }

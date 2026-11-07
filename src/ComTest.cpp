@@ -3,6 +3,7 @@
 #include "systemlib.h"
 
 systemlib sys;
+elapsedMillis debug;
 
 void setup() {
     Serial.begin(115200);
@@ -12,9 +13,17 @@ void setup() {
 void loop() {
     sys.readSensors();
 
-    if(Timer.debug > 100){
-        //Serial.print("Radar: ");
-        //Serial.println(sys.radar_test);
-        Timer.debug
+    if(debug > 100){
+        Serial.print("IR: ");
+        Serial.println(sys.giveBallAngle());
+        Serial.print("Line: ");
+        Serial.println(sys.giveLineDepth());
+        Serial.print("BNO: ");
+        Serial.println(sys.giveOrbitDir());
+        Serial.print("Start: ");
+        Serial.println(sys.giveStart());
+        Serial.print("Cam1: ");
+        Serial.println(sys.giveCamAngle());
+        debug  = 0;
     }
 }

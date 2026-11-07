@@ -2,14 +2,14 @@
 #include <Arduino.h>
 #include "elapsedMillis.h"
 
-static class Timer{
+class Timer{
     public:
         elapsedMillis cycle;
         elapsedMillis power;   // drosselt die INA219-Abfrage fuer die PDS-Kanaele
         elapsedMicros cycle_us;
         elapsedMillis BNOCalib;
         elapsedMillis debug;
-}
+};
 
 class Utilslib
 {

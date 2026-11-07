@@ -33,7 +33,7 @@ static constexpr float POS_FIELD_Y_CM = 243.0f; ///< Laenge: Wand am eigenen Tor
 // Platinen oder zum Eingrenzen, wer die Zykluszeit/den Start ausbremst.
 // Ueberschreibbar per build_flags, z. B. -DSYS_EN_RADAR=0
 #ifndef SYS_EN_LINE
-#define SYS_EN_LINE 0        // 6x ADC108S102 der Linienplatinen
+#define SYS_EN_LINE 1        // 6x ADC108S102 der Linienplatinen
 #endif
 #ifndef SYS_EN_POWER
 #define SYS_EN_POWER 1       // INA219 Akku/Motor (Spannung, Strom)

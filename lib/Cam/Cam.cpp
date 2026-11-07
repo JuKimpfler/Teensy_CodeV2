@@ -1,5 +1,4 @@
 #include "Cam.h"
-#include "BNO055.h"
 #include <math.h>
 
 static float wrap180f(float a) {
