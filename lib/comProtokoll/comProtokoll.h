@@ -1,6 +1,6 @@
 #pragma once
 #include <Arduino.h>
-#include "SerialSync.h"   // Dateiname exakt so schreiben (Gross-/Kleinschreibung, Linux/CI)
+#include "Serialsync.h"   // Dateiname exakt so schreiben (Gross-/Kleinschreibung, Linux/CI)
 
 // Gleiche Schnittstelle auf ESP32 und Teensy.
 // Die Implementierung liegt je Geraet in einer eigenen .cpp
