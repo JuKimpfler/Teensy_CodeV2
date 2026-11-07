@@ -5,6 +5,8 @@
 systemlib sys;
 bool identity = false;
 
+int role = 0; // 0 = not in game
+
 void setup()
 {
   // initialize() startet PDS mit und bindet die Systemwerte auf die festen
@@ -29,10 +31,14 @@ void loop()
   // if start switch
   if (sys.giveStart()) // Game Loop
   {
+    sys.enableVMOT();
+    
 
   }
   else if (sys.giveExpStartSwitch()) // gestoppt aber homing etc. erlaubt
   {
+    sys.enableVMOT();
+
     if (buttons[0] == fancy_CLICKED) // move to point
     {
       PDS.event("Zielpunkt anfahren");
@@ -43,7 +49,7 @@ void loop()
     }
 
     if (buttons[0] == fancy_DOUBLE_CLICK)
-      ; // ir Calibration
+      sys.calibIR(); // ir Calibration
 
     if (buttons[0] == fancy_LONG_PRESS)
       ; // line Calibration
@@ -56,6 +62,7 @@ void loop()
   }
   else // Motor aus
   {
-    sys.moveDir(0, 0, 0); // stop
+    sys.disableVMOT();
+    sys.moveDir(0, 0, 0);
   }
 }
