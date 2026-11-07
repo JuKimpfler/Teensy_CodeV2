@@ -32,12 +32,13 @@ void loop()
   if (sys.giveStart()) // Game Loop
   {
     sys.enableVMOT();
-    
+    sys.enableVDRIB();
 
   }
   else if (sys.giveExpStartSwitch()) // gestoppt aber homing etc. erlaubt
   {
     sys.enableVMOT();
+    sys.enableVDRIB();
 
     if (buttons[0] == fancy_CLICKED) // move to point
     {
@@ -63,6 +64,7 @@ void loop()
   else // Motor aus
   {
     sys.disableVMOT();
+    sys.disableVDRIB();
     sys.moveDir(0, 0, 0);
   }
 }
