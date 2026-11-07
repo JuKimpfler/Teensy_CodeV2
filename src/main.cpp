@@ -3,9 +3,6 @@
 #include <systemlib.h>
 
 systemlib sys;
-
-RobotDataCom IMAS2;
-
 bool identity = false;
 
 void setup()
@@ -32,6 +29,7 @@ void loop()
   // if start switch
   if (sys.giveStart()) // Game Loop
   {
+
   }
   else if (sys.giveExpStartSwitch()) // gestoppt aber homing etc. erlaubt
   {
@@ -58,6 +56,6 @@ void loop()
   }
   else // Motor aus
   {
-    sys.moveDir(0, 0, 0); // Motoren aus
+    sys.moveDir(0, 0, 0); // stop
   }
 }
