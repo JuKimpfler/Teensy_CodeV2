@@ -154,6 +154,18 @@ public:
     void calibIR(void);
     void calibBNO(void);
 
+    /* -------------- enable -------------- */
+    void enableVMOT(bool enable = true);
+    void disableVMOT() {enableVMOT(false);};
+    void enableVDRIB(bool enable = true);
+    void disableVDRIB() {enableVDRIB(false);};
+    void enableLIGHTBARRIER(bool enable = true);
+    void disableLIGHTBARRIER() {enableLIGHTBARRIER(false);};
+    void enableLINE(bool enable = true);
+    void disableLINE() {enableLINE(false);};
+    void enableI2C(bool enable = true);
+    void disableI2C() {enableI2C(false);};
+
     /* -------------- Aktors -------------- */
     void setMotorData(MotorData Data);
     MotorData giveMotorData(uint8_t ID);
