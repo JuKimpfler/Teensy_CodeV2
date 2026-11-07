@@ -241,6 +241,10 @@ public:
     float giveCam1Angle();
     float giveCam2Angle();
 
+    /* -------------- Logik -------------- */
+
+    bool giveHasBall() { return (abs(IR_Angle) < 10 && IR_Distance < IR_DISTANCE_SCHWELLE); } // TODO: Implementieren;
+
     /* -------------- set -------------- */
     void setDebugTimeout(uint16_t timeout_ms) { debugTimeout = timeout_ms; }
     void setHeading(float Heading);

@@ -3,10 +3,9 @@
 #include <systemlib.h>
 
 systemlib sys;
-
-RobotDataCom IMAS2;
-
 bool identity = false;
+
+int role = 0; // 0 = not in game
 
 void setup()
 {
@@ -32,9 +31,15 @@ void loop()
   // if start switch
   if (sys.giveStart()) // Game Loop
   {
+    sys.enableVMOT();
+    sys.enableVDRIB();
+
   }
   else if (sys.giveExpStartSwitch()) // gestoppt aber homing etc. erlaubt
   {
+    sys.enableVMOT();
+    sys.enableVDRIB();
+
     if (buttons[0] == fancy_CLICKED) // move to point
     {
       PDS.event("Zielpunkt anfahren");
@@ -45,7 +50,7 @@ void loop()
     }
 
     if (buttons[0] == fancy_DOUBLE_CLICK)
-      ; // ir Calibration
+      sys.calibIR(); // ir Calibration
 
     if (buttons[0] == fancy_LONG_PRESS)
       ; // line Calibration
@@ -58,6 +63,8 @@ void loop()
   }
   else // Motor aus
   {
-    sys.moveDir(0, 0, 0); // Motoren aus
+    sys.disableVMOT();
+    sys.disableVDRIB();
+    sys.moveDir(0, 0, 0);
   }
 }
