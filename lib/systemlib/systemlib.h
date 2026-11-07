@@ -91,6 +91,7 @@ private:
 
     // Esp Data 
     PositionData Position;
+    PositionData Ball_Position; 
     int16_t BNO_OrbitDir=0;
 
     int8_t LineWinkel = 0;

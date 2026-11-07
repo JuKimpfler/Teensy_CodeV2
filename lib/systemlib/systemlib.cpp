@@ -144,7 +144,9 @@ void systemlib::initialize()
     datasync.begin();
 
     Cam1.init(UART_CAM1);
+    Cam1.setSign(false);
     Cam2.init(UART_CAM2);
+    Cam2.setSign(false);
 }
 
 int16_t systemlib::giveOrbitDir()
@@ -442,6 +444,35 @@ void systemlib::updateLine()
     LinePresent = line_touching;
 }
 
+// Ball Modell: y = a1*exp(-k1*x) + a2*exp(-k2*x)
+float yVonX(float x) {
+  return 467.19 * exp(-0.0136558 * x) + 833.60 * exp(-0.00260057 * x);
+}
+
+// Ball Umkehrung: gibt zu einem y-Wert das passende x zurück
+float xAusY(float y) {
+    if(y>53){
+        float lo = 0;
+        float hi = 4000;
+
+        if (y >= yVonX(lo)) return lo;   // über dem Startwert (ca. 1301)
+        if (y <= yVonX(hi)) return hi;   // praktisch 0
+
+        for (int i = 0; i < 30; i++) {   // 30 Halbierungen reichen locker
+            float mid = (lo + hi) / 2;
+            if (yVonX(mid) > y) lo = mid;
+            else hi = mid;
+        }
+        return (lo + hi) / 2;
+    }
+    else if(y>1){
+        return logf(164.14f / y) * 943.4f;
+    }
+    else{
+        return 0;
+    }
+}
+
 /* -------------- IR -------------- */
 void systemlib::readIR(void)
 {
@@ -452,9 +483,27 @@ void systemlib::readIR(void)
     ir_ring.read_raw_values(IR_rawSensorData);
     ir_ring.read_tssp(IR_TSSP);
 #endif
+    
+    if(IR_rawDistance > 25){
+        IR_Angle = Util.AMap(IR_rawAngle + BNO_OrbitDir);
+        IR_Distance = xAusY(IR_rawDistance-25);
+    }
+    else{
+        IR_Distance = 0;
+    }    
 
-    IR_Angle = Util.AMap(IR_rawAngle - BNO_OrbitDir);
-    IR_Distance = IR_rawDistance; // Hier muss noch Mathe hin
+    Ball_Position.X = (IR_Distance * cosf(DEG_TO_RAD*IR_Angle)) + Position.X;
+    Ball_Position.Y = (IR_Distance * sinf(DEG_TO_RAD*IR_Angle)) + Position.Y;
+    if(IR_Distance>1){
+        Ball_Position.Certainty = Position.Certainty;
+        Ball_Position.XValid = Position.XValid;
+        Ball_Position.YValid = Position.YValid;
+    }
+    else{
+        Ball_Position.Certainty = 0;
+        Ball_Position.XValid = 0;
+        Ball_Position.YValid = 0;
+    }
 }
 
 void systemlib::writeIRCalibration(uint8_t sensorNumber, int16_t offset, int16_t gain)

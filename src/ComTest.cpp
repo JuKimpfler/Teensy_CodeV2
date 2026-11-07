@@ -16,8 +16,8 @@ void loop() {
     if(debug > 100){
         Serial.print("IR: ");
         Serial.println(sys.giveBallAngle());
-        Serial.print("Line: ");
-        Serial.println(sys.giveLineDepth());
+        Serial.print("IR: ");
+        Serial.println(sys.giveBallDistance());
         Serial.print("BNO: ");
         Serial.println(sys.giveOrbitDir());
         Serial.print("Start: ");
