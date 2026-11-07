@@ -16,7 +16,6 @@
 
 /* -------------- Instanzen -------------- */
 
-
 DataSync datasync;
 Timer timer;
 
@@ -79,38 +78,43 @@ void systemlib::initialize()
     Wire1.begin();
     Wire1.setClock(100000);
 
-    // Ausgangsregister VOR der Richtung setzen: nach dem Einschalten steht es
-    // auf 0xFF, ein setup(false) als erstes zoege alle ESCON-Freigaben auf HIGH.
-    #if SYS_EN_MOTORS
+// Ausgangsregister VOR der Richtung setzen: nach dem Einschalten steht es
+// auf 0xFF, ein setup(false) als erstes zoege alle ESCON-Freigaben auf HIGH.
+#if SYS_EN_MOTORS
     Motor12_EXP.write(0x00);
     Motor12_EXP.setup(false);
     Motor34_EXP.write(0x00);
     Motor34_EXP.setup(false, false, false, false, false, false, true, true); // P6/P7 = SWITCH1/BUTTON1
-    #endif
+#endif
     Power_EXP.write(POWER_EXP_RUN);
     Power_EXP.setup(false);
-    #if SYS_EN_SWITCHBOARD
+    enableVMOT();
+    enableVDRIB();
+    disableLIGHTBARRIER();
+    enableLINE();
+    enableI2C();
+#if SYS_EN_SWITCHBOARD
     SW_EXP.setup(true);
     Button_EXP.setup(true);
-    #endif
+#endif
     readExpanders();
 
     SPI.begin();
 
     USBC_UART.begin(115200);
 
-    #if SYS_EN_POWER
+#if SYS_EN_POWER
     INA219_Main.begin(Wire1);
     INA219_Motor.begin(Wire1);
 
     INA219_Main.setMaxCurrentShunt(15);
     INA219_Motor.setMaxCurrentShunt(15);
-    #endif
+#endif
 
-    #if DPDS_Game == D_Mode_Test
+#if DPDS_Game == D_Mode_Test
     PDS.init();
     setupPDS();
-    #endif
+#endif
 
     MoDataVL.ID = MotorVL_ID;
     MoDataVR.ID = MotorVR_ID;
@@ -118,22 +122,22 @@ void systemlib::initialize()
     MoDataHR.ID = MotorHR_ID;
     MoDataDR.ID = MotorDR_ID;
 
-    //ir_ring.read_gains(IR_Gains);
-    //ir_ring.read_offsets(IR_Offsets);
+    // ir_ring.read_gains(IR_Gains);
+    // ir_ring.read_offsets(IR_Offsets);
 
     setDebugTimeout(0);
 
-    #if SYS_EN_MOTORS
+#if SYS_EN_MOTORS
     ADC_Motor.init();
-    #endif
-    #if SYS_EN_LINE
+#endif
+#if SYS_EN_LINE
     ADC_Line1.init();
     ADC_Line2.init();
     ADC_Line3.init();
     ADC_Line4.init();
     ADC_Line5.init();
     ADC_Line6.init();
-    #endif
+#endif
 
     setupHeadingController();
 
@@ -143,7 +147,8 @@ void systemlib::initialize()
     Cam2.init(UART_CAM2);
 }
 
-int16_t systemlib::giveOrbitDir(){
+int16_t systemlib::giveOrbitDir()
+{
     return BNO_OrbitDir;
 }
 
@@ -160,7 +165,7 @@ void systemlib::readSensors(void)
     Cam2.Update(BNO_OrbitDir);
 
     readIR();
-    updateArray(); 
+    updateArray();
     updateLine();
 
     readExpanders();
@@ -194,19 +199,21 @@ void systemlib::readSensors(void)
         Motor_I = giveMotorCurrent();
     }
 
-    #if DPDS_Game == D_Mode_Test
+#if DPDS_Game == D_Mode_Test
     PDS.update();
-    #endif
+#endif
 
     updateHeadingController();
     updateMotors();
 
-    if((timer.BNOCalib > 200)){
+    if ((timer.BNOCalib > 200))
+    {
         datasync.BNO_Calib = false;
     }
 }
 
-float systemlib::giveCamAngle(){
+float systemlib::giveCamAngle()
+{
     return Cam1.give_Angle();
 }
 
@@ -230,7 +237,7 @@ float systemlib::giveCamAngle(){
  */
 void systemlib::setupPDS(void)
 {
-    #if DPDS_Mode == D_Mode_Test
+#if DPDS_Mode == D_Mode_Test
 
     // Firmware-Stand, damit in der GUI sichtbar ist, welcher Code auf welchem
     // Roboter laeuft. Die Makros kommen aus den build_flags in platformio.ini.
@@ -238,135 +245,191 @@ void systemlib::setupPDS(void)
     // setFirmwareVersion() kopiert in einen eigenen Puffer -- der String hier
     // darf danach wieder verschwinden.
     const String version = "v" + String(BUILD_VERSION) +
-                                  " (Build " + String(BUILD_DATE) +
-                                  " " + String(BUILD_TIME) + ")";
+                           " (Build " + String(BUILD_DATE) +
+                           " " + String(BUILD_TIME) + ")";
     PDS.setFirmwareVersion(version.c_str());
 #endif
 
     /* ---- Versorgung ---------------------------------------------------- */
-    PDS.bind("Timer",         &uptime_s,     0,  "s");
-    PDS.bind("Akku_V",        &Akku_V,       1,  "V");
-    PDS.bind("Akku_I",        &Akku_I,       2,  "mA");
-    PDS.bind("Motor_V",       &Motor_V,      3,  "V");
-    PDS.bind("Motor_I",       &Motor_I,      4,  "mA");
+    PDS.bind("Timer", &uptime_s, 0, "s");
+    PDS.bind("Akku_V", &Akku_V, 1, "V");
+    PDS.bind("Akku_I", &Akku_I, 2, "mA");
+    PDS.bind("Motor_V", &Motor_V, 3, "V");
+    PDS.bind("Motor_I", &Motor_I, 4, "mA");
 
     /* ---- Ball (IR) ----------------------------------------------------- */
     // readIR() ist in readSensors() derzeit auskommentiert -- die Kanaele
     // stehen aber schon bereit und zeigen bis dahin 0.
-    PDS.bind("Ball_Winkel",   &IR_Angle,     8,  "°");
-    PDS.bind("Ball_Dist",     &IR_Distance,  11);
+    PDS.bind("Ball_Winkel", &IR_Angle, 8, "°");
+    PDS.bind("Ball_Dist", &IR_Distance, 11);
 
     /* ---- Zykluszeit ---------------------------------------------------- */
-    PDS.bind("Zykluszeit",    &cycleTime,    9,  "ms");
+    PDS.bind("Zykluszeit", &cycleTime, 9, "ms");
     PDS.bind("Zykluszeit_us", &cycleTime_us, 10, "us");
 
-
     /* ---- Motoren ------------------------------------------------------- */
-    PDS.bind("Motor_VL",      &MoDataVL.Speed_real, 20, "%");
-    PDS.bind("Motor_VR",      &MoDataVR.Speed_real, 21, "%");
-    PDS.bind("Motor_HL",      &MoDataHL.Speed_real, 22, "%");
-    PDS.bind("Motor_HR",      &MoDataHR.Speed_real, 23, "%");
+    PDS.bind("Motor_VL", &MoDataVL.Speed_real, 20, "%");
+    PDS.bind("Motor_VR", &MoDataVR.Speed_real, 21, "%");
+    PDS.bind("Motor_HL", &MoDataHL.Speed_real, 22, "%");
+    PDS.bind("Motor_HR", &MoDataHR.Speed_real, 23, "%");
 
-    PDS.bind("Motor_VL",      &MoDataVL.Dir_real, 24, "%");
-    PDS.bind("Motor_VR",      &MoDataVR.Dir_real, 25, "%");
-    PDS.bind("Motor_HL",      &MoDataHL.Dir_real, 26, "%");
-    PDS.bind("Motor_HR",      &MoDataHR.Dir_real, 27, "%");
+    PDS.bind("Motor_VL", &MoDataVL.Dir_real, 24, "%");
+    PDS.bind("Motor_VR", &MoDataVR.Dir_real, 25, "%");
+    PDS.bind("Motor_HL", &MoDataHL.Dir_real, 26, "%");
+    PDS.bind("Motor_HR", &MoDataHR.Dir_real, 27, "%");
 
     /* ---- Schalter ------------------------------------------------------ */
-    PDS.bind("Start",         &startSwitch,    28);
+    PDS.bind("Start", &startSwitch, 28);
 
     // 26..31 bleiben frei fuer weitere Systemwerte.
 
-    #endif // Game_mode
+#endif // Game_mode
 }
 
 /* -------------- ADC/Line -------------- */
 
-uint16_t systemlib::giveADC(uint8_t Port, uint8_t Pin){
-    #if !SYS_EN_LINE
+uint16_t systemlib::giveADC(uint8_t Port, uint8_t Pin)
+{
+#if !SYS_EN_LINE
     return 0;
-    #endif
-    if(Port == 0){return ADC_Line1.read(Pin);}
-    else if(Port == 1){return ADC_Line2.read(Pin);}
-    else if(Port == 2){return ADC_Line3.read(Pin);}
-    else if(Port == 3){return ADC_Line4.read(Pin);}
-    else if(Port == 4){return ADC_Line5.read(Pin);}
-    else if(Port == 5){return ADC_Line6.read(Pin);}
-    else{return 0;}
+#endif
+    if (Port == 0)
+    {
+        return ADC_Line1.read(Pin);
+    }
+    else if (Port == 1)
+    {
+        return ADC_Line2.read(Pin);
+    }
+    else if (Port == 2)
+    {
+        return ADC_Line3.read(Pin);
+    }
+    else if (Port == 3)
+    {
+        return ADC_Line4.read(Pin);
+    }
+    else if (Port == 4)
+    {
+        return ADC_Line5.read(Pin);
+    }
+    else if (Port == 5)
+    {
+        return ADC_Line6.read(Pin);
+    }
+    else
+    {
+        return 0;
+    }
 }
 
-void systemlib::updateLine(){
-    uint8_t line_summe=0;
-    uint16_t line_depth=0;
+void systemlib::updateLine()
+{
+    uint8_t line_summe = 0;
+    uint16_t line_depth = 0;
     int8_t line_Angle = 0;
     bool line_touching;
 
-    // Ohne Linienplatinen bleibt line_array auf 0 -> keine Linie erkannt
-    #if SYS_EN_LINE
-    for(int i = 0; i<6 ; i++){
-        for (int j = 0; j<8 ; j++){
-            if(i == 0){line_array[j]= ADC_Line1.read(j);}
-            else if(i == 1){line_array[8+j]= ADC_Line2.read(j);}
-            else if(i == 2){line_array[16+j]= ADC_Line3.read(j);}
-            else if(i == 3){line_array[24+j]= ADC_Line4.read(j);}
-            else if(i == 4){line_array[32+j]= ADC_Line5.read(j);}
-            else if(i == 5){line_array[40+j]= ADC_Line6.read(j);}
+// Ohne Linienplatinen bleibt line_array auf 0 -> keine Linie erkannt
+#if SYS_EN_LINE
+    for (int i = 0; i < 6; i++)
+    {
+        for (int j = 0; j < 8; j++)
+        {
+            if (i == 0)
+            {
+                line_array[j] = ADC_Line1.read(j);
+            }
+            else if (i == 1)
+            {
+                line_array[8 + j] = ADC_Line2.read(j);
+            }
+            else if (i == 2)
+            {
+                line_array[16 + j] = ADC_Line3.read(j);
+            }
+            else if (i == 3)
+            {
+                line_array[24 + j] = ADC_Line4.read(j);
+            }
+            else if (i == 4)
+            {
+                line_array[32 + j] = ADC_Line5.read(j);
+            }
+            else if (i == 5)
+            {
+                line_array[40 + j] = ADC_Line6.read(j);
+            }
         }
     }
-    #endif
+#endif
 
-    for( int i = 0 ; i<48 ; i++){
-        line_bool_array[i] = line_array[i]>LineSensorSchwelle[i];
-        if(line_bool_array[i]){line_summe++;}
+    for (int i = 0; i < 48; i++)
+    {
+        line_bool_array[i] = line_array[i] > LineSensorSchwelle[i];
+        if (line_bool_array[i])
+        {
+            line_summe++;
+        }
     }
-    
-    if(line_summe > 1){
+
+    if (line_summe > 1)
+    {
         // 2) zwei Sensoren mit maximaler Winkel-Distanz finden (kreisförmig korrekt)
         float maxDistanz = -1.0f;
         float sensorA = 0.0f, sensorB = 0.0f;
 
         int aktiveSensoren[line_summe];
         int count = 0;
-        for(int i = 0;i<48; i++){
-            if(line_bool_array[i]==true){
-            aktiveSensoren[count] = Util.AMap((i * 7.5));
-            count++;
+        for (int i = 0; i < 48; i++)
+        {
+            if (line_bool_array[i] == true)
+            {
+                aktiveSensoren[count] = Util.AMap((i * 7.5));
+                count++;
             }
         }
 
-        for (int i = 0; i < line_summe; i++) {
-            for (int j = i + 1; j < line_summe; j++) {
-            float dist = fabsf(Util.AMap(aktiveSensoren[i] - aktiveSensoren[j]));
-            if (dist > maxDistanz) {
-                maxDistanz = dist;
-                sensorA = aktiveSensoren[i];
-                sensorB = aktiveSensoren[j];
-            }
+        for (int i = 0; i < line_summe; i++)
+        {
+            for (int j = i + 1; j < line_summe; j++)
+            {
+                float dist = fabsf(Util.AMap(aktiveSensoren[i] - aktiveSensoren[j]));
+                if (dist > maxDistanz)
+                {
+                    maxDistanz = dist;
+                    sensorA = aktiveSensoren[i];
+                    sensorB = aktiveSensoren[j];
+                }
             }
         }
 
         // 3) Mittelwinkel zwischen A und B bestimmen (2 Möglichkeiten)
-        float delta  = Util.AMap(sensorB - sensorA);
-        line_depth = 1-abs(sin((abs(delta)/2)*DEG_TO_RAD));
+        float delta = Util.AMap(sensorB - sensorA);
+        line_depth = 1 - abs(sin((abs(delta) / 2) * DEG_TO_RAD));
         float mitte1 = Util.AMap(sensorA + (delta * 0.5f));
         float mitte2 = Util.AMap(mitte1 + 180.0f);
 
         // 4) Mitte wählen, die näher liegt
         line_Angle = (fabsf(Util.AMap(mitte1 - mitte2))) < (fabsf(Util.AMap(mitte2 - sensorA))) ? mitte1 : mitte2;
-        line_touching=true;
+        line_touching = true;
     }
-    else if(line_summe == 1){
-        line_depth=1;
-        line_touching=true;
-        for(int i = 0 ; i<32 ; i++){
-            if(line_bool_array[i]==true){
-                line_Angle=(i*11.25)-90;
+    else if (line_summe == 1)
+    {
+        line_depth = 1;
+        line_touching = true;
+        for (int i = 0; i < 32; i++)
+        {
+            if (line_bool_array[i] == true)
+            {
+                line_Angle = (i * 11.25) - 90;
             }
         }
     }
-    else{
-        line_depth=1;
-        line_touching=false;
+    else
+    {
+        line_depth = 1;
+        line_touching = false;
     }
 
     LineDepth = line_array[0];
@@ -418,43 +481,43 @@ void systemlib::calibIR(void)
     ir_ring.write_gains(IR_Gains);
 }
 
-void systemlib::calibBNO(void){
+void systemlib::calibBNO(void)
+{
     datasync.BNO_Calib = true;
-    timer.BNOCalib=0;
+    timer.BNOCalib = 0;
 }
-
 
 /* -------------- Aktor --------------*/
 
 float systemlib::giveMainVoltage(void)
 {
-    #if !SYS_EN_POWER
+#if !SYS_EN_POWER
     return 0.0f;
-    #endif
+#endif
     return (float)INA219_Main.getBusVoltage();
 }
 
 float systemlib::giveMotorVoltage(void)
 {
-    #if !SYS_EN_POWER
+#if !SYS_EN_POWER
     return 0.0f;
-    #endif
+#endif
     return (float)INA219_Motor.getBusVoltage();
 }
 
 float systemlib::giveMainCurrent(void)
 {
-    #if !SYS_EN_POWER
+#if !SYS_EN_POWER
     return 0.0f;
-    #endif
+#endif
     return (float)INA219_Main.getCurrent_mA();
 }
 
 float systemlib::giveMotorCurrent(void)
 {
-    #if !SYS_EN_POWER
+#if !SYS_EN_POWER
     return 0.0f;
-    #endif
+#endif
     INA_filter[0] = INA_filter[1];
     INA_filter[1] = INA_filter[2];
     INA_filter[2] = INA_filter[3];
@@ -471,7 +534,8 @@ float systemlib::giveMotorCurrent(void)
     return Summe;
 }
 
-void systemlib::setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break){
+void systemlib::setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, bool Break)
+{
     if (ID == MoDataVR.ID)
     {
         MoDataVR.Break = Break;
@@ -509,11 +573,18 @@ void systemlib::setMotorData(uint8_t ID, uint8_t Speed, bool Dir, bool Enable, b
     }
 }
 
-void systemlib::setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break){
+void systemlib::setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break)
+{
     bool Dir;
-    
-    if (Speed<0){Dir=false;}
-    else{Dir=true;}
+
+    if (Speed < 0)
+    {
+        Dir = false;
+    }
+    else
+    {
+        Dir = true;
+    }
 
     Speed = abs(Speed);
 
@@ -557,45 +628,47 @@ void systemlib::setMotorData(uint8_t ID, int8_t Speed, bool Enable, bool Break){
 /// Freigabe- und Richtungsbit eines ESCON im Expanderwort setzen (Bitnummern aus enum.h).
 static void setEsconBits(uint16_t &out, const MotorData &m, uint8_t enBit, uint8_t dirBit)
 {
-    if (m.Enable) out |= (1u << enBit);
-    if (!m.Dir)   out |= (1u << dirBit);
+    if (m.Enable)
+        out |= (1u << enBit);
+    if (!m.Dir)
+        out |= (1u << dirBit);
 }
 
-int motorSampleUs = 0; 
+int motorSampleUs = 0;
 
 void systemlib::updateMotors(void)
 {
-    // Ohne Motorplatine bleiben PWM (in initialize() auf 0 gesetzt) und
-    // Speed_real/Current auf 0 -- MoData* koennen trotzdem beschrieben werden.
-    #if !SYS_EN_MOTORS
+// Ohne Motorplatine bleiben PWM (in initialize() auf 0 gesetzt) und
+// Speed_real/Current auf 0 -- MoData* koennen trotzdem beschrieben werden.
+#if !SYS_EN_MOTORS
     return;
-    #endif
+#endif
     uint16_t out = 0;
-    if (MoDataVL.Speed == 0 || giveExpander(0,3))
+    if (MoDataVL.Speed == 0 || giveExpander(0, 3))
     {
         MoDataVL.Speed = 0;
         MoDataVL.Enable = false;
         MoDataVL.Break = true;
     }
-    if (MoDataVR.Speed == 0 || giveExpander(0,3))
+    if (MoDataVR.Speed == 0 || giveExpander(0, 3))
     {
         MoDataVR.Speed = 0;
         MoDataVR.Enable = false;
         MoDataVR.Break = true;
     }
-    if (MoDataHL.Speed == 0 || giveExpander(0,3))
+    if (MoDataHL.Speed == 0 || giveExpander(0, 3))
     {
         MoDataHL.Speed = 0;
         MoDataHL.Enable = false;
         MoDataHL.Break = true;
     }
-    if (MoDataHR.Speed == 0 || giveExpander(0,3))
+    if (MoDataHR.Speed == 0 || giveExpander(0, 3))
     {
         MoDataHR.Speed = 0;
         MoDataHR.Enable = false;
         MoDataHR.Break = true;
     }
-    if (MoDataDR.Speed == 0 || giveExpander(0,3))
+    if (MoDataDR.Speed == 0 || giveExpander(0, 3))
     {
         MoDataDR.Speed = 0;
         MoDataDR.Enable = false;
@@ -616,10 +689,14 @@ void systemlib::updateMotors(void)
     setEsconBits(out, MoDataHR, MotorHR_EN, MotorHR_DIR);
     setEsconBits(out, MoDataDR, MotorDR_EN, MotorDR_DIR);
 
-    if (MoDataVL.Break) out |= (1u << MotorVL_STOP);
-    if (MoDataVR.Break) out |= (1u << MotorVR_STOP);
-    if (MoDataHL.Break) out |= (1u << MotorHL_STOP);
-    if (MoDataHR.Break) out |= (1u << MotorHR_STOP);
+    if (MoDataVL.Break)
+        out |= (1u << MotorVL_STOP);
+    if (MoDataVR.Break)
+        out |= (1u << MotorVR_STOP);
+    if (MoDataHL.Break)
+        out |= (1u << MotorHL_STOP);
+    if (MoDataHR.Break)
+        out |= (1u << MotorHR_STOP);
 
     Motor12_EXP.write(out & 0xFF);
     Motor34_EXP.write(out >> 8);
@@ -635,14 +712,14 @@ void systemlib::updateMotors(void)
     */
 
     motorSampleUs = micros(); // Zeitstempel der Drehzahlmessung (fuer Totzeitausgleich in calculatePosition)
-    MoDataVL.Speed_real = ADC_Motor.read(MotorVL_RPM,true,true);
-    MoDataVL.Current = ADC_Motor.read(MotorVL_CUR,true,false);
-    MoDataVR.Speed_real = ADC_Motor.read(MotorVR_RPM,true,true);
-    MoDataVR.Current = ADC_Motor.read(MotorVR_CUR,true,false);
-    MoDataHL.Speed_real = ADC_Motor.read(MotorHL_RPM,true,true);
-    MoDataHL.Current = ADC_Motor.read(MotorHL_CUR,true,false);
-    MoDataHR.Speed_real = ADC_Motor.read(MotorHR_RPM,true,true);
-    MoDataHR.Current = ADC_Motor.read(MotorHR_CUR,true,false);
+    MoDataVL.Speed_real = ADC_Motor.read(MotorVL_RPM, true, true);
+    MoDataVL.Current = ADC_Motor.read(MotorVL_CUR, true, false);
+    MoDataVR.Speed_real = ADC_Motor.read(MotorVR_RPM, true, true);
+    MoDataVR.Current = ADC_Motor.read(MotorVR_CUR, true, false);
+    MoDataHL.Speed_real = ADC_Motor.read(MotorHL_RPM, true, true);
+    MoDataHL.Current = ADC_Motor.read(MotorHL_CUR, true, false);
+    MoDataHR.Speed_real = ADC_Motor.read(MotorHR_RPM, true, true);
+    MoDataHR.Current = ADC_Motor.read(MotorHR_CUR, true, false);
 }
 
 MotorData systemlib::giveMotorData(uint8_t ID)
@@ -677,12 +754,37 @@ MotorData systemlib::giveMotorData(uint8_t ID)
 }
 
 /* -------------- Expanders -------------- */
+void systemlib::enableVMOT(bool enable)
+{
+    Power_EXP.writePin(VMOT_EN, enable);
+}
+
+void systemlib::enableVDRIB(bool enable)
+{
+    Power_EXP.writePin(VDRIB_EN, enable);
+}
+
+void systemlib::enableLIGHTBARRIER(bool enable)
+{
+    Power_EXP.writePin(LIGHT_BARRIER_EN, !enable); // Pulldown um zu aktivieren
+}
+
+void systemlib::enableLINE(bool enable)
+{
+    Power_EXP.writePin(LINE_EN, enable);
+}
+
+void systemlib::enableI2C(bool enable)
+{
+    Power_EXP.writePin(I2C_INTERCON_3V3_EN, !enable); // Pulldown um zu aktivieren
+}
+
 void systemlib::readExpanders(void)
 {
-    // Ohne SwitchBoard bleiben Schalter, Start, RCJ und Taster auf false
-    #if !SYS_EN_SWITCHBOARD
+// Ohne SwitchBoard bleiben Schalter, Start, RCJ und Taster auf false
+#if !SYS_EN_SWITCHBOARD
     return;
-    #endif
+#endif
     // Je Expander ein Buszugriff, danach nur noch aus dem gelesenen Byte
     // (readPin() wuerde jedes Mal neu ueber I2C lesen).
     SW_EXP.read();     // SwitchBoard IC1: P0 SW5 ... P4 SW1, P5 Start, P6 RCJ-Disable, P7 RCJ erkannt
@@ -717,9 +819,9 @@ void systemlib::readExpanders(void)
 
 bool systemlib::giveExpander(uint8_t expnum, uint8_t portnum)
 {
-    #if !SYS_EN_SWITCHBOARD
+#if !SYS_EN_SWITCHBOARD
     return false;
-    #endif
+#endif
     if (expnum == 0)
     {
         return SW_EXP.readPin(portnum);
@@ -842,36 +944,38 @@ bool systemlib::giveStart(void)
     }
 }
 
-void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed,int16_t Andrehwinkel){
+void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t Speed, int16_t Andrehwinkel)
+{
 
     float dx = X - Position.X;
     float dy = Y - Position.Y;
 
     float distanzCm = sqrtf(dy * dy + dx * dx);
-    Speed = Speed*constrain(distanzCm / 40.0f, 0.0f, 1.0f); // 0 = am Ziel, 1 = 40cm oder mehr entfernt
+    Speed = Speed * constrain(distanzCm / 40.0f, 0.0f, 1.0f); // 0 = am Ziel, 1 = 40cm oder mehr entfernt
 
-    if(abs(distanzCm)<5){
-        Speed=0;
+    if (abs(distanzCm) < 5)
+    {
+        Speed = 0;
     }
 
-    setHeading(Andrehwinkel*DEG_TO_RAD);
-    setOmniWheelDir(Util.AMap(atan2f(-dx, dy) * (180.0f / PI)),Speed,giveHeadingController()*100);
+    setHeading(Andrehwinkel * DEG_TO_RAD);
+    setOmniWheelDir(Util.AMap(atan2f(-dx, dy) * (180.0f / PI)), Speed, giveHeadingController() * 100);
 }
 
 namespace
 {
     struct MoveState
     {
-        bool     active     = false;
-        bool     arrived    = false;
-        bool     correcting = false; // nach dem Wegschieben: Feinkorrektur mit MinSpeed
-        float    tx = 0.0f, ty = 0.0f;
-        uint8_t  pattern = 0, maxS = 0, minS = 0;
-        float    dist0    = 0.0f;    // Abstand beim Start des Patterns
-        float    progress = 0.0f;
-        float    lastSpeed = 0.0f;
+        bool active = false;
+        bool arrived = false;
+        bool correcting = false; // nach dem Wegschieben: Feinkorrektur mit MinSpeed
+        float tx = 0.0f, ty = 0.0f;
+        uint8_t pattern = 0, maxS = 0, minS = 0;
+        float dist0 = 0.0f; // Abstand beim Start des Patterns
+        float progress = 0.0f;
+        float lastSpeed = 0.0f;
         uint32_t lastCallMs = 0;
-        uint32_t lastUs     = 0;
+        uint32_t lastUs = 0;
     };
     MoveState mv;
 
@@ -888,26 +992,66 @@ namespace
         float f;
         switch (pattern)
         {
-        case SPattern_Linear:        f = 1.0f - p; break;
-        case SPattern_LinearUp:      f = p; break;
-        case SPattern_Constant:      f = 1.0f; break;
-        case SPattern_Trapezoid:     f = min(min(p / 0.2f, 1.0f), (1.0f - p) / 0.4f); break;
-        case SPattern_Triangle:      f = 1.0f - fabsf(1.0f - 2.0f * p); break;
-        case SPattern_QuadDecel:     f = (1.0f - p) * (1.0f - p); break;
-        case SPattern_ConstDecel:    f = sqrtf(1.0f - p); break;
-        case SPattern_SmoothStep:    f = 1.0f - smoothstep01(p); break;
-        case SPattern_Cosine:        f = 0.5f * (1.0f + cosf(PI * p)); break;
-        case SPattern_Sine:          f = sinf(PI * p); break;
-        case SPattern_SCurve:        f = min(smoothstep01(p / 0.25f), 1.0f - smoothstep01((p - 0.6f) / 0.4f)); break;
-        case SPattern_LateBrake:     f = (p < 0.7f) ? 1.0f : 0.5f * (1.0f + cosf(PI * (p - 0.7f) / 0.3f)); break;
-        case SPattern_FastThenCrawl: f = (p < 0.5f) ? 1.0f : ((p < 0.7f) ? 1.0f - (p - 0.5f) / 0.2f : 0.0f); break;
-        case SPattern_QuadUp:        f = p * p; break;
-        case SPattern_CubicUp:       f = p * p * p; break;
-        case SPattern_Expo:          f = (expf(-3.0f * p) - expf(-3.0f)) / (1.0f - expf(-3.0f)); break;
-        case SPattern_Stairs:        f = 1.0f - min(floorf(p * 4.0f), 3.0f) / 3.0f; break;
-        case SPattern_Wave:          f = (1.0f - p) * (0.6f + 0.4f * sinf(2.0f * PI * 3.0f * p)); break;
-        case SPattern_Pulse:         f = (fmodf(p * 5.0f, 1.0f) < 0.6f) ? 1.0f : 0.0f; break;
-        default:                     f = 1.0f; break; // unbekanntes Pattern: konstant
+        case SPattern_Linear:
+            f = 1.0f - p;
+            break;
+        case SPattern_LinearUp:
+            f = p;
+            break;
+        case SPattern_Constant:
+            f = 1.0f;
+            break;
+        case SPattern_Trapezoid:
+            f = min(min(p / 0.2f, 1.0f), (1.0f - p) / 0.4f);
+            break;
+        case SPattern_Triangle:
+            f = 1.0f - fabsf(1.0f - 2.0f * p);
+            break;
+        case SPattern_QuadDecel:
+            f = (1.0f - p) * (1.0f - p);
+            break;
+        case SPattern_ConstDecel:
+            f = sqrtf(1.0f - p);
+            break;
+        case SPattern_SmoothStep:
+            f = 1.0f - smoothstep01(p);
+            break;
+        case SPattern_Cosine:
+            f = 0.5f * (1.0f + cosf(PI * p));
+            break;
+        case SPattern_Sine:
+            f = sinf(PI * p);
+            break;
+        case SPattern_SCurve:
+            f = min(smoothstep01(p / 0.25f), 1.0f - smoothstep01((p - 0.6f) / 0.4f));
+            break;
+        case SPattern_LateBrake:
+            f = (p < 0.7f) ? 1.0f : 0.5f * (1.0f + cosf(PI * (p - 0.7f) / 0.3f));
+            break;
+        case SPattern_FastThenCrawl:
+            f = (p < 0.5f) ? 1.0f : ((p < 0.7f) ? 1.0f - (p - 0.5f) / 0.2f : 0.0f);
+            break;
+        case SPattern_QuadUp:
+            f = p * p;
+            break;
+        case SPattern_CubicUp:
+            f = p * p * p;
+            break;
+        case SPattern_Expo:
+            f = (expf(-3.0f * p) - expf(-3.0f)) / (1.0f - expf(-3.0f));
+            break;
+        case SPattern_Stairs:
+            f = 1.0f - min(floorf(p * 4.0f), 3.0f) / 3.0f;
+            break;
+        case SPattern_Wave:
+            f = (1.0f - p) * (0.6f + 0.4f * sinf(2.0f * PI * 3.0f * p));
+            break;
+        case SPattern_Pulse:
+            f = (fmodf(p * 5.0f, 1.0f) < 0.6f) ? 1.0f : 0.0f;
+            break;
+        default:
+            f = 1.0f;
+            break; // unbekanntes Pattern: konstant
         }
         return constrain(f, 0.0f, 1.0f);
     }
@@ -918,7 +1062,7 @@ void systemlib::resetMoveProfile(void)
     mv.active = false; // lastSpeed bleibt: rollt der Roboter weiter, steigt der Speed stetig statt von 0
 }
 
-bool  systemlib::giveMoveArrived(void) const  { return mv.active && mv.arrived; }
+bool systemlib::giveMoveArrived(void) const { return mv.active && mv.arrived; }
 
 float systemlib::giveMoveProgress(void) const { return mv.progress; }
 
@@ -941,20 +1085,23 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_
     setHeading(Andrehwinkel * DEG_TO_RAD);
     const float omega = giveHeadingController() * 100;
 
-    if (MaxSpeed > 100) MaxSpeed = 100;
-    if (MinSpeed > MaxSpeed) MinSpeed = MaxSpeed;
+    if (MaxSpeed > 100)
+        MaxSpeed = 100;
+    if (MinSpeed > MaxSpeed)
+        MinSpeed = MaxSpeed;
 
     const uint32_t nowMs = millis();
     const uint32_t nowUs = micros();
     float dt = (mv.lastUs != 0) ? (nowUs - mv.lastUs) * 1e-6f : 0.0f;
-    if (dt > 0.1f) dt = 0.0f; // lange Aufrufpause: Anlaufbegrenzung beginnt von vorn statt sofort 60 % freizugeben
+    if (dt > 0.1f)
+        dt = 0.0f; // lange Aufrufpause: Anlaufbegrenzung beginnt von vorn statt sofort 60 % freizugeben
     mv.lastUs = nowUs;
 
     // Position verloren: anhalten, Profil verwerfen
     if (Position.X < 0.0f || Position.Y < 0.0f)
     {
         resetMoveProfile();
-        mv.lastSpeed  = 0.0f;
+        mv.lastSpeed = 0.0f;
         mv.lastCallMs = nowMs;
         setOmniWheelDir(0, 0, omega);
         return;
@@ -968,19 +1115,20 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_
 
     // ---- Neustart des Patterns? -----------------------------------------
     const bool sameTarget = (fabsf(tx - mv.tx) <= MOVE_TARGET_TOL_CM) && (fabsf(ty - mv.ty) <= MOVE_TARGET_TOL_CM);
-    const bool restart = !mv.active || !sameTarget
-                         || (SpeedPattern != mv.pattern) || (MaxSpeed != mv.maxS) || (MinSpeed != mv.minS)
-                         || ((nowMs - mv.lastCallMs) > (uint32_t)MOVE_RESTART_GAP_MS);
+    const bool restart = !mv.active || !sameTarget || (SpeedPattern != mv.pattern) || (MaxSpeed != mv.maxS) || (MinSpeed != mv.minS) || ((nowMs - mv.lastCallMs) > (uint32_t)MOVE_RESTART_GAP_MS);
     mv.lastCallMs = nowMs;
 
     if (restart)
     {
-        mv.active     = true;
-        mv.tx = tx;  mv.ty = ty;
-        mv.pattern = SpeedPattern;  mv.maxS = MaxSpeed;  mv.minS = MinSpeed;
-        mv.dist0      = dist;
-        mv.progress   = 0.0f;
-        mv.arrived    = (dist <= MOVE_ARRIVE_CM);
+        mv.active = true;
+        mv.tx = tx;
+        mv.ty = ty;
+        mv.pattern = SpeedPattern;
+        mv.maxS = MaxSpeed;
+        mv.minS = MinSpeed;
+        mv.dist0 = dist;
+        mv.progress = 0.0f;
+        mv.arrived = (dist <= MOVE_ARRIVE_CM);
         mv.correcting = false;
         // lastSpeed bleibt: rollt der Roboter noch, wird der Speed nicht ruckartig umgesetzt
     }
@@ -990,10 +1138,10 @@ void systemlib::moveToPoint(uint16_t X, uint16_t Y, uint8_t SpeedPattern, uint8_
     {
         if (dist > MOVE_ARRIVE_CM + MOVE_ARRIVE_HYST_CM) // weggeschoben -> Feinkorrektur
         {
-            mv.arrived    = false;
+            mv.arrived = false;
             mv.correcting = true;
-            mv.dist0      = dist;
-            mv.progress   = 0.0f;
+            mv.dist0 = dist;
+            mv.progress = 0.0f;
         }
     }
     else if (dist <= MOVE_ARRIVE_CM)
@@ -1056,20 +1204,18 @@ namespace
     struct ArrayData
     {
         ArrayPoint pts[ARRAY_MAX_POINTS];
-        uint8_t    count       = 0;
-        uint8_t    index       = 0;     // aktueller Zielpunkt
-        bool       loop        = false;
-        ArrayState state       = ArrayIdle;
-        bool       holding     = false; // Punkt erreicht, Wartezeit laeuft
-        uint32_t   holdStartMs = 0;
+        uint8_t count = 0;
+        uint8_t index = 0; // aktueller Zielpunkt
+        bool loop = false;
+        ArrayState state = ArrayIdle;
+        bool holding = false; // Punkt erreicht, Wartezeit laeuft
+        uint32_t holdStartMs = 0;
     };
     ArrayData pa;
 
     bool samePoint(const ArrayPoint &a, const ArrayPoint &b)
     {
-        return a.X == b.X && a.Y == b.Y && a.Andrehwinkel == b.Andrehwinkel
-               && a.SpeedPattern == b.SpeedPattern && a.MaxSpeed == b.MaxSpeed
-               && a.MinSpeed == b.MinSpeed && a.HoldMs == b.HoldMs && a.PassCm == b.PassCm;
+        return a.X == b.X && a.Y == b.Y && a.Andrehwinkel == b.Andrehwinkel && a.SpeedPattern == b.SpeedPattern && a.MaxSpeed == b.MaxSpeed && a.MinSpeed == b.MinSpeed && a.HoldMs == b.HoldMs && a.PassCm == b.PassCm;
     }
 }
 
@@ -1103,9 +1249,9 @@ bool systemlib::setPointArray(const ArrayPoint *points, uint8_t count, bool loop
     {
         pa.pts[i] = points[i];
     }
-    pa.count   = count;
-    pa.loop    = loop;
-    pa.index   = 0;
+    pa.count = count;
+    pa.loop = loop;
+    pa.index = 0;
     pa.holding = false;
     resetMoveProfile();
 
@@ -1126,14 +1272,14 @@ bool systemlib::setPointArray(const ArrayPoint *points, uint8_t count, bool loop
 bool systemlib::addPointToArray(uint16_t X, uint16_t Y, int16_t Andrehwinkel, uint8_t SpeedPattern, uint8_t MaxSpeed, uint8_t MinSpeed, uint16_t HoldMs)
 {
     ArrayPoint p;
-    p.X            = X;
-    p.Y            = Y;
+    p.X = X;
+    p.Y = Y;
     p.Andrehwinkel = Andrehwinkel;
     p.SpeedPattern = SpeedPattern;
-    p.MaxSpeed     = MaxSpeed;
-    p.MinSpeed     = MinSpeed;
-    p.HoldMs       = HoldMs;
-    p.PassCm       = 0;
+    p.MaxSpeed = MaxSpeed;
+    p.MinSpeed = MinSpeed;
+    p.HoldMs = HoldMs;
+    p.PassCm = 0;
     return addPointToArray(p);
 }
 
@@ -1149,8 +1295,8 @@ bool systemlib::addPointToArray(const ArrayPoint &point)
 
     if (pa.state == ArrayFinished) // Liste war fertig -> zum neuen Punkt weiterfahren
     {
-        pa.index   = pa.count - 1;
-        pa.state   = ArrayRunning;
+        pa.index = pa.count - 1;
+        pa.state = ArrayRunning;
         pa.holding = false;
         resetMoveProfile();
     }
@@ -1160,10 +1306,10 @@ bool systemlib::addPointToArray(const ArrayPoint &point)
 /** Loescht alle Punkte und setzt den Zustand auf Idle. updateArray() sendet dann keine Motorbefehle mehr. */
 void systemlib::resetArray(void)
 {
-    pa.count   = 0;
-    pa.index   = 0;
-    pa.loop    = false;
-    pa.state   = ArrayIdle;
+    pa.count = 0;
+    pa.index = 0;
+    pa.loop = false;
+    pa.state = ArrayIdle;
     pa.holding = false;
     resetMoveProfile();
 }
@@ -1185,9 +1331,9 @@ void systemlib::startArray(bool restart)
         return;
     }
 
-    pa.index   = 0;
+    pa.index = 0;
     pa.holding = false;
-    pa.state   = ArrayRunning;
+    pa.state = ArrayRunning;
     resetMoveProfile();
 }
 
@@ -1196,7 +1342,7 @@ void systemlib::pauseArray(void)
 {
     if (pa.state == ArrayRunning)
     {
-        pa.state   = ArrayPaused;
+        pa.state = ArrayPaused;
         pa.holding = false;
         resetMoveProfile();
         mv.lastSpeed = 0.0f; // Roboter steht -> Anlauf nach resumeArray() wieder begrenzt
@@ -1208,7 +1354,7 @@ void systemlib::resumeArray(void)
 {
     if (pa.state == ArrayPaused)
     {
-        pa.state   = ArrayRunning;
+        pa.state = ArrayRunning;
         pa.holding = false;
         resetMoveProfile();
     }
@@ -1269,7 +1415,7 @@ void systemlib::updateArray(void)
 
     // ---- Punkt erreicht? ----------------------------------------------------
     const float headingErr = fabsf(Util.AMap(p.Andrehwinkel - BNO_OrbitDir));
-    const bool  reached    = giveMoveArrived() && (ARRAY_HEADING_TOL_DEG <= 0.0f || headingErr <= ARRAY_HEADING_TOL_DEG);
+    const bool reached = giveMoveArrived() && (ARRAY_HEADING_TOL_DEG <= 0.0f || headingErr <= ARRAY_HEADING_TOL_DEG);
 
     if (!reached)
     {
@@ -1280,7 +1426,7 @@ void systemlib::updateArray(void)
     const uint32_t nowMs = millis();
     if (!pa.holding)
     {
-        pa.holding     = true;
+        pa.holding = true;
         pa.holdStartMs = nowMs;
     }
     if ((uint32_t)(nowMs - pa.holdStartMs) < p.HoldMs)
@@ -1307,8 +1453,8 @@ void systemlib::updateArray(void)
 }
 
 ArrayState systemlib::giveArrayState(void) const { return pa.state; }
-uint8_t    systemlib::giveArrayIndex(void) const { return pa.index; }
-uint8_t    systemlib::giveArrayCount(void) const { return pa.count; }
+uint8_t systemlib::giveArrayIndex(void) const { return pa.index; }
+uint8_t systemlib::giveArrayCount(void) const { return pa.count; }
 
 /* ========================================================================
  * Pfadplanung: moveToPointAvoid()
@@ -1362,19 +1508,19 @@ namespace
 
     struct PathPlan
     {
-        bool     valid = false;   // es gibt eine Planung fuer das aktuelle Ziel
-        bool     found = false;   // A* hat einen Weg gefunden
+        bool valid = false; // es gibt eine Planung fuer das aktuelle Ziel
+        bool found = false; // A* hat einen Weg gefunden
         uint16_t tx = 0, ty = 0;
-        uint8_t  pattern = 0, maxS = 0, minS = 0;
-        int16_t  ballIn[2]   = {-1, -1}; // aktuelle Eingabe [cm], -1 = kein Hindernis
-        int16_t  robIn[2]    = {-1, -1};
-        int16_t  ballUsed[2] = {-1, -1}; // beim letzten Planen verwendet
-        int16_t  robUsed[2]  = {-1, -1};
+        uint8_t pattern = 0, maxS = 0, minS = 0;
+        int16_t ballIn[2] = {-1, -1}; // aktuelle Eingabe [cm], -1 = kein Hindernis
+        int16_t robIn[2] = {-1, -1};
+        int16_t ballUsed[2] = {-1, -1}; // beim letzten Planen verwendet
+        int16_t robUsed[2] = {-1, -1};
         uint32_t lastPlanMs = 0;
-        uint32_t planUs     = 0;
-        uint8_t  wpCount    = 0;
-        float    total0     = 1.0f; // Streckenlaenge [cm], auf die sich der Pattern-Fortschritt bezieht
-        uint8_t  path[pathfinder::kPathMaxLength][2];
+        uint32_t planUs = 0;
+        uint8_t wpCount = 0;
+        float total0 = 1.0f; // Streckenlaenge [cm], auf die sich der Pattern-Fortschritt bezieht
+        uint8_t path[pathfinder::kPathMaxLength][2];
     };
     PathPlan pf;
 
@@ -1412,8 +1558,16 @@ namespace
                 return true;
             }
             const int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x += sx; }
-            if (e2 < dx)  { err += dx; y += sy; }
+            if (e2 > -dy)
+            {
+                err -= dy;
+                x += sx;
+            }
+            if (e2 < dx)
+            {
+                err += dx;
+                y += sy;
+            }
         }
     }
 
@@ -1438,7 +1592,8 @@ namespace
             for (uint16_t j = i + 1; j <= jMax; j++)
             {
                 const uint8_t w = field[pf.path[j][0]][pf.path[j][1]];
-                if (w > m) m = w;
+                if (w > m)
+                    m = w;
                 runMax[j - i] = m;
             }
 
@@ -1465,8 +1620,10 @@ namespace
     {
         const bool a = (now[0] >= 0 && now[1] >= 0);
         const bool b = (used[0] >= 0 && used[1] >= 0);
-        if (a != b) return true;
-        if (!a)     return false;
+        if (a != b)
+            return true;
+        if (!a)
+            return false;
         const float dx = now[0] - used[0];
         const float dy = now[1] - used[1];
         return sqrtf(dx * dx + dy * dy) > PF_OBST_MOVE_CM;
@@ -1488,24 +1645,26 @@ namespace
         const uint8_t tcx = cmToCell(tx, fieldX, W), tcy = cmToCell(ty, fieldY, H);
 
         const bool hasBall = (pf.ballIn[0] >= 0 && pf.ballIn[1] >= 0);
-        const bool hasRob  = (pf.robIn[0]  >= 0 && pf.robIn[1]  >= 0);
+        const bool hasRob = (pf.robIn[0] >= 0 && pf.robIn[1] >= 0);
         const uint8_t bx = hasBall ? cmToCell(pf.ballIn[0], fieldX, W) : PF_NO_OBSTACLE;
         const uint8_t by = hasBall ? cmToCell(pf.ballIn[1], fieldY, H) : PF_NO_OBSTACLE;
-        const uint8_t rx = hasRob  ? cmToCell(pf.robIn[0],  fieldX, W) : PF_NO_OBSTACLE;
-        const uint8_t ry = hasRob  ? cmToCell(pf.robIn[1],  fieldY, H) : PF_NO_OBSTACLE;
+        const uint8_t rx = hasRob ? cmToCell(pf.robIn[0], fieldX, W) : PF_NO_OBSTACLE;
+        const uint8_t ry = hasRob ? cmToCell(pf.robIn[1], fieldY, H) : PF_NO_OBSTACLE;
 
         uint16_t len = 0;
         bool ok = false;
         for (uint8_t attempt = 0; attempt < 3 && !ok; attempt++)
         {
-            if (attempt == 1 && !hasBall) continue;
-            if (attempt == 2 && !hasRob)  continue;
+            if (attempt == 1 && !hasBall)
+                continue;
+            if (attempt == 2 && !hasRob)
+                continue;
 
             const bool useBall = (attempt == 0);
-            const bool useRob  = (attempt <= 1);
+            const bool useRob = (attempt <= 1);
             ok = pathfinder::findPath(scx, scy, tcx, tcy,
                                       useBall ? bx : PF_NO_OBSTACLE, useBall ? by : PF_NO_OBSTACLE,
-                                      useRob  ? rx : PF_NO_OBSTACLE, useRob  ? ry : PF_NO_OBSTACLE,
+                                      useRob ? rx : PF_NO_OBSTACLE, useRob ? ry : PF_NO_OBSTACLE,
                                       pf.path, len);
         }
         if (!ok)
@@ -1526,8 +1685,9 @@ namespace
             px[i + 1] = cellToCm(wp[i][0], fieldX, W);
             py[i + 1] = cellToCm(wp[i][1], fieldY, H);
         }
-        if (n == 0) n = 1; // Start und Ziel in derselben Zelle: nur das Ziel
-        px[n] = tx;        // letzter Punkt = exaktes Ziel, nicht Zellmitte
+        if (n == 0)
+            n = 1;  // Start und Ziel in derselben Zelle: nur das Ziel
+        px[n] = tx; // letzter Punkt = exaktes Ziel, nicht Zellmitte
         py[n] = ty;
 
         // ---- Tempo: Pattern ueber die ganze Strecke --------------------------------
@@ -1540,40 +1700,42 @@ namespace
             seg[i] = sqrtf(dx * dx + dy * dy);
             total += seg[i];
         }
-        if (total < 1.0f) total = 1.0f;
+        if (total < 1.0f)
+            total = 1.0f;
 
         // Der Pattern-Fortschritt bezieht sich auf die Strecke bei Fahrtbeginn (neues Ziel / Pattern / Speed).
         // Periodische Neuplanungen aendern das nicht, sonst wuerde das Tempo bei jeder Neuplanung neu anlaufen.
-        if (restartPattern || total > pf.total0) pf.total0 = total;
+        if (restartPattern || total > pf.total0)
+            pf.total0 = total;
 
         float cum = 0.0f;
         for (uint8_t i = 0; i < n; i++)
         {
             const float pStart = constrain(1.0f - (total - cum) / pf.total0, 0.0f, 1.0f);
-            const float pMid   = constrain(1.0f - (total - cum - 0.5f * seg[i]) / pf.total0, 0.0f, 1.0f);
+            const float pMid = constrain(1.0f - (total - cum - 0.5f * seg[i]) / pf.total0, 0.0f, 1.0f);
             cum += seg[i];
 
             ArrayPoint &a = route[i];
-            a.X            = (uint16_t)constrain(px[i + 1] + 0.5f, 0.0f, fieldX);
-            a.Y            = (uint16_t)constrain(py[i + 1] + 0.5f, 0.0f, fieldY);
+            a.X = (uint16_t)constrain(px[i + 1] + 0.5f, 0.0f, fieldX);
+            a.Y = (uint16_t)constrain(py[i + 1] + 0.5f, 0.0f, fieldY);
             a.Andrehwinkel = angle;
-            a.HoldMs       = 0;
+            a.HoldMs = 0;
 
             if (i + 1 < n) // Zwischenpunkt: konstantes Tempo, ohne Halt durchfahren
             {
                 const float v = minS + (maxS - minS) * speedPatternValue(pattern, pMid);
                 a.SpeedPattern = SPattern_Constant;
-                a.MaxSpeed     = (uint8_t)(v + 0.5f);
-                a.MinSpeed     = a.MaxSpeed;
-                a.PassCm       = PF_PASS_CM;
+                a.MaxSpeed = (uint8_t)(v + 0.5f);
+                a.MinSpeed = a.MaxSpeed;
+                a.PassCm = PF_PASS_CM;
             }
             else // letztes Teilstueck: Pattern bis zum Ziel
             {
                 const float v0 = minS + (maxS - minS) * speedPatternValue(pattern, pStart);
                 a.SpeedPattern = pattern;
-                a.MaxSpeed     = (uint8_t)(v0 + 0.5f);
-                a.MinSpeed     = minS;
-                a.PassCm       = 0;
+                a.MaxSpeed = (uint8_t)(v0 + 0.5f);
+                a.MinSpeed = minS;
+                a.PassCm = 0;
             }
         }
         count = n;
@@ -1590,8 +1752,10 @@ namespace
 void systemlib::setPathObstacles(int16_t ballX, int16_t ballY, int16_t robotX, int16_t robotY)
 {
 #if PF_AVAILABLE
-    pf.ballIn[0] = ballX;   pf.ballIn[1] = ballY;
-    pf.robIn[0]  = robotX;  pf.robIn[1]  = robotY;
+    pf.ballIn[0] = ballX;
+    pf.ballIn[1] = ballY;
+    pf.robIn[0] = robotX;
+    pf.robIn[1] = robotY;
 #endif
 }
 
@@ -1614,9 +1778,8 @@ void systemlib::moveToPointAvoid(uint16_t X, uint16_t Y, uint8_t SpeedPattern, u
 
     const uint32_t nowMs = millis();
 
-    const bool settingsChanged = !pf.valid || X != pf.tx || Y != pf.ty
-                                 || SpeedPattern != pf.pattern || MaxSpeed != pf.maxS || MinSpeed != pf.minS;
-    const bool moved   = obstacleMoved(pf.ballIn, pf.ballUsed) || obstacleMoved(pf.robIn, pf.robUsed);
+    const bool settingsChanged = !pf.valid || X != pf.tx || Y != pf.ty || SpeedPattern != pf.pattern || MaxSpeed != pf.maxS || MinSpeed != pf.minS;
+    const bool moved = obstacleMoved(pf.ballIn, pf.ballUsed) || obstacleMoved(pf.robIn, pf.robUsed);
     const bool settled = pf.found && giveMoveArrived(); // am Ziel: nicht dauernd neu planen
     const uint32_t interval = pf.found ? PF_REPLAN_MS : PF_REPLAN_FAIL_MS;
     const bool due = !settled && (uint32_t)(nowMs - pf.lastPlanMs) >= interval;
@@ -1624,24 +1787,24 @@ void systemlib::moveToPointAvoid(uint16_t X, uint16_t Y, uint8_t SpeedPattern, u
     if (settingsChanged || moved || due)
     {
         pf.lastPlanMs = nowMs;
-        pf.valid   = true;
-        pf.tx      = X;
-        pf.ty      = Y;
+        pf.valid = true;
+        pf.tx = X;
+        pf.ty = Y;
         pf.pattern = SpeedPattern;
-        pf.maxS    = MaxSpeed;
-        pf.minS    = MinSpeed;
+        pf.maxS = MaxSpeed;
+        pf.minS = MinSpeed;
         for (uint8_t i = 0; i < 2; i++)
         {
             pf.ballUsed[i] = pf.ballIn[i];
-            pf.robUsed[i]  = pf.robIn[i];
+            pf.robUsed[i] = pf.robIn[i];
         }
 
         ArrayPoint route[ARRAY_MAX_POINTS];
-        uint8_t    count = 0;
+        uint8_t count = 0;
 
         const uint32_t t0 = micros();
-        pf.found  = buildRoute(Position.X, Position.Y, feld_x, feld_y, X, Y,
-                               SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel, settingsChanged, route, count);
+        pf.found = buildRoute(Position.X, Position.Y, feld_x, feld_y, X, Y,
+                              SpeedPattern, MaxSpeed, MinSpeed, Andrehwinkel, settingsChanged, route, count);
         pf.planUs = micros() - t0;
 
         if (pf.found)
@@ -1687,67 +1850,66 @@ void systemlib::moveToPointAvoid(uint16_t X, uint16_t Y, uint8_t SpeedPattern, u
 void systemlib::resetPathPlan(void)
 {
 #if PF_AVAILABLE
-    pf.valid   = false;
-    pf.found   = false;
+    pf.valid = false;
+    pf.found = false;
     pf.wpCount = 0;
-    pf.total0  = 1.0f;
+    pf.total0 = 1.0f;
 #endif
     resetArray();
     mv.lastSpeed = 0.0f;
 }
 
 #if PF_AVAILABLE
-bool     systemlib::givePathFound(void) const     { return pf.found; }
-uint8_t  systemlib::givePathWaypoints(void) const { return pf.wpCount; }
-uint32_t systemlib::givePathTimeUs(void) const    { return pf.planUs; }
+bool systemlib::givePathFound(void) const { return pf.found; }
+uint8_t systemlib::givePathWaypoints(void) const { return pf.wpCount; }
+uint32_t systemlib::givePathTimeUs(void) const { return pf.planUs; }
 #else
-bool     systemlib::givePathFound(void) const     { return false; }
-uint8_t  systemlib::givePathWaypoints(void) const { return 0; }
-uint32_t systemlib::givePathTimeUs(void) const    { return 0; }
+bool systemlib::givePathFound(void) const { return false; }
+uint8_t systemlib::givePathWaypoints(void) const { return 0; }
+uint32_t systemlib::givePathTimeUs(void) const { return 0; }
 #endif
 
-void systemlib::setOmniWheelVek(float vx, float vy, float omega) {
+void systemlib::setOmniWheelVek(float vx, float vy, float omega)
+{
     float w[4];
-    static const float wheelAngles[4] = {45,315,135,225};
-    for (int i = 0; i < 4; ++i) {
-        w[i] = -sinf(wheelAngles[i]*DEG_TO_RAD) * -vx
-                  +  cosf(wheelAngles[i]*DEG_TO_RAD) * vy
-                  + omega;
+    static const float wheelAngles[4] = {45, 315, 135, 225};
+    for (int i = 0; i < 4; ++i)
+    {
+        w[i] = -sinf(wheelAngles[i] * DEG_TO_RAD) * -vx + cosf(wheelAngles[i] * DEG_TO_RAD) * vy + omega;
         w[i] = constrain(w[i], -100, 100);
-        
     }
-    setMotorData(MoDataVL.ID,w[0],true,false);
-    setMotorData(MoDataVR.ID,w[1],true,false);
-    setMotorData(MoDataHL.ID,w[2],true,false);
-    setMotorData(MoDataHR.ID,w[3],true,false);
+    setMotorData(MoDataVL.ID, w[0], true, false);
+    setMotorData(MoDataVR.ID, w[1], true, false);
+    setMotorData(MoDataHL.ID, w[2], true, false);
+    setMotorData(MoDataHR.ID, w[3], true, false);
 }
 
-void systemlib::setOmniWheelDir(float directionDeg, uint8_t speedPercent, float omega) {
-    directionDeg = directionDeg-BNO_OrbitDir;
+void systemlib::setOmniWheelDir(float directionDeg, uint8_t speedPercent, float omega)
+{
+    directionDeg = directionDeg - BNO_OrbitDir;
 
     directionDeg = Util.AMap(directionDeg);
 
     float w[4];
-    static const float wheelAngles[4] = {45,315,135,225};
+    static const float wheelAngles[4] = {45, 315, 135, 225};
     // Serial.println("omega : "+String(omega));  // deaktiviert: blockierendes USB-Serial im 100-Hz-Takt verfaelscht dt
- 
+
     float directionRad = directionDeg * DEG_TO_RAD;
-    float speedNorm     = speedPercent / 100.0f; // 0..1
- 
+    float speedNorm = speedPercent / 100.0f; // 0..1
+
     float vx = cosf(directionRad) * speedNorm * 100;
     float vy = sinf(directionRad) * speedNorm * 100;
- 
-    for (int i = 0; i < 4; ++i) {
-        w[i] = -sinf(wheelAngles[i]*DEG_TO_RAD) * -vx
-                  +  cosf(wheelAngles[i]*DEG_TO_RAD) * vy
-                  + omega;
+
+    for (int i = 0; i < 4; ++i)
+    {
+        w[i] = -sinf(wheelAngles[i] * DEG_TO_RAD) * -vx + cosf(wheelAngles[i] * DEG_TO_RAD) * vy + omega;
         w[i] = constrain(w[i], -100, 100);
     }
 
-    setMotorData(MoDataVL.ID,w[0],true,false);
-    setMotorData(MoDataVR.ID,w[1],true,false);
-    setMotorData(MoDataHL.ID,w[2],true,false);
-    setMotorData(MoDataHR.ID,w[3],true,false);
+    setMotorData(MoDataVL.ID, w[0], true, false);
+    setMotorData(MoDataVR.ID, w[1], true, false);
+    setMotorData(MoDataHL.ID, w[2], true, false);
+    setMotorData(MoDataHR.ID, w[3], true, false);
 }
 
 int checkWallDistance(float posX, float posY)
@@ -1772,12 +1934,15 @@ int checkWallDistance(float posX, float posY)
     return 0; // Sicherer Bereich
 }
 
-void systemlib::moveDir(int16_t Dir,uint8_t Speed,float Andrehwinkel){
-    setHeading(Andrehwinkel*DEG_TO_RAD);
-    if(checkWallDistance(Position.X, Position.Y)==1){
-        setOmniWheelDir(Dir,5,giveHeadingController()*100);
+void systemlib::moveDir(int16_t Dir, uint8_t Speed, float Andrehwinkel)
+{
+    setHeading(Andrehwinkel * DEG_TO_RAD);
+    if (checkWallDistance(Position.X, Position.Y) == 1)
+    {
+        setOmniWheelDir(Dir, 5, giveHeadingController() * 100);
     }
-    else{
-        setOmniWheelDir(Dir,Speed,giveHeadingController()*100);
+    else
+    {
+        setOmniWheelDir(Dir, Speed, giveHeadingController() * 100);
     }
 }
