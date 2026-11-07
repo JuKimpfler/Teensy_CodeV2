@@ -76,7 +76,7 @@ void systemlib::initialize()
     pinMode(ROBO_ID, INPUT);
 
     Wire1.begin();
-    Wire1.setClock(100000);
+    Wire1.setClock(1000000);
 
 // Ausgangsregister VOR der Richtung setzen: nach dem Einschalten steht es
 // auf 0xFF, ein setup(false) als erstes zoege alle ESCON-Freigaben auf HIGH.
@@ -157,22 +157,34 @@ int16_t systemlib::giveOrbitDir()
 void systemlib::readSensors(void)
 {
     // Zyklische Messung der Laufzeit in ms (read -> read)
-    cycleTime = timer.cycle;
-    cycleTime_us = timer.cycle_us;
-    delay(debugTimeout);
     timer.cycle = 0;
     timer.cycle_us = 0;
 
-    Cam1.Update(BNO_OrbitDir);
-    Cam2.Update(BNO_OrbitDir);
+    delay(debugTimeout);
+    
 
-    readIR();
-    updateArray();
-    updateLine();
+    Cam1.Update(BNO_OrbitDir); // <1µs
+    Cam2.Update(BNO_OrbitDir); // <1µs
 
-    readExpanders();
+    
 
-    datasync.update();
+    readIR(); // 260µs
+
+    updateArray(); // <1µs
+
+    
+    updateLine(); // 250µs
+
+    timer.cycle = 0;
+    timer.cycle_us = 0;
+
+    readExpanders(); //200µs
+
+    
+
+    datasync.update(); // 2-4µs
+
+    
 
     Position.X = datasync.PositionX;
     Position.Y = datasync.PositionY;
@@ -188,12 +200,15 @@ void systemlib::readSensors(void)
 
     BNO_OrbitDir = datasync.BNO_Heading;
 
+    #if DPDS_Game == D_Mode_Test
     // Werte fuer die PDS-Kanaele nachfuehren. Die INA219 haengen am I2C und
     // kosten je Abfrage spuerbar Zeit -- Akkuspannung aendert sich nicht im
     // 100-Hz-Takt, 10 Hz reichen voellig.
     uptime_s = millis() / 1000.0f;
-    if (timer.power >= 100)
+    if ((timer.power >= 1000))
     {
+        timer.cycle = 0;
+        timer.cycle_us = 0;
         timer.power = 0;
         Akku_V = giveMainVoltage();
         Akku_I = giveMainCurrent();
@@ -201,17 +216,22 @@ void systemlib::readSensors(void)
         Motor_I = giveMotorCurrent();
     }
 
-#if DPDS_Game == D_Mode_Test
     PDS.update();
-#endif
+    #endif
 
     updateHeadingController();
-    updateMotors();
+
+    
+    updateMotors(); // 70-160µs
+    
 
     if ((timer.BNOCalib > 200))
     {
         datasync.BNO_Calib = false;
     }
+
+    cycleTime = timer.cycle;
+    cycleTime_us = timer.cycle_us;
 }
 
 float systemlib::giveCam2Angle()

@@ -90,7 +90,7 @@ private:
     float INA_filter[6] = {0, 0, 0, 0, 0, 0};
 
     // Esp Data 
-    PositionData Position;
+    
     PositionData Ball_Position; 
     int16_t BNO_OrbitDir=0;
 
@@ -132,6 +132,8 @@ private:
     float feld_y = POS_FIELD_Y_CM; ///< Feldlaenge [cm], siehe params.h
 
 public:
+
+    PositionData Position;
 
     MotorData MoDataVL;
     MotorData MoDataVR;

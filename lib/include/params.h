@@ -92,7 +92,7 @@ const uint16_t LineSensorSchwelle[48] =
 #define D_Mode_Test 0
 #define D_Mode_Game 1
 
-#define DPDS_Mode D_Mode_Test
+#define DPDS_Mode D_Mode_Game
 
 // Logik
 #define IR_DISTANCE_SCHWELLE 100
