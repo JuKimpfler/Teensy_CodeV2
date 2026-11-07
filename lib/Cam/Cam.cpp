@@ -25,6 +25,7 @@ void CamC::readOpenMV() {
 
   while (port->available()) {
     char c = (char)port->read();
+    
 
     if (c == '\n') {
       lineBuf[lineLen] = '\0';
@@ -96,6 +97,8 @@ void CamC::Update(float headingDeg) {
   // Falls bei dir das Vorzeichen vertauscht ist -> setSign(false)
   if (usePlusSign) angle_field_deg = wrap180f(headingDeg + angle_cam_deg);
   else             angle_field_deg = wrap180f(headingDeg - angle_cam_deg);
+
+  
 
   // Ziel: Wenn Roboter auf der Stelle dreht, bleibt angle_field_deg möglichst konstant.
   // Das stimmt dann, wenn imu_deg und angle_cam_deg konsistente Vorzeichen haben.

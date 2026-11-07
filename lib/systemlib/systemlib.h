@@ -237,7 +237,8 @@ public:
     int8_t giveLineAngle() { return LineWinkel; }
     int16_t giveLineDepth() { return LineDepth; }
     bool giveLinePresent() { return LinePresent; }
-    float giveCamAngle();
+    float giveCam1Angle();
+    float giveCam2Angle();
 
     /* -------------- set -------------- */
     void setDebugTimeout(uint16_t timeout_ms) { debugTimeout = timeout_ms; }

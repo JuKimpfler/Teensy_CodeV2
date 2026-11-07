@@ -22,8 +22,8 @@ void loop() {
         Serial.println(sys.giveOrbitDir());
         Serial.print("Start: ");
         Serial.println(sys.giveStart());
-        Serial.print("Cam1: ");
-        Serial.println(sys.giveCamAngle());
+        Serial.print("Cam2: ");
+        Serial.println(sys.giveCam2Angle());
         debug  = 0;
     }
 }

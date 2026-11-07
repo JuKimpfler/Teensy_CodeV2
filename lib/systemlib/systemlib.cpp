@@ -212,7 +212,12 @@ void systemlib::readSensors(void)
     }
 }
 
-float systemlib::giveCamAngle()
+float systemlib::giveCam2Angle()
+{
+    return Cam2.give_Angle();
+}
+
+float systemlib::giveCam1Angle()
 {
     return Cam1.give_Angle();
 }
